@@ -45,14 +45,17 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 scope=RuleScope(
                     kind="call",
                     pattern=(
-                        "element-wise +, -, *, / on float64 arrays of 1 or 2 dimensions "
+                        "element-wise +, -, *, / on 1-D float64 arrays "
                         "(array-array, array-scalar, and scalar-array forms)"
                     ),
                 ),
                 constraint=(
-                    "Element-wise arithmetic on float64 ndarrays (array-array of equal shape, "
-                    "or array-scalar/scalar-array with a float scalar) maps to ndarray-crate "
-                    "operations with IEEE-754 semantics matching NumPy."
+                    "Element-wise arithmetic on 1-D float64 ndarrays (array-array of equal "
+                    "length or with a length-1 operand broadcast NumPy-style, or "
+                    "array-scalar/scalar-array with a float scalar) maps to ndarray-crate "
+                    "operations with IEEE-754 semantics matching NumPy. Documented "
+                    "divergence: the native lowering emits no NumPy RuntimeWarnings "
+                    "(e.g. divide-by-zero or invalid-value warnings); result values match."
                 ),
                 outcome="native",
                 diagnostic_code="RXTP-NUMPY-001",
@@ -68,12 +71,15 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 provider="rextio-numpy",
                 scope=RuleScope(
                     kind="call",
-                    pattern="numpy.dot(a, b) or a @ b on float64 arrays of 1 or 2 dimensions",
+                    pattern="numpy.dot(a, b) on 1-D float64 arrays (module-call form)",
                 ),
                 constraint=(
-                    "Vector-vector, matrix-vector, and matrix-matrix products on float64 lower to "
-                    "ndarray dot products; float summation order may differ from NumPy's pairwise "
-                    "summation, a documented divergence."
+                    "Vector-vector dot products on 1-D float64 arrays lower to ndarray dot "
+                    "products. Documented divergences: float summation order may differ from "
+                    "NumPy's pairwise summation (certified within 1e-12 relative/absolute "
+                    "tolerance, so verified means within-tolerance, not bit-equivalence), and "
+                    "the native leg returns a builtin float where NumPy returns numpy.float64 "
+                    "(a float subclass; type()/repr/.dtype observably differ)."
                 ),
                 outcome="native",
                 diagnostic_code="RXTP-NUMPY-002",
@@ -89,14 +95,17 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 provider="rextio-numpy",
                 scope=RuleScope(
                     kind="call",
-                    pattern="numpy.sum / numpy.mean (or ndarray.sum/.mean) over a whole float64 array",
+                    pattern="numpy.sum / numpy.mean over a whole 1-D float64 array (module-call form; ndarray method forms are not claimed)",
                 ),
                 constraint=(
-                    "Full-array sum and mean reductions on float64 lower natively; axis= keyword "
-                    "reductions stay on the fallback in the initial surface. Float summation order "
-                    "may differ from NumPy's pairwise summation, a documented divergence. The mean "
-                    "of an empty array returns nan on both legs, but the native lowering does not "
-                    "emit NumPy's RuntimeWarning, a documented divergence."
+                    "Full-array sum and mean reductions on 1-D float64 arrays lower natively; "
+                    "axis= keyword reductions and the a.sum()/a.mean() method forms stay on the "
+                    "fallback in the initial surface. Documented divergences: float summation "
+                    "order may differ from NumPy's pairwise summation (certified within 1e-12 "
+                    "relative/absolute tolerance, so verified means within-tolerance), the "
+                    "native leg returns a builtin float where NumPy returns numpy.float64, and "
+                    "the mean of an empty array returns nan on both legs without NumPy's "
+                    "RuntimeWarning on the native leg."
                 ),
                 outcome="native",
                 diagnostic_code="RXTP-NUMPY-003",
@@ -132,11 +141,12 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 provider="rextio-numpy",
                 scope=RuleScope(
                     kind="type",
-                    pattern="ndarray with more than 2 dimensions, or a dynamically unknown rank",
+                    pattern="ndarray with more than 1 dimension, or a dynamically unknown rank",
                 ),
                 constraint=(
-                    "The initial surface covers statically known 1-D and 2-D arrays only; higher "
-                    "ranks and rank-polymorphic code stay on the Python fallback."
+                    "The initial surface covers statically known 1-D arrays only (2-D support "
+                    "is planned but not implemented); higher ranks and rank-polymorphic code "
+                    "stay on the Python fallback."
                 ),
                 outcome="fallback",
                 diagnostic_code="RXTP-NUMPY-011",

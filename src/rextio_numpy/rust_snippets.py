@@ -47,17 +47,31 @@ def dot1() -> str:
 
 
 def elementwise_aa(op: str) -> str:
-    """Return the array-array elementwise helper for ``op`` (shape-checked)."""
+    """Return the array-array elementwise helper for ``op``.
+
+    Implements NumPy's 1-D broadcasting: equal lengths operate pairwise, a
+    length-1 operand broadcasts against the other side (in either position,
+    preserving operand order for the non-commutative operators), and any
+    other length mismatch raises NumPy's broadcast ValueError.
+    """
     symbol = OP_SYMBOLS[op]
     return (
         f"fn __rxtnp_{op}1_aa(a: &{_ARR}, b: &{_ARR}) -> pyo3::PyResult<{_ARR}> {{\n"
-        "    if a.len() != b.len() {\n"
-        "        return Err(pyo3::exceptions::PyValueError::new_err(format!(\n"
-        '            "operands could not be broadcast together with shapes ({},) ({},) ",\n'
-        "            a.len(), b.len()\n"
-        "        )));\n"
+        "    if a.len() == b.len() {\n"
+        f"        return Ok(a {symbol} b);\n"
         "    }\n"
-        f"    Ok(a {symbol} b)\n"
+        "    if a.len() == 1 {\n"
+        "        let s = a[0];\n"
+        f"        return Ok(b.mapv(|x| s {symbol} x));\n"
+        "    }\n"
+        "    if b.len() == 1 {\n"
+        "        let s = b[0];\n"
+        f"        return Ok(a.mapv(|x| x {symbol} s));\n"
+        "    }\n"
+        "    Err(pyo3::exceptions::PyValueError::new_err(format!(\n"
+        '        "operands could not be broadcast together with shapes ({},) ({},) ",\n'
+        "        a.len(), b.len()\n"
+        "    )))\n"
         "}"
     )
 

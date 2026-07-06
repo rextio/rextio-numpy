@@ -226,3 +226,20 @@ def test_hypothesis_add_equivalence(project: CertifiedProject, pair) -> None:
     a, b = pair
     add = checker(project, "add", equals=array_equals)
     add(a, b)
+
+
+@pytest.mark.parametrize("name", ["add", "sub", "mul", "div"])
+def test_elementwise_length_one_broadcasting_exact(project: CertifiedProject, name: str) -> None:
+    # Council M7: NumPy broadcasts a length-1 operand in either position;
+    # the native helpers must match exactly (pointwise IEEE), including for
+    # the non-commutative operators.
+    op = checker(project, name, equals=array_equals)
+    single = np.array([2.0])
+    many = np.array([1.0, 4.0, 9.0])
+    op(single, many)
+    op(many, single)
+    # Broadcasting against an empty array yields an empty result on both legs.
+    op(single, np.array([], dtype=np.float64))
+    op(np.array([], dtype=np.float64), single)
+    # Two length-1 arrays are the equal-length path, not the broadcast path.
+    op(single, np.array([5.0]))
