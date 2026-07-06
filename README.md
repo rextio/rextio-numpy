@@ -36,7 +36,7 @@ Full rule surface (all `experimental`, codes `RXTP-NUMPY-NNN`):
 | `numpy.dot(a, b)` on 1-D float64 arrays (module-call form) | native (verified) | RXTP-NUMPY-002 |
 | Whole-array `numpy.sum` / `numpy.mean` on 1-D float64 (module-call form) | native (verified) | RXTP-NUMPY-003 |
 | Non-float64 dtypes / unsupported operand types | fallback | RXTP-NUMPY-010 |
-| Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
+| Rank > 1 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
 | Any other NumPy API | fallback | RXTP-NUMPY-019 |
 

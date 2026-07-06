@@ -87,6 +87,13 @@ def total(a: F64Arr1) -> float:
 
 def average(a: F64Arr1) -> float:
     return np.mean(a)
+
+
+def accumulate(a: F64Arr1, b: F64Arr1, n: int) -> F64Arr1:
+    c = a + b
+    for i in range(n):
+        c = c + b
+    return c
 '''
 
 
@@ -296,6 +303,46 @@ def test_reduction_tolerance_is_exercised_by_long_mixed_magnitude_arrays(
     dot(a, b)
     total(a)
     average(a)
+
+
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
+def test_nonfinite_reductions_and_dot_match_numpy(project: CertifiedProject) -> None:
+    # Council round 7 (kimi/glm/codex; round-2 R7 promoted): the hypothesis
+    # strategies exclude NaN/inf, so the non-finite reduction behavior was
+    # never certified despite verified=True. IEEE propagation must agree on
+    # both legs: inf - inf and inf * 0 are NaN, NaN propagates.
+
+    dot = checker(project, "dot", equals=scalar_close, args_equals=array_equals)
+    total = checker(project, "total", equals=scalar_close, args_equals=array_equals)
+    average = checker(project, "average", equals=scalar_close, args_equals=array_equals)
+
+    inf = float("inf")
+    cases = (
+        np.array([inf, 1.0, -2.0]),
+        np.array([inf, -inf]),          # sum -> nan
+        np.array([float("nan"), 1.0]),  # nan propagates
+        np.array([-0.0, -0.0]),
+        np.array([1e308, 1e308]),       # overflow -> inf
+    )
+    for values in cases:
+        total(values)
+        average(values)
+    dot(np.array([inf, 0.0]), np.array([0.0, 1.0]))   # inf * 0 -> nan
+    dot(np.array([inf, 1.0]), np.array([1.0, inf]))   # inf + inf -> inf
+    dot(np.array([], dtype=np.float64), np.array([], dtype=np.float64))  # length-0 -> 0.0
+
+
+def test_claimed_sites_inside_loops_accumulate_like_numpy(project: CertifiedProject) -> None:
+    # Council round 7 (claude): every certified kernel was straight-line;
+    # claims inside loop bodies exercise a distinct codegen context
+    # (statement rendering in loop scope, per-iteration rebinding).
+    accumulate = checker(project, "accumulate", equals=array_equals, args_equals=array_equals)
+    a = np.array([1.0, -2.5, 3.25])
+    b = np.array([0.5, 4.0, -1.0])
+    result = accumulate(a, b, 3)
+    np.testing.assert_array_equal(result, a + b + b + b + b)
+    result = accumulate(a, b, 0)
+    np.testing.assert_array_equal(result, a + b)
 
 
 def _stride_preserving_copy(args: tuple[object, ...]) -> tuple[object, ...]:
