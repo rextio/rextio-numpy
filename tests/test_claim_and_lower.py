@@ -91,9 +91,7 @@ def test_claim_uncovered_sites_are_not_covered(
     [
         ("call", "numpy.dot", (K, "int")),
         ("call", "numpy.dot", ("list[float]", K)),
-        ("call", "numpy.dot", (K,)),
         ("call", "numpy.sum", ("list[float]",)),
-        ("call", "numpy.mean", (K, "int")),
         ("binop", "+", (K, "int")),
         ("binop", "-", ("int", K)),
         ("binop", "*", (K, "list[float]")),
@@ -115,6 +113,24 @@ def test_claim_covered_but_unsupported_operands_are_rejected(
     assert "float64" in diagnostic.suggestion
     # Core re-stamps the location; the plugin leaves it blank.
     assert (diagnostic.file_path, diagnostic.line, diagnostic.column) == ("", 0, 0)
+
+
+@pytest.mark.parametrize(
+    ("kind", "target", "operands"),
+    [
+        # Wrong arity is an unsupported call SHAPE, not an operand-type problem:
+        # the plugin returns NotCovered so core's RXT030 names the real cause
+        # (council round 8).
+        ("call", "numpy.dot", (K,)),
+        ("call", "numpy.dot", (K, K, K)),
+        ("call", "numpy.mean", (K, "int")),
+        ("call", "numpy.sum", (K, K)),
+    ],
+)
+def test_claim_wrong_arity_covered_call_is_not_covered(
+    kind: str, target: str, operands: tuple[str | None, ...]
+) -> None:
+    assert PLUGIN.claim(site(kind, target, operands), CONFIG) == NotCovered()
 
 
 def test_claim_is_deterministic() -> None:

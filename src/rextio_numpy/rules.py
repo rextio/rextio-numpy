@@ -25,6 +25,12 @@ from __future__ import annotations
 
 from rextio.plugins.api import CoverageDecl, RuleRecord, RuleScope
 
+# ``symbols`` is DESCRIPTIVE (it appears in the capability manifest); the claim
+# pass routes sites by package + operand-type ownership, not by this list. In
+# particular ``numpy.ndarray`` denotes the type this plugin lowers -- it is NOT
+# a claimed call target: ndarray METHOD forms (a.dot(b), a.sum()) are never
+# claimed (they stay on the fallback). ``numpy.dot/sum/mean`` are the covered
+# module-call forms (council round 8: clarify the dual meaning).
 COVERAGE = CoverageDecl(
     packages=("numpy",),
     modules=("numpy",),
@@ -124,22 +130,28 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 verified=True,
             ),
             RuleRecord(
-                id="rextio-numpy/unsupported-dtype",
+                id="rextio-numpy/unsupported-operand-types",
                 provider="rextio-numpy",
                 scope=RuleScope(
-                    kind="type",
-                    pattern="ndarray with a dtype other than float64",
+                    kind="call",
+                    pattern=(
+                        "covered numpy.dot/sum/mean call or elementwise +/-/*// binop whose "
+                        "resolved operand types are outside the float64 1-D surface"
+                    ),
                 ),
                 constraint=(
-                    "Only float64 arrays are covered by the initial lowering surface; other dtypes "
-                    "(int arrays, float32, complex, object, structured) keep the function on the "
-                    "Python fallback."
+                    "A covered numpy operation whose operand types are known but outside the "
+                    "supported set (float64 1-D arrays, plus float scalars for elementwise binops) "
+                    "is rejected here so the plugin's guidance is delivered. Unresolved operands and "
+                    "wrong-arity/unsupported call shapes are NotCovered instead, so core's own "
+                    "diagnostic fires. Emitted from both call and binop sites -- the code is the "
+                    "operand-type rejection, not a dtype-annotation rule."
                 ),
                 outcome="fallback",
                 diagnostic_code="RXTP-NUMPY-010",
                 guidance=(
-                    "Cast to float64 at the boundary of the hot path (x.astype(np.float64)) when the "
-                    "extra precision is acceptable, or keep the function on the fallback."
+                    "Cast operands to float64 1-D arrays (x.astype(np.float64)) at the boundary of "
+                    "the hot path, or keep the function on the Python fallback."
                 ),
                 stability="experimental",
             ),

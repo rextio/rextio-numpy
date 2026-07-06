@@ -112,10 +112,17 @@ class RextioNumpyPlugin:
         del config
         kind, target, operands = site.kind, site.target, site.operand_types
         if kind == "call" and target == "numpy.dot":
+            if len(operands) != 2:
+                # Wrong arity is an unsupported call SHAPE, not an operand-type
+                # problem; hand it back so core's RXT030 names the real cause
+                # instead of the dtype-oriented RXTP-NUMPY-010 (council round 8).
+                return NotCovered()
             if operands == (F64_1D, F64_1D):
                 return Claimed(rule_id="rextio-numpy/dot-float64", result_type="float")
             return self._not_covered_or_rejected(site)
         if kind == "call" and target in _REDUCTION_TARGETS:
+            if len(operands) != 1:
+                return NotCovered()
             if operands == (F64_1D,):
                 return Claimed(rule_id="rextio-numpy/reduction-sum-mean", result_type="float")
             return self._not_covered_or_rejected(site)
