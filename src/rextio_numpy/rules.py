@@ -2,16 +2,17 @@
 
 L2 rule records per the Rextio tooling contract: each states a pattern, the
 constraint that decides it, the RXTP-NUMPY diagnostic code it will fire as,
-and remediation guidance. The initial rule set covers the planned first
-lowering surface — float64 1-D/2-D element-wise arithmetic, ``dot``, and
-``sum``/``mean`` reductions via the Rust ``ndarray`` crate — plus the explicit
-exclusions around it.
+and remediation guidance. The rule set covers the implemented first lowering
+surface — float64 1-D element-wise arithmetic (array-array, array-scalar,
+scalar-array), ``numpy.dot``, and whole-array ``sum``/``mean`` reductions via
+the Rust ``ndarray`` crate — plus the explicit exclusions around it.
 
-All records are ``experimental``: lowering itself activates only when rextio
-core exposes the plugin ``lower()`` hook, and the rule surface may change
-until then. Records with outcome ``native`` describe the coverage this plugin
-is building toward; records with outcome ``fallback`` are exclusions that will
-keep code on the Python fallback even after lowering lands.
+All records are ``experimental`` (plugin API 1.1, rextio 0.1.1 line). Records
+with outcome ``native`` carry ``verified=True``: their lowering passed the
+core plugin certification kit (``rextio.plugins.testing``) against CPython
+NumPy, with the divergences documented per rule in ``constraint``. Records
+with outcome ``fallback`` are exclusions that keep code on the Python
+fallback.
 """
 
 from __future__ import annotations
@@ -43,12 +44,15 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 provider="rextio-numpy",
                 scope=RuleScope(
                     kind="call",
-                    pattern="element-wise +, -, *, / on float64 arrays of 1 or 2 dimensions",
+                    pattern=(
+                        "element-wise +, -, *, / on float64 arrays of 1 or 2 dimensions "
+                        "(array-array, array-scalar, and scalar-array forms)"
+                    ),
                 ),
                 constraint=(
                     "Element-wise arithmetic on float64 ndarrays (array-array of equal shape, "
-                    "or array-scalar) maps to ndarray-crate operations with IEEE-754 semantics "
-                    "matching NumPy."
+                    "or array-scalar/scalar-array with a float scalar) maps to ndarray-crate "
+                    "operations with IEEE-754 semantics matching NumPy."
                 ),
                 outcome="native",
                 diagnostic_code="RXTP-NUMPY-001",
@@ -57,6 +61,7 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                     "annotate array parameters and returns so shapes and dtypes resolve statically."
                 ),
                 stability="experimental",
+                verified=True,
             ),
             RuleRecord(
                 id="rextio-numpy/dot-float64",
@@ -77,6 +82,7 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                     "(cast explicitly first)."
                 ),
                 stability="experimental",
+                verified=True,
             ),
             RuleRecord(
                 id="rextio-numpy/reduction-sum-mean",
@@ -88,7 +94,9 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 constraint=(
                     "Full-array sum and mean reductions on float64 lower natively; axis= keyword "
                     "reductions stay on the fallback in the initial surface. Float summation order "
-                    "may differ from NumPy's pairwise summation, a documented divergence."
+                    "may differ from NumPy's pairwise summation, a documented divergence. The mean "
+                    "of an empty array returns nan on both legs, but the native lowering does not "
+                    "emit NumPy's RuntimeWarning, a documented divergence."
                 ),
                 outcome="native",
                 diagnostic_code="RXTP-NUMPY-003",
@@ -97,6 +105,7 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                     "native candidates or keep the function on the fallback until axis support lands."
                 ),
                 stability="experimental",
+                verified=True,
             ),
             RuleRecord(
                 id="rextio-numpy/unsupported-dtype",

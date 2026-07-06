@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from rextio.analyzer.project_scanner import analyze_project
 from rextio.cli.capabilities_cmd import build_manifest
 from rextio.config.schema import PluginConfig, RextioConfig
@@ -35,7 +37,7 @@ def load_registry(enabled: tuple[str, ...] = ("rextio-numpy",)):
 def test_plugin_object_satisfies_protocol_v2() -> None:
     instance = RextioNumpyPlugin()
     assert instance.plugin_id == "rextio-numpy"
-    assert instance.api_version == "1.0"
+    assert instance.api_version == "1.1"
     assert isinstance(instance.covers(), CoverageDecl)
     records = instance.describe(RextioConfig())
     assert records and all(isinstance(record, RuleRecord) for record in records)
@@ -47,7 +49,8 @@ def test_core_loader_accepts_the_plugin() -> None:
     active = registry.active[0]
     assert active.id == "rextio-numpy"
     assert active.rules_provided is True
-    assert active.api_version == "1.0"
+    assert active.lowering_provided is True
+    assert active.api_version == "1.1"
     assert active.packages == ("numpy",)
     assert __version__ in active.name
 
@@ -56,6 +59,42 @@ def test_core_loader_accepts_the_plugin() -> None:
         record.id for record in numpy_rule_records()
     ]
     assert all(record.provider == "rextio-numpy" for record in registry.rule_records)
+
+
+def test_core_loader_registers_the_type_vocabulary() -> None:
+    registry = load_registry()
+
+    assert len(registry.types) == 1
+    binding = registry.types[0]
+    assert binding.plugin_id == "rextio-numpy"
+    plugin_type = binding.plugin_type
+    assert plugin_type.key == "rextio-numpy/f64-1d"
+    assert plugin_type.annotations == ("rextio_numpy.types.F64Arr1",)
+    assert plugin_type.rust_type == "numpy::ndarray::Array1<f64>"
+    conversion = plugin_type.conversion
+    assert conversion.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
+    assert conversion.param_expr == "{param}.as_array().to_owned()"
+    assert conversion.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
+    assert conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+
+
+def test_core_loader_registers_the_pinned_crates() -> None:
+    registry = load_registry()
+
+    pins = [
+        (binding.plugin_id, binding.dependency.name, binding.dependency.version)
+        for binding in registry.crate_dependencies
+    ]
+    assert pins == [
+        ("rextio-numpy", "numpy", "=0.29.0"),
+    ]
+
+
+def test_annotation_vocabulary_is_a_plain_runtime_alias() -> None:
+    numpy = pytest.importorskip("numpy")
+    from rextio_numpy import types
+
+    assert types.F64Arr1 is numpy.ndarray
 
 
 def test_rule_records_shape() -> None:
@@ -69,14 +108,16 @@ def test_rule_records_shape() -> None:
     assert all(code.startswith("RXTP-NUMPY-") for code in codes)
     assert all(record.stability == "experimental" for record in records)
     assert all(record.constraint.strip() and record.guidance.strip() for record in records)
-    # Until core exposes the lower() hook, native-outcome records describe the
-    # planned surface: elementwise, dot, and sum/mean reductions.
+    # The implemented lowering surface: elementwise, dot, and sum/mean
+    # reductions — all certified with the core kit (verified=True).
     native_ids = {record.id for record in records if record.outcome == "native"}
     assert native_ids == {
         "rextio-numpy/elementwise-float64",
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
     }
+    assert all(record.verified is True for record in records if record.outcome == "native")
+    assert all(record.verified is None for record in records if record.outcome != "native")
 
 
 def test_capabilities_manifest_merges_plugin_rules(tmp_path: Path) -> None:

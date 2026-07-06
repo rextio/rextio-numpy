@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rextio-numpy"
 dynamic = ["version"]
-description = "Rextio plugin that lowers eligible NumPy code to native Rust (rule records first; lowering lands with the core lower() hook)."
+description = "Rextio plugin that lowers eligible NumPy code to native Rust (plugin API 1.1: claim/lower, annotation vocabulary, pinned crate injection)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

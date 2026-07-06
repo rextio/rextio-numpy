@@ -1,11 +1,12 @@
 """rextio-numpy: the first-party Rextio plugin for NumPy.
 
-Implements Rextio plugin protocol v2 (``rextio.plugins.api``): the plugin
-self-describes the rules for lowering eligible NumPy usage to native Rust.
-In this release the plugin ships **rule records and coverage only** — the
-declarative contract surfaced by ``rextio capabilities`` and the RXT091
-plugin-lowerable hint. Actual lowering activates once rextio core exposes the
-plugin ``lower()`` hook.
+Implements Rextio plugin API 1.1 (``rextio.plugins.api``): the plugin
+self-describes its rules AND lowers the initial surface — float64 1-D
+element-wise arithmetic, ``numpy.dot``, and whole-array ``sum``/``mean``
+reductions — to Rust via the ``ndarray`` crate, with pinned crate injection
+and the ``rextio_numpy.types`` annotation vocabulary. The lowering is
+certified against CPython NumPy with the core plugin certification kit
+(``rextio.plugins.testing``).
 """
 
 from rextio_numpy.__about__ import __version__

@@ -8,42 +8,66 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: rule records first, lowering next
+## Status: lowering implemented for the initial surface
 
-This release ships the **declarative contract only** — coverage and rule
-records. They surface in `rextio capabilities`, power remediation guidance in
-agent/IDE tooling, and enable the RXT091 plugin-lowerable hint on
-`@numba.*`-decorated functions. **No code is lowered yet**: actual translation
-activates once rextio core exposes the plugin `lower()` hook.
+The plugin now implements **plugin API 1.1** end to end: the annotation
+vocabulary (`rextio_numpy.types.F64Arr1`), the deterministic `claim` pass,
+`lower()` emission to Rust via the `ndarray` crate, and pinned crate
+injection (`ndarray =0.16.1`, rust-numpy `numpy =0.29.0`). The implemented
+lowering surface, certified against CPython NumPy with the core plugin
+certification kit (`rextio.plugins.testing`):
 
-Initial rule surface (all `experimental`, codes `RXTP-NUMPY-NNN`):
+- Element-wise `+ - * /` on float64 1-D arrays — array-array, array-scalar,
+  and scalar-array forms (`RXTP-NUMPY-001`, verified)
+- `numpy.dot(a, b)` on float64 1-D arrays (`RXTP-NUMPY-002`, verified)
+- Whole-array `numpy.sum` / `numpy.mean` reductions (`RXTP-NUMPY-003`,
+  verified)
+
+Shape/length mismatches raise `ValueError` with NumPy's exact messages.
+Documented divergences (per rule `constraint`): dot/sum/mean float summation
+order may differ from NumPy's pairwise summation, and the native mean of an
+empty array returns nan without NumPy's `RuntimeWarning`.
+
+Full rule surface (all `experimental`, codes `RXTP-NUMPY-NNN`):
 
 | Rule | Outcome | Code |
 |---|---|---|
-| Element-wise `+ - * /` on float64 1-D/2-D arrays | native (planned) | RXTP-NUMPY-001 |
-| `numpy.dot` / `@` on float64 1-D/2-D | native (planned) | RXTP-NUMPY-002 |
-| Whole-array `sum` / `mean` reductions on float64 | native (planned) | RXTP-NUMPY-003 |
-| Non-float64 dtypes | fallback | RXTP-NUMPY-010 |
+| Element-wise `+ - * /` on float64 arrays (array-array, array-scalar, scalar-array) | native (verified, 1-D) | RXTP-NUMPY-001 |
+| `numpy.dot` / `@` on float64 1-D/2-D | native (verified, 1-D) | RXTP-NUMPY-002 |
+| Whole-array `sum` / `mean` reductions on float64 | native (verified) | RXTP-NUMPY-003 |
+| Non-float64 dtypes / unsupported operand types | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
 | Any other NumPy API | fallback | RXTP-NUMPY-019 |
 
-NumPy itself is deliberately **not** a dependency — the plugin describes (and
-later lowers) the *user project's* NumPy usage. A `@numba.*`-decorated
-function is always respected as the user's opt-in to Numba's semantics and is
-never lowered by this plugin.
+NumPy itself is deliberately **not** a dependency of the plugin — only the
+user-facing `rextio_numpy.types` vocabulary module imports it, in the user's
+project. A `@numba.*`-decorated function is always respected as the user's
+opt-in to Numba's semantics and is never lowered by this plugin.
 
 ## Usage
 
 ```toml
 # rextio.toml
+[rust]
+build_tool = "cargo"
+
 [plugins]
 enabled = ["rextio-numpy"]
+```
+
+```python
+import numpy as np
+from rextio_numpy.types import F64Arr1  # plain runtime alias of numpy.ndarray
+
+def dot(a: F64Arr1, b: F64Arr1) -> float:
+    return np.dot(a, b)
 ```
 
 ```bash
 pip install rextio-numpy   # requires rextio >= 0.1.1 (unreleased yet)
 rextio capabilities --format json   # numpy rules appear under "rules"
+rextio build .                      # lowered kernels compile via cargo
 ```
 
 ## Development
