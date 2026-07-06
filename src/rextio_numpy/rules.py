@@ -13,6 +13,12 @@ core plugin certification kit (``rextio.plugins.testing``) against CPython
 NumPy, with the divergences documented per rule in ``constraint``. Records
 with outcome ``fallback`` are exclusions that keep code on the Python
 fallback.
+
+RXTP-NUMPY-011 (rank), RXTP-NUMPY-012 (view aliasing), and RXTP-NUMPY-019
+(uncovered API) are **declarative-only**: they document why code stays on the
+fallback but are never emitted by ``claim()`` — sites outside the covered
+surface return ``NotCovered`` and core reports its own diagnostic (RXT030).
+Only RXTP-NUMPY-010 is actively emitted, via ``Rejected``.
 """
 
 from __future__ import annotations
@@ -84,7 +90,8 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 outcome="native",
                 diagnostic_code="RXTP-NUMPY-002",
                 guidance=(
-                    "Use numpy.dot or @ directly on float64 arrays; avoid dtype-mixing operands "
+                    "Use numpy.dot directly on float64 arrays (core rejects the @ operator "
+                    "before this plugin is offered the site); avoid dtype-mixing operands "
                     "(cast explicitly first)."
                 ),
                 stability="experimental",

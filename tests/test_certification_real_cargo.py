@@ -29,6 +29,7 @@ from hypothesis import given, settings, strategies as st  # noqa: E402
 from hypothesis.extra import numpy as npst  # noqa: E402
 
 from rextio.plugins.testing import (  # noqa: E402
+    CertificationError,
     CertifiedProject,
     build_certification_project,
     default_equals,
@@ -74,6 +75,11 @@ def rsub(offset: float, a: F64Arr1) -> F64Arr1:
 def identity(a: F64Arr1) -> F64Arr1:
     return a
 
+
+def peek(a: F64Arr1) -> float:
+    return 0.0
+
+
 def total(a: F64Arr1) -> float:
     return np.sum(a)
 
@@ -97,8 +103,10 @@ def project(tmp_path_factory: pytest.TempPathFactory) -> CertifiedProject:
     return build_certification_project(root)
 
 
-def checker(project: CertifiedProject, name: str, equals=None):
-    return project.equivalence_checker(f"np_app.kernels.{name}", equals=equals)
+def checker(project: CertifiedProject, name: str, equals=None, args_equals=None):
+    return project.equivalence_checker(
+        f"np_app.kernels.{name}", equals=equals, args_equals=args_equals
+    )
 
 
 def array_equals(left: object, right: object) -> bool:
@@ -128,7 +136,8 @@ OTHER = np.array([4.0, 0.125, -6.5, 2.0])
 
 @pytest.mark.parametrize("name", ["add", "sub", "mul", "div"])
 def test_elementwise_array_array_exact(project: CertifiedProject, name: str) -> None:
-    check = checker(project, name, equals=array_equals)
+    # args_equals (council T12): neither leg may mutate its argument arrays.
+    check = checker(project, name, equals=array_equals, args_equals=array_equals)
     result = check(ARRAY, OTHER)
     assert isinstance(result, np.ndarray)
     assert result.dtype == np.float64
@@ -151,7 +160,7 @@ def test_array_scalar_and_scalar_array_forms(project: CertifiedProject) -> None:
 
 
 def test_dot_sum_mean_close(project: CertifiedProject) -> None:
-    dot = checker(project, "dot", equals=scalar_close)
+    dot = checker(project, "dot", equals=scalar_close, args_equals=array_equals)
     total = checker(project, "total", equals=scalar_close)
     average = checker(project, "average", equals=scalar_close)
     assert float(dot(ARRAY, OTHER)) == pytest.approx(float(np.dot(ARRAY, OTHER)), rel=1e-12)
@@ -250,10 +259,32 @@ def test_elementwise_length_one_broadcasting_exact(project: CertifiedProject, na
 
 def test_signature_only_plugin_function_round_trips(project: CertifiedProject) -> None:
     # Council round-2 R17: a plugin-typed function with NO claimed body site
-    # exercises param + return conversions alone (a distinct codegen path).
-    identity = checker(project, "identity", equals=array_equals)
-    a = np.array([1.5, -0.0, 2.0**53])
-    result = identity(a)
-    assert isinstance(result, np.ndarray)
-    np.testing.assert_array_equal(result, a)
-    identity(np.array([], dtype=np.float64))
+    # exercises the param conversion alone (a distinct codegen path). The
+    # return-conversion-only variant (`return a`) is rejected by core since
+    # round 3 (T1, alias divergence), so this covers the parameter side; the
+    # claimed kernels above cover the return conversion.
+    peek = checker(project, "peek", equals=scalar_close, args_equals=array_equals)
+    assert float(peek(np.array([1.5, -0.0, 2.0**53]))) == 0.0
+    assert float(peek(np.array([], dtype=np.float64))) == 0.0
+
+
+def test_alias_returning_function_is_not_natively_served(project: CertifiedProject) -> None:
+    # Council T1 (round 3): `return a` returns the caller's own object on the
+    # fallback but a fresh copy natively — core rejects it to the fallback,
+    # and the kit must refuse to certify it (both legs would run Python).
+    with pytest.raises(CertificationError, match="not natively served"):
+        checker(project, "identity", equals=array_equals)
+
+
+def test_non_contiguous_arguments(project: CertifiedProject) -> None:
+    # Council T19 (round 3): a strided view (a[::2]) is a legitimate float64
+    # 1-D ndarray at runtime. Empirically, rust-numpy's PyReadonlyArray1
+    # borrow accepts non-contiguous arrays and as_array() honors the strides,
+    # so both legs agree on the values - certify that.
+    add = checker(project, "add", equals=array_equals, args_equals=array_equals)
+    base = np.array([1.0, 99.0, 2.0, 99.0, 3.0, 99.0])
+    strided = base[::2]
+    assert not strided.flags["C_CONTIGUOUS"]
+    other = np.array([10.0, 20.0, 30.0])
+    result = add(strided, other)
+    np.testing.assert_array_equal(result, strided + other)

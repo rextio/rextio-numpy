@@ -40,6 +40,11 @@ Full rule surface (all `experimental`, codes `RXTP-NUMPY-NNN`):
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
 | Any other NumPy API | fallback | RXTP-NUMPY-019 |
 
+Codes RXTP-NUMPY-011/012/019 are declarative-only: they document fallback
+boundaries in the rule records but are never attached to diagnostics —
+uncovered sites surface as core's RXT030 instead. Only RXTP-NUMPY-010 is
+actively emitted.
+
 NumPy itself is deliberately **not** a dependency of the plugin — only the
 user-facing `rextio_numpy.types` vocabulary module imports it, in the user's
 project. A `@numba.*`-decorated function is always respected as the user's
