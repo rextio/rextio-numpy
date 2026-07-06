@@ -52,7 +52,7 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 constraint=(
                     "Element-wise arithmetic on 1-D float64 ndarrays (array-array of equal "
                     "length or with a length-1 operand broadcast NumPy-style, or "
-                    "array-scalar/scalar-array with a float scalar) maps to ndarray-crate "
+                    "array-scalar/scalar-array with a float scalar, operand order preserved for - and /) maps to ndarray-crate "
                     "operations with IEEE-754 semantics matching NumPy. Documented "
                     "divergence: the native lowering emits no NumPy RuntimeWarnings "
                     "(e.g. divide-by-zero or invalid-value warnings); result values match."

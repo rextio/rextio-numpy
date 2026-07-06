@@ -13,7 +13,7 @@ following Rextio's core contract (CPython-equivalent semantics or fall back).
 The plugin now implements **plugin API 1.1** end to end: the annotation
 vocabulary (`rextio_numpy.types.F64Arr1`), the deterministic `claim` pass,
 `lower()` emission to Rust via the `ndarray` crate, and pinned crate
-injection (`ndarray =0.16.1`, rust-numpy `numpy =0.29.0`). The implemented
+injection (rust-numpy `numpy =0.29.0`; ndarray via its re-export). The implemented
 lowering surface, certified against CPython NumPy with the core plugin
 certification kit (`rextio.plugins.testing`):
 
@@ -32,9 +32,9 @@ Full rule surface (all `experimental`, codes `RXTP-NUMPY-NNN`):
 
 | Rule | Outcome | Code |
 |---|---|---|
-| Element-wise `+ - * /` on float64 arrays (array-array, array-scalar, scalar-array) | native (verified, 1-D) | RXTP-NUMPY-001 |
-| `numpy.dot` / `@` on float64 1-D/2-D | native (verified, 1-D) | RXTP-NUMPY-002 |
-| Whole-array `sum` / `mean` reductions on float64 | native (verified) | RXTP-NUMPY-003 |
+| Element-wise `+ - * /` on 1-D float64 arrays (array-array incl. length-1 broadcasting, array-scalar, scalar-array) | native (verified) | RXTP-NUMPY-001 |
+| `numpy.dot(a, b)` on 1-D float64 arrays (module-call form) | native (verified) | RXTP-NUMPY-002 |
+| Whole-array `numpy.sum` / `numpy.mean` on 1-D float64 (module-call form) | native (verified) | RXTP-NUMPY-003 |
 | Non-float64 dtypes / unsupported operand types | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |

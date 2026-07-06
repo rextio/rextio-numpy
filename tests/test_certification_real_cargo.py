@@ -71,6 +71,9 @@ def rsub(offset: float, a: F64Arr1) -> F64Arr1:
     return offset - a
 
 
+def identity(a: F64Arr1) -> F64Arr1:
+    return a
+
 def total(a: F64Arr1) -> float:
     return np.sum(a)
 
@@ -243,3 +246,14 @@ def test_elementwise_length_one_broadcasting_exact(project: CertifiedProject, na
     op(np.array([], dtype=np.float64), single)
     # Two length-1 arrays are the equal-length path, not the broadcast path.
     op(single, np.array([5.0]))
+
+
+def test_signature_only_plugin_function_round_trips(project: CertifiedProject) -> None:
+    # Council round-2 R17: a plugin-typed function with NO claimed body site
+    # exercises param + return conversions alone (a distinct codegen path).
+    identity = checker(project, "identity", equals=array_equals)
+    a = np.array([1.5, -0.0, 2.0**53])
+    result = identity(a)
+    assert isinstance(result, np.ndarray)
+    np.testing.assert_array_equal(result, a)
+    identity(np.array([], dtype=np.float64))
