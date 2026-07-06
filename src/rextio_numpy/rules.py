@@ -49,7 +49,7 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 id="rextio-numpy/elementwise-float64",
                 provider="rextio-numpy",
                 scope=RuleScope(
-                    kind="call",
+                    kind="binop",
                     pattern=(
                         "element-wise +, -, *, / on 1-D float64 arrays "
                         "(array-array, array-scalar, and scalar-array forms)"
@@ -90,9 +90,9 @@ _RULES: tuple[RuleRecord, ...] = tuple(
                 outcome="native",
                 diagnostic_code="RXTP-NUMPY-002",
                 guidance=(
-                    "Use numpy.dot directly on float64 arrays (core rejects the @ operator "
-                    "before this plugin is offered the site); avoid dtype-mixing operands "
-                    "(cast explicitly first)."
+                    "Use numpy.dot directly on float64 arrays; the @ operator is offered "
+                    "to plugins but not lowered by rextio-numpy, so it stays on the "
+                    "fallback. Avoid dtype-mixing operands (cast explicitly first)."
                 ),
                 stability="experimental",
                 verified=True,

@@ -15,6 +15,7 @@ rule) via ``math.isclose`` at 1e-12.
 
 from __future__ import annotations
 
+import copy
 import math
 import numbers
 import shutil
@@ -103,9 +104,9 @@ def project(tmp_path_factory: pytest.TempPathFactory) -> CertifiedProject:
     return build_certification_project(root)
 
 
-def checker(project: CertifiedProject, name: str, equals=None, args_equals=None):
+def checker(project: CertifiedProject, name: str, equals=None, args_equals=None, copy_args=None):
     return project.equivalence_checker(
-        f"np_app.kernels.{name}", equals=equals, args_equals=args_equals
+        f"np_app.kernels.{name}", equals=equals, args_equals=args_equals, copy_args=copy_args
     )
 
 
@@ -145,14 +146,14 @@ def test_elementwise_array_array_exact(project: CertifiedProject, name: str) -> 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_elementwise_division_by_zero_is_ieee(project: CertifiedProject) -> None:
-    check = checker(project, "div", equals=array_equals)
+    check = checker(project, "div", equals=array_equals, args_equals=array_equals)
     result = check(np.array([1.0, -1.0, 0.0]), np.array([0.0, 0.0, 0.0]))
     assert np.isposinf(result[0]) and np.isneginf(result[1]) and np.isnan(result[2])
 
 
 def test_array_scalar_and_scalar_array_forms(project: CertifiedProject) -> None:
-    scale = checker(project, "scale", equals=array_equals)
-    rsub = checker(project, "rsub", equals=array_equals)
+    scale = checker(project, "scale", equals=array_equals, args_equals=array_equals)
+    rsub = checker(project, "rsub", equals=array_equals, args_equals=array_equals)
     scaled = scale(ARRAY, 2.5)
     np.testing.assert_array_equal(scaled, ARRAY * 2.5)
     shifted = rsub(10.0, ARRAY)
@@ -161,15 +162,15 @@ def test_array_scalar_and_scalar_array_forms(project: CertifiedProject) -> None:
 
 def test_dot_sum_mean_close(project: CertifiedProject) -> None:
     dot = checker(project, "dot", equals=scalar_close, args_equals=array_equals)
-    total = checker(project, "total", equals=scalar_close)
-    average = checker(project, "average", equals=scalar_close)
+    total = checker(project, "total", equals=scalar_close, args_equals=array_equals)
+    average = checker(project, "average", equals=scalar_close, args_equals=array_equals)
     assert float(dot(ARRAY, OTHER)) == pytest.approx(float(np.dot(ARRAY, OTHER)), rel=1e-12)
     assert float(total(ARRAY)) == pytest.approx(float(np.sum(ARRAY)), rel=1e-12)
     assert float(average(ARRAY)) == pytest.approx(float(np.mean(ARRAY)), rel=1e-12)
 
 
 def test_dot_length_mismatch_raises_equivalently(project: CertifiedProject) -> None:
-    dot = checker(project, "dot", equals=scalar_close)
+    dot = checker(project, "dot", equals=scalar_close, args_equals=array_equals)
     a = np.array([1.0, 2.0, 3.0])
     b = np.array([1.0, 2.0, 3.0, 4.0])
     try:
@@ -185,7 +186,7 @@ def test_dot_length_mismatch_raises_equivalently(project: CertifiedProject) -> N
 
 
 def test_broadcast_mismatch_on_add_raises_equivalently(project: CertifiedProject) -> None:
-    add = checker(project, "add", equals=array_equals)
+    add = checker(project, "add", equals=array_equals, args_equals=array_equals)
     a = np.array([1.0, 2.0, 3.0])
     b = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     try:
@@ -201,7 +202,7 @@ def test_broadcast_mismatch_on_add_raises_equivalently(project: CertifiedProject
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_mean_of_empty_array_is_nan_on_both_legs(project: CertifiedProject) -> None:
-    average = checker(project, "average", equals=scalar_close)
+    average = checker(project, "average", equals=scalar_close, args_equals=array_equals)
     with warnings.catch_warnings():
         # The fallback leg emits NumPy's "mean of empty slice" RuntimeWarning;
         # the native leg does not (documented divergence on the rule record).
@@ -228,7 +229,7 @@ def paired_arrays(draw: st.DrawFn) -> tuple[object, object]:
 @given(pair=paired_arrays())
 def test_hypothesis_dot_equivalence(project: CertifiedProject, pair) -> None:
     a, b = pair
-    dot = checker(project, "dot", equals=scalar_close)
+    dot = checker(project, "dot", equals=scalar_close, args_equals=array_equals)
     dot(a, b)
 
 
@@ -236,7 +237,7 @@ def test_hypothesis_dot_equivalence(project: CertifiedProject, pair) -> None:
 @given(pair=paired_arrays())
 def test_hypothesis_add_equivalence(project: CertifiedProject, pair) -> None:
     a, b = pair
-    add = checker(project, "add", equals=array_equals)
+    add = checker(project, "add", equals=array_equals, args_equals=array_equals)
     add(a, b)
 
 
@@ -245,7 +246,7 @@ def test_elementwise_length_one_broadcasting_exact(project: CertifiedProject, na
     # Council M7: NumPy broadcasts a length-1 operand in either position;
     # the native helpers must match exactly (pointwise IEEE), including for
     # the non-commutative operators.
-    op = checker(project, name, equals=array_equals)
+    op = checker(project, name, equals=array_equals, args_equals=array_equals)
     single = np.array([2.0])
     many = np.array([1.0, 4.0, 9.0])
     op(single, many)
@@ -276,15 +277,42 @@ def test_alias_returning_function_is_not_natively_served(project: CertifiedProje
         checker(project, "identity", equals=array_equals)
 
 
+def _stride_preserving_copy(args: tuple[object, ...]) -> tuple[object, ...]:
+    """Per-leg copier that keeps non-contiguous views non-contiguous.
+
+    The kit's default ``copy.deepcopy`` materializes a strided view into a
+    fresh C-contiguous array, so the boundary would never see the strides
+    (council round 4: the original T19 test was vacuous because of this).
+    """
+    copied = []
+    for arg in args:
+        if isinstance(arg, np.ndarray) and not arg.flags["C_CONTIGUOUS"]:
+            base = arg.base
+            assert base is not None
+            copied.append(base.copy()[::2])
+        else:
+            copied.append(copy.deepcopy(arg))
+    return tuple(copied)
+
+
 def test_non_contiguous_arguments(project: CertifiedProject) -> None:
-    # Council T19 (round 3): a strided view (a[::2]) is a legitimate float64
-    # 1-D ndarray at runtime. Empirically, rust-numpy's PyReadonlyArray1
-    # borrow accepts non-contiguous arrays and as_array() honors the strides,
-    # so both legs agree on the values - certify that.
-    add = checker(project, "add", equals=array_equals, args_equals=array_equals)
+    # Council T19 (round 3) + round-4 fix: a strided view (a[::2]) is a
+    # legitimate float64 1-D ndarray at runtime. The custom copier keeps the
+    # per-leg copies strided, so the native leg's PyReadonlyArray1 really
+    # receives a non-contiguous array. Empirically rust-numpy accepts it and
+    # as_array() honors the strides, so both legs agree on the values -
+    # certified behavior (spec section 4).
+    add = checker(
+        project,
+        "add",
+        equals=array_equals,
+        args_equals=array_equals,
+        copy_args=_stride_preserving_copy,
+    )
     base = np.array([1.0, 99.0, 2.0, 99.0, 3.0, 99.0])
     strided = base[::2]
     assert not strided.flags["C_CONTIGUOUS"]
+    assert not _stride_preserving_copy((strided,))[0].flags["C_CONTIGUOUS"]
     other = np.array([10.0, 20.0, 30.0])
     result = add(strided, other)
     np.testing.assert_array_equal(result, strided + other)
