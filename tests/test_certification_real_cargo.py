@@ -277,6 +277,27 @@ def test_alias_returning_function_is_not_natively_served(project: CertifiedProje
         checker(project, "identity", equals=array_equals)
 
 
+def test_reduction_tolerance_is_exercised_by_long_mixed_magnitude_arrays(
+    project: CertifiedProject,
+) -> None:
+    # Council round 5 (glm): the hypothesis arrays (length <= 32) cannot
+    # produce summation-order divergence anywhere near the documented 1e-12
+    # tolerance, so the bound was never actually tested. Long arrays with
+    # interleaved large/small magnitudes DO diverge between naive (ndarray)
+    # and pairwise (NumPy) summation - this certifies the divergence stays
+    # within the rule records' documented tolerance.
+    rng = np.random.default_rng(20260707)
+    a = rng.uniform(-1.0, 1.0, 4096)
+    a[::2] *= 1e12  # interleave large and small magnitudes
+    b = rng.uniform(-1.0, 1.0, 4096)
+    dot = checker(project, "dot", equals=scalar_close, args_equals=array_equals)
+    total = checker(project, "total", equals=scalar_close, args_equals=array_equals)
+    average = checker(project, "average", equals=scalar_close, args_equals=array_equals)
+    dot(a, b)
+    total(a)
+    average(a)
+
+
 def _stride_preserving_copy(args: tuple[object, ...]) -> tuple[object, ...]:
     """Per-leg copier that keeps non-contiguous views non-contiguous.
 

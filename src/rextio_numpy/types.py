@@ -17,5 +17,8 @@ A plain runtime alias of ``numpy.ndarray`` — it adds no runtime behavior and
 no validation. Its value is static: the Rextio analyzer resolves a parameter
 or return annotated ``F64Arr1`` to the plugin type ``rextio-numpy/f64-1d``,
 which makes the function a native candidate whose array arguments cross the
-boundary as read-only C-contiguous float64 1-D arrays.
+boundary as read-only float64 1-D arrays. Non-contiguous (strided) views are
+accepted — the conversion materializes an owned contiguous copy at the
+boundary (certified; spec section 4). A wrong dtype or rank raises the PyO3
+conversion error in native mode.
 """
