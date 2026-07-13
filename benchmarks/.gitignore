@@ -1,0 +1,12 @@
+# Benchmark result artifacts must not enter source control.
+results/
+**/benchmark-report.json
+**/benchmark-report.md
+.fixture/
+*.bench-out/
+
+# Wave 2 matmul research harness outputs (user-selected dirs may live here).
+matmul_wave2/results/
+matmul_wave2/**/target/
+matmul-wave2-report-*.json
+matmul-wave2-report-*.md

@@ -5,16 +5,33 @@ from __future__ import annotations
 import pytest
 
 from rextio.config.schema import RextioConfig
-from rextio.plugins.api import Claimed, ClaimSite, LoweringContext, NotCovered, Rejected
+from rextio.plugins.api import (
+    Claimed,
+    ClaimLiteral,
+    ClaimSite,
+    KeywordArg,
+    LoweringContext,
+    NotCovered,
+    Rejected,
+)
 
-from rextio_numpy.plugin import F64_1D, RextioNumpyPlugin
+from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D
+from rextio_numpy.plugin import F64_1D as PLUGIN_F64_1D
+from rextio_numpy.plugin import RextioNumpyPlugin
 
 K = F64_1D
+assert PLUGIN_F64_1D == K
 CONFIG = RextioConfig()
 PLUGIN = RextioNumpyPlugin()
 
 
-def site(kind: str, target: str, operand_types: tuple[str | None, ...]) -> ClaimSite:
+def site(
+    kind: str,
+    target: str,
+    operand_types: tuple[str | None, ...],
+    *,
+    keywords: tuple[KeywordArg, ...] = (),
+) -> ClaimSite:
     return ClaimSite(
         kind=kind,
         target=target,
@@ -22,6 +39,17 @@ def site(kind: str, target: str, operand_types: tuple[str | None, ...]) -> Claim
         file_path="",
         line=0,
         column=0,
+        keywords=keywords,
+    )
+
+
+def axis_kw(value: int) -> tuple[KeywordArg, ...]:
+    return (
+        KeywordArg(
+            name="axis",
+            arg_type="int",
+            literal=ClaimLiteral(is_literal=True, value=value),
+        ),
     )
 
 
@@ -52,6 +80,37 @@ def test_claim_reductions(target: str) -> None:
 def test_claim_elementwise_binops(op: str, operands: tuple[str, str]) -> None:
     result = PLUGIN.claim(site("binop", op, operands), CONFIG)
     assert result == Claimed(rule_id="rextio-numpy/elementwise-float64", result_type=K)
+
+
+def test_claim_wave1_matrix_via_plugin_claim_router() -> None:
+    # claim/lower routers are feature-owned; plugin.py only gates type_vocabulary.
+    assert PLUGIN.claim(site("binop", "+", (F64_2D, F64_1D)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/elementwise-float64", result_type=F64_2D
+    )
+    assert PLUGIN.claim(site("binop", "/", (I64_1D, I64_1D)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/elementwise-float64", result_type=F64_1D
+    )
+    assert PLUGIN.claim(site("call", "numpy.dot", (I64_1D, I64_1D)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/dot-float64", result_type="int"
+    )
+    assert PLUGIN.claim(site("call", "numpy.sum", (I64_2D,)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/reduction-sum-mean", result_type="int"
+    )
+    assert PLUGIN.claim(site("call", "numpy.sum", (I64_1D,)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/reduction-sum-mean", result_type="int"
+    )
+    # float32 sum/mean/dot and int64 mean are claim-rejected (no runtime length
+    # /fallback gate for their divergent sequential accumulators).
+    for target, operands in (
+        ("numpy.mean", (F32_1D,)),
+        ("numpy.sum", (F32_1D,)),
+        ("numpy.dot", (F32_1D, F32_1D)),
+        ("numpy.mean", (I64_1D,)),
+        ("numpy.mean", (I64_2D,)),
+    ):
+        rejected = PLUGIN.claim(site("call", target, operands), CONFIG)
+        assert isinstance(rejected, Rejected)
+        assert rejected.diagnostic.code == "RXTP-NUMPY-010"
 
 
 @pytest.mark.parametrize(
@@ -95,6 +154,8 @@ def test_claim_uncovered_sites_are_not_covered(
         ("binop", "+", (K, "int")),
         ("binop", "-", ("int", K)),
         ("binop", "*", (K, "list[float]")),
+        ("binop", "+", (F64_1D, F32_1D)),
+        ("call", "numpy.dot", (F64_2D, F64_2D)),
     ],
 )
 def test_claim_covered_but_unsupported_operands_are_rejected(
@@ -141,11 +202,26 @@ def test_claim_is_deterministic() -> None:
         site("call", "numpy.dot", (K, "int")),
         site("binop", "*", (K, "float")),
         site("binop", "%", (K, K)),
+        site("binop", "+", (I64_1D, I64_2D)),
+        site("call", "numpy.max", (F64_2D,), keywords=axis_kw(-1)),
     ]
     for claim_site in sites:
         first = PLUGIN.claim(claim_site, CONFIG)
         second = PLUGIN.claim(claim_site, CONFIG)
         assert first == second
+
+
+def test_claim_literal_axis_surface() -> None:
+    assert PLUGIN.claim(
+        site("call", "numpy.sum", (F64_2D,), keywords=axis_kw(0)), CONFIG
+    ) == Claimed(rule_id="rextio-numpy/reduction-axis", result_type=F64_1D)
+    assert PLUGIN.claim(
+        site("call", "numpy.max", (F32_2D,), keywords=axis_kw(1)), CONFIG
+    ) == Claimed(rule_id="rextio-numpy/reduction-axis", result_type=F32_1D)
+    assert PLUGIN.claim(site("call", "numpy.min", (K,)), CONFIG) == NotCovered()
+    rejected = PLUGIN.claim(site("call", "numpy.max", (F32_1D,), keywords=axis_kw(0)), CONFIG)
+    assert isinstance(rejected, Rejected)
+    assert rejected.diagnostic.code == "RXTP-NUMPY-010"
 
 
 # ---------------------------------------------------------------- lower ----
@@ -175,7 +251,10 @@ def test_lower_reductions(target: str, helper_name: str, body: str) -> None:
     lowered = PLUGIN.lower(site("call", target, (K,)), ctx("values"))
     assert lowered.rust == f"{helper_name}(&values)?"
     assert len(lowered.helpers) == 1
-    assert f"fn {helper_name}(a: &numpy::ndarray::Array1<f64>) -> pyo3::PyResult<f64>" in lowered.helpers[0]
+    assert (
+        f"fn {helper_name}(a: &numpy::ndarray::Array1<f64>) -> pyo3::PyResult<f64>"
+        in lowered.helpers[0]
+    )
     assert body in lowered.helpers[0]
 
 
@@ -219,7 +298,7 @@ def test_lower_binop_scalar_array(op: str, name: str, symbol: str) -> None:
     assert f"Ok(a.mapv(|x| s {symbol} x))" in helper
 
 
-def test_lower_expressions_are_fallible() -> None:
+def test_lower_wave1_helpers_are_fallible() -> None:
     lowered_all = [
         PLUGIN.lower(site("call", "numpy.dot", (K, K)), ctx("a", "b")),
         PLUGIN.lower(site("call", "numpy.sum", (K,)), ctx("a")),
@@ -227,12 +306,39 @@ def test_lower_expressions_are_fallible() -> None:
         PLUGIN.lower(site("binop", "+", (K, K)), ctx("a", "b")),
         PLUGIN.lower(site("binop", "-", (K, "float")), ctx("a", "s")),
         PLUGIN.lower(site("binop", "/", ("float", K)), ctx("s", "a")),
+        PLUGIN.lower(site("binop", "+", (F64_1D, F64_2D)), ctx("a", "b")),
+        PLUGIN.lower(site("binop", "/", (I64_1D, "int")), ctx("a", "s")),
+        PLUGIN.lower(site("call", "numpy.dot", (I64_1D, I64_1D)), ctx("a", "b")),
+        PLUGIN.lower(site("call", "numpy.sum", (I64_1D,)), ctx("a")),
     ]
     for lowered in lowered_all:
         assert lowered.rust.endswith("?")
-        assert all("pyo3::PyResult<" in helper for helper in lowered.helpers)
+        # Shared shape formatters return String; op helpers and broadcast_shape
+        # return PyResult. At least one fallible helper must be present.
+        assert any("pyo3::PyResult<" in helper for helper in lowered.helpers)
+        for helper in lowered.helpers:
+            if "__rxtnp_fmt_shape" in helper:
+                continue
+            assert "pyo3::PyResult<" in helper
 
 
 def test_lower_rejects_unclaimed_sites() -> None:
     with pytest.raises(ValueError, match="unclaimed site"):
         PLUGIN.lower(site("call", "numpy.zeros", ("int",)), ctx("n"))
+
+
+def test_lower_literal_axis_encodes_normalized_axis() -> None:
+    lowered = PLUGIN.lower(
+        site("call", "numpy.sum", (F64_2D,), keywords=axis_kw(-1)),
+        ctx("mat"),
+    )
+    assert lowered.rust == "__rxtnp_sum2_f64_axis1(&mat)?"
+    assert "Axis(1)" in "\n".join(lowered.helpers)
+    assert "__rxtnp_numpy_pairwise_sum_f64" in "\n".join(lowered.helpers)
+
+    maxed = PLUGIN.lower(
+        site("call", "numpy.max", (F64_1D,), keywords=axis_kw(0)),
+        ctx("v"),
+    )
+    assert maxed.rust == "__rxtnp_max1_f64_axis0(&v)?"
+    assert "maximum which has no identity" in "\n".join(maxed.helpers)

@@ -1,0 +1,23 @@
+[package]
+name = "matmul_wave2_candidate"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Standalone research cdylib for Wave 2 rank-2 f64 matmul (not a product rule)."
+
+[lib]
+name = "matmul_wave2_candidate"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Exact pins required by the frozen Wave 2 harness protocol.
+numpy = "=0.29.0"
+pyo3 = { version = "=0.29.0", features = ["extension-module"] }
+
+# No BLAS feature: use ndarray pure-Rust matmul via Array2::dot.
+# Do not enable ndarray/blas, openblas-src, intel-mkl-src, or similar.
+
+[profile.release]
+# Research harness default: release profile without special LTO claims.
+codegen-units = 16
+lto = false
