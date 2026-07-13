@@ -16,7 +16,7 @@ from __future__ import annotations
 
 __all__ = ["__version__", "REPORT_SCHEMA_VERSION"]
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 # 2.0.0: legs store raw batch elapsed samples and derived per-call wall samples
 # separately; summary/speedup always use per-call wall latency.
 # 2.1.0: metadata.packages.* is the runtime module version actually imported;

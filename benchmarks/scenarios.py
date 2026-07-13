@@ -1,8 +1,8 @@
-"""Pre-registered honest benchmark scenarios (F64Arr1 vocabulary only).
+"""Pre-registered honest benchmark scenarios (fixed F64Arr1 subset).
 
-Scenarios intentionally use only the currently released
-``rextio_numpy.types.F64Arr1`` annotation so the suite does not depend on
-future type counts from other lanes.
+Scenarios intentionally use only ``rextio_numpy.types.F64Arr1`` so the suite
+measures a fixed 1-D float64 benchmark subset independent of the full released
+annotation surface and type counts.
 """
 
 from __future__ import annotations

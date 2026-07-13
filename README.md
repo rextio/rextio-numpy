@@ -8,24 +8,33 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: Wave 1 + Wave 2 (literal-axis + elementwise fusion) surface
+## Status: 0.1.1 release candidate
 
-This repository branch is the **unreleased 0.1.1 development line** for
-`rextio-numpy`. It implements **plugin API 1.2** end to end: the annotation
-vocabulary, the deterministic `claim` pass (including keyword/literal axis
-metadata and structured `ClaimExpr` trees from core API 1.2), `lower()`
-emission to Rust via the `ndarray` crate, multi-op elementwise chain fusion
-via `operand_mode="leaves"`, and pinned crate injection (rust-numpy
+This repository branch is the **0.1.1 release candidate** for package version
+`rextio-numpy` **0.1.1**. It is an **untagged / unuploaded** RC on this branch —
+**not** a claim that 0.1.1 is published on PyPI. The last **published** cut is
+**`rextio-numpy` 0.1.0** (2026-07-12 on PyPI).
+
+Implements **plugin API 1.2** end to end: the annotation vocabulary, the
+deterministic `claim` pass (including keyword/literal axis metadata and
+structured `ClaimExpr` trees from core API 1.2), `lower()` emission to Rust via
+the `ndarray` crate, multi-op elementwise chain fusion via
+`operand_mode="leaves"`, and pinned crate injection (rust-numpy
 `numpy =0.29.0`; ndarray via its re-export).
 
-**Release boundary:** core Rextio **0.1.1 was released 2026-07-12 and is on
-PyPI**; this branch expects a core build that provides **plugin API 1.2**
-claim-site keyword/literal metadata (e.g. the editable core checkout at the
-API 1.2 commit). The expanded claim surface documented here lives on this
-development branch only. Package metadata, changelog, and a PyPI
-`rextio-numpy` cut that ships this surface remain a later **Wave 3**
-release-integration task — do not assume an installed PyPI `rextio-numpy`
-wheel already exposes it.
+**Dependency:** requires **`rextio>=0.1.2,<0.2`**. NumPy is deliberately **not**
+a runtime dependency of this package — only the user-facing
+`rextio_numpy.types` vocabulary imports NumPy in the **user** project.
+
+### Safe deployment order
+
+Publish / deploy in this order (or ship lsp + core simultaneously for step 1–2):
+
+1. **`rextio-lsp` 0.1.1** dual-map **first**, **or simultaneous** with core
+2. **core `rextio` 0.1.2** (plugin API 1.2 claim metadata)
+3. **`rextio-numpy` 0.1.1** only after core 0.1.2 resolves
+
+**`rextio-numpy` cannot be published before its core dependency resolves.**
 
 ### Annotation vocabulary (`rextio_numpy.types`)
 
@@ -51,6 +60,8 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   (sequential f32 accumulation diverges materially from NumPy pairwise
   summation; the plugin API has no enforceable runtime length gate).
   **2-D** operands and **`@` / matmul** stay unclaimed (`RXTP-NUMPY-002`).
+  Rank-2 matmul research retained product decision **NO-GO /
+  fallback-retained** for this cut.
 - **Whole-array reductions** (module-call form, **no** keywords):
   - `numpy.sum` on **float64 and int64**, ranks **1–2**
   - `numpy.mean` on **float64**, ranks **1–2**
@@ -91,9 +102,17 @@ NumPy **release** builds. Floating reductions/dots are certified
 within-tolerance (not universal bit-equivalence). Whole-array float64
 sum/mean may still differ from NumPy pairwise order within 1e-12; **literal-
 axis f64 sum/mean** intentionally match NumPy's pairwise/sequential layout
-rules. Native mean of an empty array (or empty reduced lane) returns nan
-without NumPy's `RuntimeWarning`. Native reductions also omit warnings for
-invalid ops such as `+inf + -inf`.
+rules.
+
+### Accepted release divergence: missing NumPy `RuntimeWarning`
+
+**Certified acceptance surface:** values, dtypes, and exceptions.
+
+**Accepted for this RC (do not overclaim warning equivalence):** native
+empty-mean / empty-axis-lane, divide-by-zero, invalid-value /
+invalid-reduction, elementwise, fused-elementwise, and related covered paths
+**may omit** NumPy `RuntimeWarning` emissions. Values still match the certified
+contract; warning parity is **not** part of the acceptance surface.
 
 ### Full rule surface
 
@@ -122,9 +141,10 @@ opt-in to Numba's semantics and is never lowered by this plugin.
 ### Benchmarks
 
 The public [honest benchmark suite](benchmarks/README.md) is
-**repository / source-checkout tooling** (not a PyPI entry point). It
-measures fallback vs native wall latency and reports **wins and losses**
-honestly — a result below 1× is valid and rendered as such.
+**repository / source-checkout tooling** (not a PyPI entry point). It measures
+a **fixed F64Arr1** scenario subset (independent of the full released surface)
+— fallback vs native wall latency, reporting **wins and losses** honestly.
+A result below 1× is valid and rendered as such.
 
 ## Usage
 
@@ -146,24 +166,26 @@ def dot(a: F64Arr1, b: F64Arr1) -> float:
 ```
 
 ```bash
-pip install rextio-numpy   # requires rextio >= 0.1.1 (on PyPI)
+pip install rextio-numpy   # requires rextio >= 0.1.2 (once both are available)
 rextio capabilities --format json   # numpy rules appear under "rules"
 rextio build .                      # lowered kernels compile via cargo
 ```
 
-> **Note:** a PyPI `rextio-numpy` install tracks the last published cut.
-> To exercise the expanded surface on this branch, install from a source
-> checkout (see Development).
+> **Note:** a PyPI `rextio-numpy` install tracks the last **published** cut
+> (**0.1.0**). This branch is the **0.1.1 RC** (untagged / unuploaded). To
+> exercise the 0.1.1 surface, install from a source checkout (see Development)
+> against a core that provides plugin API 1.2 (`rextio>=0.1.2`).
 
 ## Development
 
-Core rextio **0.1.1 is on PyPI**. For day-to-day work on this branch, install
-core from PyPI (or a sibling checkout when co-developing) and this package
+Core for this RC requires **`rextio>=0.1.2,<0.2`**. For day-to-day work on this
+branch, install core from a build that exposes plugin API 1.2 (PyPI once
+0.1.2 is available, or a sibling checkout when co-developing) and this package
 editable without resolving a published `rextio-numpy` wheel over the tree:
 
 ```bash
 uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python "rextio>=0.1.1,<0.2"
+uv pip install --python .venv/bin/python "rextio>=0.1.2,<0.2"
 # or, when co-developing core: uv pip install --python .venv/bin/python -e path/to/rextio
 uv pip install --python .venv/bin/python --no-deps -e .
 uv pip install --python .venv/bin/python pytest ruff mypy

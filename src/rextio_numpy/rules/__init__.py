@@ -12,8 +12,8 @@ whole-array float64 ``mean``, plus literal-axis ``sum``/``mean``/``max``/``min``
 rank-1 float32 max/min, and int64 mean stay fallback) — plus the explicit
 exclusions around it.
 
-All records are ``experimental`` (plugin API 1.2, rextio 0.1.1 line with core
-API 1.2 claim metadata). Records with outcome ``native`` carry
+All records are ``experimental`` (plugin API 1.2, requires ``rextio>=0.1.2``
+with core API 1.2 claim metadata). Records with outcome ``native`` carry
 ``verified=True``: their lowering is certified via the core plugin
 certification kit (``rextio.plugins.testing``) against CPython NumPy, with the
 divergences documented per rule in ``constraint``. Records with outcome

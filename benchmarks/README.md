@@ -1,7 +1,8 @@
 # rextio-numpy honest benchmark suite
 
-Public, reproducible, **explicitly honest** fallback-vs-native benchmarks for
-the currently released **F64Arr1** surface of `rextio-numpy`.
+Public, reproducible, **explicitly honest** fallback-vs-native benchmarks for a
+fixed **F64Arr1** scenario subset of `rextio-numpy` (independent of the full
+released surface).
 
 This package is **not** a thin wrapper around core `rextio bench`. Core bench
 cannot generate NumPy array arguments and reports a single in-process mean, so
@@ -41,8 +42,8 @@ not in the fixture body.
 
 ## What is measured
 
-Exactly four pre-registered scenarios (F64Arr1 only — no dependency on future
-type counts):
+Exactly four pre-registered scenarios (fixed F64Arr1 subset — not a full
+released-surface inventory):
 
 | id | intent |
 |---|---|
