@@ -47,7 +47,7 @@ type counts):
 | id | intent |
 |---|---|
 | `small_elementwise` | Small-array elementwise workload (`a + b`) |
-| `multi_op_chain` | Multi-op chain `(a + b) * (a - b)`, labeled **CURRENTLY UNFUSED**, measured as-is |
+| `multi_op_chain` | Multi-op chain `(a + b) * (a - b)`, labeled **FUSED** only after fixture asserts `elementwise-chain-fusion` + `__rxtnp_echain_` in generated source |
 | `mixed_control_flow` | Loop + elementwise adds (control flow around array ops) |
 | `large_dot_blas_control` | Large 1-D `numpy.dot` control — expected **BLAS-dominated on NumPy**, included to show **native losses** when they occur |
 

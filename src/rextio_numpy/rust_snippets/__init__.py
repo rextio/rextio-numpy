@@ -42,6 +42,12 @@ from rextio_numpy.rust_snippets.elementwise import (
     fmt_shape_helper,
     shared_broadcast_helpers,
 )
+from rextio_numpy.rust_snippets.fusion import (
+    build_tree_plan,
+    fusion_call_name,
+    fusion_helper,
+    fusion_helpers_bundle,
+)
 from rextio_numpy.rust_snippets.linear import dot1, dot_call_name, dot_typed
 from rextio_numpy.rust_snippets.reductions import (
     axis_call_name,
@@ -60,6 +66,7 @@ __all__ = [
     "axis_call_name",
     "axis_typed",
     "broadcast_shape_helper",
+    "build_tree_plan",
     "dot1",
     "dot_call_name",
     "dot_typed",
@@ -73,6 +80,9 @@ __all__ = [
     "elementwise_sa",
     "elementwise_sa_typed",
     "fmt_shape_helper",
+    "fusion_call_name",
+    "fusion_helper",
+    "fusion_helpers_bundle",
     "mean1",
     "mean_call_name",
     "mean_typed",

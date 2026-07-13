@@ -8,14 +8,15 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: Wave 1 + Wave 2 literal-axis surface (this branch)
+## Status: Wave 1 + Wave 2 (literal-axis + elementwise fusion) surface
 
 This repository branch is the **unreleased 0.1.1 development line** for
 `rextio-numpy`. It implements **plugin API 1.2** end to end: the annotation
 vocabulary, the deterministic `claim` pass (including keyword/literal axis
-metadata from core API 1.2), `lower()` emission to Rust via the `ndarray`
-crate, and pinned crate injection (rust-numpy `numpy =0.29.0`; ndarray via
-its re-export).
+metadata and structured `ClaimExpr` trees from core API 1.2), `lower()`
+emission to Rust via the `ndarray` crate, multi-op elementwise chain fusion
+via `operand_mode="leaves"`, and pinned crate injection (rust-numpy
+`numpy =0.29.0`; ndarray via its re-export).
 
 **Release boundary:** core Rextio **0.1.1 was released 2026-07-12 and is on
 PyPI**; this branch expects a core build that provides **plugin API 1.2**
@@ -75,6 +76,14 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   - Empty max/min reduced dimension → `ValueError` with NumPy-compatible text
   - Empty mean value semantics match; native leg omits NumPy's
     `RuntimeWarning` (documented divergence) (`RXTP-NUMPY-004`)
+- **Elementwise chain fusion** (binary-op trees of **2–8** pure array-name
+  binops, same dtype, ranks 1–2; f64/f32 `+ - * /`, i64 `+ - *` only):
+  claimed with `operand_mode="leaves"` under
+  `rextio-numpy/elementwise-chain-fusion` so core subsumes descendant
+  per-op claims. One fused helper: LTR postorder broadcast validation,
+  leaf views only, one output allocation/data pass, AST evaluation order
+  preserved (i64 wrapping at every intermediate). Out-of-scope trees keep
+  ordinary per-op elementwise (`RXTP-NUMPY-005`).
 
 Shape/length mismatches raise `ValueError` with NumPy's exact messages.
 int64 `+`, `-`, `*`, `sum`, and `dot` use **wraparound** arithmetic matching
@@ -94,6 +103,7 @@ invalid ops such as `+inf + -inf`.
 | `numpy.dot(a, b)` on same-dtype 1-D f64/i64 (module-call; not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
 | Whole-array `numpy.sum` on f64/i64 ranks 1–2; `numpy.mean` on f64 ranks 1–2 (module-call, no kwargs) | native (verified) | RXTP-NUMPY-003 |
 | Literal-axis `numpy.sum/mean/max/min(a, axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
+| Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
 | Operand types outside the claimed set (incl. f32 sum/mean/dots, rank-1 f32 max/min, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |

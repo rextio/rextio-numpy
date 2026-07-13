@@ -18,10 +18,16 @@ import pytest
 
 from benchmarks import REPORT_SCHEMA_VERSION
 from benchmarks.fixture import (
+    FUSION_HELPER_PREFIX,
+    FUSION_RULE_ID,
     FixtureBuildResult,
     extract_function_routes,
+    function_body_calls_fusion_helper,
+    function_has_fusion_claim,
     is_natively_served,
     preflight_tools,
+    scenario_fusion_label_state,
+    verify_multi_op_chain_fusion,
     verify_native_targets,
     write_fixture_project,
 )
@@ -236,12 +242,215 @@ class TestScenarioRegistry:
             "large_dot_blas_control",
         ]
 
-    def test_unfused_and_blas_labels(self) -> None:
+    def test_fused_and_blas_labels(self) -> None:
         chain = scenario_by_id("multi_op_chain")
-        assert "unfused" in chain.labels
-        assert any("UNFUSED" in n for n in chain.notes)
+        assert "fused" in chain.labels
+        assert "unfused" not in chain.labels
+        assert scenario_fusion_label_state(list(chain.labels), list(chain.notes)) == "fused"
+        assert not any("UNFUSED" in n for n in chain.notes)
+        assert "elementwise-chain-fusion" in " ".join(chain.notes)
         dot = scenario_by_id("large_dot_blas_control")
         assert "blas-control" in dot.labels
+
+
+class TestMultiOpChainFusionVerification:
+    """Focused unit coverage for fixture fusion honesty gates."""
+
+    QUAL = "np_bench.kernels.multi_op_chain"
+    MANGLED = "np_bench__kernels__multi_op_chain"
+
+    def _check_report(self, *, rule_id: str, operand_mode: str | None) -> dict[str, Any]:
+        claim: dict[str, Any] = {"rule_id": rule_id}
+        if operand_mode is not None:
+            claim["operand_mode"] = operand_mode
+        return {
+            "modules": [
+                {
+                    "functions": [
+                        {
+                            "qualname": self.QUAL,
+                            "plugin_claims": [claim],
+                        }
+                    ]
+                }
+            ]
+        }
+
+    def _write_rust(self, root: Path, body: str) -> None:
+        gen = root / ".rextio" / "generated" / "rust" / "src"
+        gen.mkdir(parents=True)
+        (gen / "lib.rs").write_text(body, encoding="utf-8")
+
+    def test_happy_path_target_function_calls_echain(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        self._write_rust(
+            root,
+            f"""
+fn {FUSION_HELPER_PREFIX}demo(a: &Array1<f64>, b: &Array1<f64>) -> Array1<f64> {{ a.clone() }}
+fn {self.MANGLED}(a: Array1<f64>, b: Array1<f64>) -> PyResult<Array1<f64>> {{
+    Ok({FUSION_HELPER_PREFIX}demo(&a, &b)?)
+}}
+""",
+        )
+        report = self._check_report(rule_id=FUSION_RULE_ID, operand_mode="leaves")
+        assert function_has_fusion_claim(report, self.QUAL)
+        assert function_body_calls_fusion_helper(
+            root, qualname=self.QUAL, function_name="multi_op_chain"
+        )
+        problems = verify_multi_op_chain_fusion(
+            check_report=report,
+            project_root=root,
+            scenarios=[scenario_by_id("multi_op_chain")],
+        )
+        assert problems == []
+
+    def test_decoy_helper_in_another_function(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        self._write_rust(
+            root,
+            f"""
+fn {FUSION_HELPER_PREFIX}demo() {{}}
+fn np_bench__kernels__other(a: Array1<f64>) -> PyResult<Array1<f64>> {{
+    Ok({FUSION_HELPER_PREFIX}demo())
+}}
+fn {self.MANGLED}(a: Array1<f64>, b: Array1<f64>) -> PyResult<Array1<f64>> {{
+    Ok(__rxtnp_add1_aa(&a, &b)?)
+}}
+""",
+        )
+        report = self._check_report(rule_id=FUSION_RULE_ID, operand_mode="leaves")
+        problems = verify_multi_op_chain_fusion(
+            check_report=report,
+            project_root=root,
+            scenarios=[scenario_by_id("multi_op_chain")],
+        )
+        assert any("function body does not call" in p for p in problems)
+
+    def test_helper_definition_without_target_call(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        self._write_rust(
+            root,
+            f"""
+fn {FUSION_HELPER_PREFIX}demo() {{}}
+fn {self.MANGLED}(a: Array1<f64>, b: Array1<f64>) -> PyResult<Array1<f64>> {{
+    Ok(__rxtnp_add1_aa(&a, &b)?)
+}}
+""",
+        )
+        report = self._check_report(rule_id=FUSION_RULE_ID, operand_mode="leaves")
+        assert not function_body_calls_fusion_helper(
+            root, qualname=self.QUAL, function_name="multi_op_chain"
+        )
+        problems = verify_multi_op_chain_fusion(
+            check_report=report,
+            project_root=root,
+            scenarios=[scenario_by_id("multi_op_chain")],
+        )
+        assert any("function body does not call" in p for p in problems)
+
+    def test_missing_claim(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        self._write_rust(
+            root,
+            f"""
+fn {self.MANGLED}(a: Array1<f64>, b: Array1<f64>) -> PyResult<Array1<f64>> {{
+    Ok({FUSION_HELPER_PREFIX}demo(&a, &b)?)
+}}
+""",
+        )
+        report = {
+            "modules": [
+                {
+                    "functions": [
+                        {
+                            "qualname": self.QUAL,
+                            "plugin_claims": [{"rule_id": "rextio-numpy/elementwise-float64"}],
+                        }
+                    ]
+                }
+            ]
+        }
+        problems = verify_multi_op_chain_fusion(
+            check_report=report,
+            project_root=root,
+            scenarios=[scenario_by_id("multi_op_chain")],
+        )
+        assert any("lacks" in p and FUSION_RULE_ID in p for p in problems)
+
+    def test_missing_leaves_mode(self, tmp_path: Path) -> None:
+        root = tmp_path / "proj"
+        self._write_rust(
+            root,
+            f"""
+fn {self.MANGLED}() {{ Ok({FUSION_HELPER_PREFIX}x()) }}
+""",
+        )
+        report = self._check_report(rule_id=FUSION_RULE_ID, operand_mode=None)
+        assert not function_has_fusion_claim(report, self.QUAL)
+        problems = verify_multi_op_chain_fusion(
+            check_report=report,
+            project_root=root,
+            scenarios=[scenario_by_id("multi_op_chain")],
+        )
+        assert any("operand_mode=leaves" in p for p in problems)
+
+    def test_unfused_only_label_skips_evidence(self, tmp_path: Path) -> None:
+        from benchmarks.scenarios import ScenarioSpec
+
+        root = tmp_path / "proj"
+        self._write_rust(root, "fn nothing() {}\n")
+        unfused = ScenarioSpec(
+            id="multi_op_chain",
+            name="unfused",
+            description="",
+            function_name="multi_op_chain",
+            compare_kind="array",
+            size={"n": 1},
+            labels=["elementwise", "chain", "unfused"],
+            notes=["CURRENTLY UNFUSED — measured as-is."],
+        )
+        assert scenario_fusion_label_state(list(unfused.labels), list(unfused.notes)) == "unfused"
+        problems = verify_multi_op_chain_fusion(
+            check_report=self._check_report(rule_id=FUSION_RULE_ID, operand_mode="leaves"),
+            project_root=root,
+            scenarios=[unfused],
+        )
+        assert problems == []
+
+    def test_contradictory_fused_and_unfused_labels(self, tmp_path: Path) -> None:
+        from benchmarks.scenarios import ScenarioSpec
+
+        root = tmp_path / "proj"
+        self._write_rust(root, "fn nothing() {}\n")
+        bad = ScenarioSpec(
+            id="multi_op_chain",
+            name="conflict",
+            description="",
+            function_name="multi_op_chain",
+            compare_kind="array",
+            size={"n": 1},
+            labels=["fused", "unfused"],
+            notes=["FUSED and also CURRENTLY UNFUSED"],
+        )
+        assert scenario_fusion_label_state(list(bad.labels), list(bad.notes)) == "conflict"
+        problems = verify_multi_op_chain_fusion(
+            check_report=self._check_report(rule_id=FUSION_RULE_ID, operand_mode="leaves"),
+            project_root=root,
+            scenarios=[bad],
+        )
+        assert any("contradictory" in p for p in problems)
+
+    def test_unfused_note_not_classified_as_fused(self) -> None:
+        # Substring trap: "UNFUSED" contains "FUSED".
+        assert (
+            scenario_fusion_label_state(
+                [],
+                ["CURRENTLY UNFUSED — no fusion claim is made or asserted."],
+            )
+            == "unfused"
+        )
+        assert scenario_fusion_label_state(["unfused"], []) == "unfused"
+        assert scenario_fusion_label_state(["fused"], ["FUSED — helper call asserted."]) == "fused"
 
     def test_kernels_source_uses_f64arr1_only(self) -> None:
         assert "F64Arr1" in KERNELS_SOURCE
@@ -1177,13 +1386,16 @@ class TestReports:
                 ),
                 ScenarioResult(
                     id="multi_op_chain",
-                    name="Multi-op elementwise chain (CURRENTLY UNFUSED)",
+                    name="Multi-op elementwise chain (FUSED)",
                     description="chain",
                     status="ok",
                     qualname="np_bench.kernels.multi_op_chain",
                     size={"n": 4096},
-                    labels=["elementwise", "chain", "unfused"],
-                    notes=["CURRENTLY UNFUSED — no fusion claim is made or asserted."],
+                    labels=["elementwise", "chain", "fused"],
+                    notes=[
+                        "FUSED — fixture build asserts check-report claim "
+                        "rextio-numpy/elementwise-chain-fusion."
+                    ],
                     fallback=_leg("fallback", [0.02, 0.02]),
                     native=_leg("native", [0.01, 0.01]),
                     speedup=2.0,
@@ -1218,7 +1430,8 @@ class TestReports:
         assert "< 1" in md or "<1" in md.replace(" ", "")
         assert "0.2500x" in md
         assert "native was **slower**" in md
-        assert "CURRENTLY UNFUSED" in md
+        assert "FUSED" in md
+        assert "CURRENTLY UNFUSED" not in md
         assert "BLAS" in md
         assert "Skipped" in md
         assert "cargo not found" in md

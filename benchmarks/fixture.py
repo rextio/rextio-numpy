@@ -123,6 +123,207 @@ def is_natively_served(route_info: dict[str, Any] | None) -> bool:
     return status == "accepted" and (route == "native-direct" or route.startswith("native-plugin:"))
 
 
+FUSION_RULE_ID = "rextio-numpy/elementwise-chain-fusion"
+FUSION_HELPER_PREFIX = "__rxtnp_echain_"
+
+
+def function_has_fusion_claim(check_report: dict[str, Any] | None, qualname: str) -> bool:
+    """Return whether *qualname* has an outer leaves-mode fusion claim."""
+    if not check_report:
+        return False
+    for module in check_report.get("modules", ()) or ():
+        for function in module.get("functions", ()) or ():
+            if function.get("qualname") != qualname:
+                continue
+            for claim in function.get("plugin_claims", ()) or ():
+                if claim.get("rule_id") == FUSION_RULE_ID:
+                    mode = claim.get("operand_mode") or "direct"
+                    return mode == "leaves"
+            return False
+    return False
+
+
+def scenario_fusion_label_state(labels: list[str], notes: list[str]) -> str:
+    """Return authoritative fusion label state for honesty validation.
+
+    Returns one of: ``fused``, ``unfused``, ``none``, ``conflict``.
+
+    Labels are exclusive: fused only when label ``fused`` is present and
+    ``unfused`` is absent. Notes use ``UNFUSED`` before ``FUSED`` so that
+    the substring ``UNFUSED`` never counts as a fused note.
+    """
+    has_fused_label = "fused" in labels
+    has_unfused_label = "unfused" in labels
+    if has_fused_label and has_unfused_label:
+        return "conflict"
+
+    note_fused = False
+    note_unfused = False
+    for note in notes:
+        if "UNFUSED" in note:
+            note_unfused = True
+        elif "FUSED" in note:
+            note_fused = True
+    if note_fused and note_unfused:
+        return "conflict"
+    if has_fused_label and note_unfused:
+        return "conflict"
+    if has_unfused_label and note_fused:
+        return "conflict"
+
+    if has_fused_label or (note_fused and not has_unfused_label):
+        # Authoritative fused: label fused without unfused, or fused note alone.
+        if has_unfused_label:
+            return "conflict"
+        return "fused"
+    if has_unfused_label or note_unfused:
+        return "unfused"
+    return "none"
+
+
+def rust_function_name_for_qualname(qualname: str) -> str:
+    """Core mangling: ``pkg.mod.fn`` → ``pkg__mod__fn``."""
+    return qualname.replace(".", "__")
+
+
+def _extract_balanced_fn_body(source: str, fn_name: str) -> str | None:
+    """Return the body of ``fn {fn_name}...`` including braces, or None if ambiguous."""
+    import re
+
+    # Match `fn name` not as a prefix of a longer identifier.
+    pattern = re.compile(rf"\bfn\s+{re.escape(fn_name)}\b")
+    matches = list(pattern.finditer(source))
+    if len(matches) != 1:
+        return None  # missing or ambiguous
+    m = matches[0]
+    brace_at = source.find("{", m.end())
+    if brace_at < 0:
+        return None
+    depth = 0
+    for i in range(brace_at, len(source)):
+        ch = source[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return source[brace_at : i + 1]
+    return None
+
+
+def function_body_calls_fusion_helper(
+    project_root: Path,
+    *,
+    qualname: str,
+    function_name: str,
+) -> bool:
+    """Report whether the generated Rust fn for *qualname* calls ``__rxtnp_echain_``.
+
+    Locates the mangled function body and requires an echain *call* inside it.
+    A helper definition elsewhere (or a call in another function) is not enough.
+    Fails closed on missing/ambiguous function location.
+    """
+    mangled = rust_function_name_for_qualname(qualname)
+    # Also accept a trailing-only match used by some layouts.
+    candidates = (mangled, function_name)
+    root = Path(project_root) / ".rextio"
+    search_roots = (root / "generated", root / "build")
+    bodies_found = 0
+    call_found = False
+    for rust_root in search_roots:
+        if not rust_root.is_dir():
+            continue
+        for path in rust_root.rglob("*.rs"):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for name in candidates:
+                body = _extract_balanced_fn_body(text, name)
+                if body is None:
+                    continue
+                bodies_found += 1
+                # Require a call site, not merely a string in a comment-free form.
+                if f"{FUSION_HELPER_PREFIX}" in body and "(" in body:
+                    # e.g. __rxtnp_echain_...(
+                    import re
+
+                    if re.search(rf"{re.escape(FUSION_HELPER_PREFIX)}\w*\s*\(", body):
+                        call_found = True
+    # Exactly one located body across the tree is ideal; if multiple candidate
+    # names hit, still accept only when a call was found and no pure ambiguity
+    # without a call. Fail closed when nothing located.
+    if bodies_found == 0:
+        return False
+    return call_found
+
+
+def generated_source_has_fusion_helper(project_root: Path) -> bool:
+    """Scan for any echain helper in the project (not function-scoped).
+
+    Prefer :func:`function_body_calls_fusion_helper` for honesty gates.
+    Kept for debugging only; honesty validation does not use this alone.
+    """
+    root = Path(project_root) / ".rextio"
+    search_roots = (root / "generated", root / "build")
+    for rust_root in search_roots:
+        if not rust_root.is_dir():
+            continue
+        for path in rust_root.rglob("*.rs"):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if FUSION_HELPER_PREFIX in text:
+                return True
+    return False
+
+
+def verify_multi_op_chain_fusion(
+    check_report: dict[str, Any] | None,
+    project_root: Path,
+    scenarios: list[ScenarioSpec],
+) -> list[str]:
+    """Fail closed when multi_op_chain is labeled FUSED without fusion evidence.
+
+    Requires a check-report fusion claim and an ``__rxtnp_echain_`` *call*
+    inside the generated Rust function body for that scenario (not merely a
+    helper definition elsewhere).
+    """
+    problems: list[str] = []
+    chain_specs = [
+        s for s in scenarios if s.id == "multi_op_chain" or s.function_name == "multi_op_chain"
+    ]
+    if not chain_specs:
+        return problems
+    for spec in chain_specs:
+        state = scenario_fusion_label_state(list(spec.labels), list(spec.notes))
+        if state == "conflict":
+            problems.append(
+                f"{spec.qualname} has contradictory fusion labels/notes "
+                f"(labels={list(spec.labels)!r}, notes={list(spec.notes)!r})"
+            )
+            continue
+        if state != "fused":
+            continue
+        if not function_has_fusion_claim(check_report, spec.qualname):
+            problems.append(
+                f"{spec.qualname} is labeled FUSED but check report lacks "
+                f"rule_id={FUSION_RULE_ID!r} with operand_mode=leaves"
+            )
+        if not function_body_calls_fusion_helper(
+            project_root,
+            qualname=spec.qualname,
+            function_name=spec.function_name,
+        ):
+            problems.append(
+                f"{spec.qualname} is labeled FUSED but its generated Rust "
+                f"function body does not call {FUSION_HELPER_PREFIX!r} "
+                "(helper definition elsewhere is not sufficient)"
+            )
+    return problems
+
+
 def verify_native_targets(
     check_report: dict[str, Any] | None,
     scenarios: list[ScenarioSpec],
@@ -245,6 +446,12 @@ def build_fixture(
         )
 
     routes, problems = verify_native_targets(check_report, scenarios)
+    fusion_problems = verify_multi_op_chain_fusion(
+        check_report=check_report,
+        project_root=project_root,
+        scenarios=scenarios,
+    )
+    problems.extend(fusion_problems)
     if problems:
         return FixtureBuildResult(
             project_root=project_root,

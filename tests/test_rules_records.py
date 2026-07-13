@@ -54,6 +54,7 @@ def test_native_records_broadened_but_ids_stable() -> None:
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
         "rextio-numpy/reduction-axis",
+        "rextio-numpy/elementwise-chain-fusion",
     }
     elem = by_id["rextio-numpy/elementwise-float64"]
     assert elem.diagnostic_code == "RXTP-NUMPY-001"
@@ -81,6 +82,12 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "RuntimeWarning" in axis.constraint
     assert "no identity" in axis.constraint
     assert axis.verified is True
+    fusion = by_id["rextio-numpy/elementwise-chain-fusion"]
+    assert fusion.diagnostic_code == "RXTP-NUMPY-005"
+    assert "2–8" in fusion.scope.pattern or "2-8" in fusion.scope.pattern
+    assert "operand_mode" in fusion.scope.pattern or "leaves" in fusion.scope.pattern
+    assert "wrapping" in fusion.constraint.lower()
+    assert fusion.verified is True
 
 
 def test_fallback_ndim_is_rank_gt_2() -> None:
@@ -97,6 +104,8 @@ def test_rust_snippets_package_public_api() -> None:
     assert callable(rust_snippets.elementwise_aa)
     assert callable(rust_snippets.elementwise_as)
     assert callable(rust_snippets.elementwise_sa)
+    assert callable(rust_snippets.fusion_call_name)
+    assert callable(rust_snippets.fusion_helpers_bundle)
     assert rust_snippets.OP_SYMBOLS == {"add": "+", "sub": "-", "mul": "*", "div": "/"}
     assert "fn __rxtnp_dot1" in rust_snippets.dot1()
     assert "fn __rxtnp_sum1" in rust_snippets.sum1()

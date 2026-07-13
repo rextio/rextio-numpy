@@ -5,7 +5,7 @@ from __future__ import annotations
 from rextio.config.schema import RextioConfig
 from rextio.plugins.api import ClaimResult, ClaimSite, NotCovered
 
-from rextio_numpy.claim import binops, linear, reductions
+from rextio_numpy.claim import binops, fusion, linear, reductions
 
 __all__ = ["claim"]
 
@@ -15,14 +15,23 @@ def claim(site: ClaimSite, config: RextioConfig) -> ClaimResult:
 
     Deterministic by contract: the decision is a pure function of
     ``(site.kind, site.target, site.operand_types, site.keywords,
-    site.operand_literals)``. Covered targets with unresolved operands return
-    :class:`NotCovered`; covered targets with known-but-unsupported operand
-    types return :class:`Rejected` with RXTP-NUMPY-010 guidance; unsupported
-    call shapes return :class:`NotCovered`; everything else is
-    :class:`NotCovered`.
+    site.operand_literals, site.expression)``. Covered targets with
+    unresolved operands return :class:`NotCovered`; covered targets with
+    known-but-unsupported operand types return :class:`Rejected` with
+    RXTP-NUMPY-010 guidance; multi-op pure-array trees may claim as
+    leaves-mode fusion (``rextio-numpy/elementwise-chain-fusion``) before the
+    ordinary per-op elementwise path; unsupported call shapes return
+    :class:`NotCovered`; everything else is :class:`NotCovered`.
     """
     del config
-    for handler in (linear.try_claim, reductions.try_claim, binops.try_claim):
+    # Fusion must run before ordinary elementwise so eligible multi-op roots
+    # claim with operand_mode="leaves" and subsume descendant binops.
+    for handler in (
+        linear.try_claim,
+        reductions.try_claim,
+        fusion.try_claim,
+        binops.try_claim,
+    ):
         result = handler(site)
         if result is not None:
             return result

@@ -359,6 +359,69 @@ def sum_f32_2d_axis0(a: F32Arr2) -> F32Arr1:
 
 def mean_i64_2d_axis0(a: I64Arr2) -> F64Arr1:
     return np.mean(a, axis=0)
+
+
+# --- Wave 2 elementwise chain fusion surface ---
+
+def fuse_multi_op(a: F64Arr1, b: F64Arr1) -> F64Arr1:
+    return (a + b) * (a - b)
+
+
+def fuse_chain_add(a: F64Arr1, b: F64Arr1, c: F64Arr1) -> F64Arr1:
+    return a + b + c
+
+
+def fuse_noncomm(a: F64Arr1, b: F64Arr1, c: F64Arr1) -> F64Arr1:
+    return (a - b) / (c + a)
+
+
+def fuse_f32(a: F32Arr1, b: F32Arr1) -> F32Arr1:
+    return (a + b) * (a - b)
+
+
+def fuse_i64(a: I64Arr1, b: I64Arr1) -> I64Arr1:
+    return (a + b) * (a - b)
+
+
+def fuse_mixed_rank(a: F64Arr1, b: F64Arr2) -> F64Arr2:
+    return (a + b) * (a - b)
+
+
+def fuse_rank2(a: F64Arr2, b: F64Arr2) -> F64Arr2:
+    return (a + b) * (a - b)
+
+
+def fuse_balanced(a: F64Arr1, b: F64Arr1, c: F64Arr1, d: F64Arr1) -> F64Arr1:
+    return (a + b) * (c - d)
+
+
+def fuse_max_bound_f64(
+    a0: F64Arr1,
+    a1: F64Arr1,
+    a2: F64Arr1,
+    a3: F64Arr1,
+    a4: F64Arr1,
+    a5: F64Arr1,
+    a6: F64Arr1,
+    a7: F64Arr1,
+    a8: F64Arr1,
+) -> F64Arr1:
+    # Certified maximum: 8 binops / 9 name-leaf occurrences (no Zip path).
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8
+
+
+def fuse_max_bound_i64(
+    a0: I64Arr1,
+    a1: I64Arr1,
+    a2: I64Arr1,
+    a3: I64Arr1,
+    a4: I64Arr1,
+    a5: I64Arr1,
+    a6: I64Arr1,
+    a7: I64Arr1,
+    a8: I64Arr1,
+) -> I64Arr1:
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8
 """
 
 
@@ -1572,3 +1635,335 @@ def test_wave2_strided_axis0_matches_numpy(project: CertifiedProject) -> None:
     np.testing.assert_allclose(
         m0(strided), np.mean(strided, axis=0), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
     )
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 elementwise chain fusion certification
+# ---------------------------------------------------------------------------
+
+
+def test_wave2_fusion_f64_multi_op_exact(project: CertifiedProject) -> None:
+    check = _require_native(project, "fuse_multi_op")
+    a = np.array([1.0, -2.5, 3.25, 0.5])
+    b = np.array([4.0, 0.125, -6.5, 2.0])
+    result = check(a, b)
+    np.testing.assert_array_equal(result, (a + b) * (a - b))
+    # No input mutation.
+    np.testing.assert_array_equal(a, np.array([1.0, -2.5, 3.25, 0.5]))
+    np.testing.assert_array_equal(b, np.array([4.0, 0.125, -6.5, 2.0]))
+
+
+def test_wave2_fusion_f32_and_i64(project: CertifiedProject) -> None:
+    f32 = _require_native(project, "fuse_f32")
+    i64 = _require_native(project, "fuse_i64")
+    a32 = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+    b32 = np.array([0.5, -1.0, 4.0], dtype=np.float32)
+    np.testing.assert_array_equal(f32(a32, b32), (a32 + b32) * (a32 - b32))
+    a64 = np.array([10, -3, 7], dtype=np.int64)
+    b64 = np.array([2, 5, -1], dtype=np.int64)
+    np.testing.assert_array_equal(i64(a64, b64), (a64 + b64) * (a64 - b64))
+
+
+def test_wave2_fusion_mixed_rank_and_rank2(project: CertifiedProject) -> None:
+    mixed = _require_native(project, "fuse_mixed_rank")
+    r2 = _require_native(project, "fuse_rank2")
+    a1 = np.array([1.0, 2.0, 3.0])
+    b2 = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    np.testing.assert_array_equal(mixed(a1, b2), (a1 + b2) * (a1 - b2))
+    a2 = np.array([[1.0, 2.0], [3.0, 4.0]])
+    b2b = np.array([[0.5, 1.5], [-1.0, 2.0]])
+    np.testing.assert_array_equal(r2(a2, b2b), (a2 + b2b) * (a2 - b2b))
+
+
+def test_wave2_fusion_length_one_and_zero(project: CertifiedProject) -> None:
+    check = _require_native(project, "fuse_multi_op")
+    single = np.array([2.0])
+    many = np.array([1.0, 4.0, 9.0])
+    check(single, many)
+    check(many, single)
+    empty = np.array([], dtype=np.float64)
+    out = check(empty, empty)
+    assert isinstance(out, np.ndarray) and out.shape == (0,)
+    # length-1 vs empty broadcast
+    check(single, empty)
+    check(empty, single)
+
+
+def test_wave2_fusion_balanced_and_noncommutative(project: CertifiedProject) -> None:
+    bal = _require_native(project, "fuse_balanced")
+    non = _require_native(project, "fuse_noncomm")
+    a = np.array([1.0, 2.0, 3.0])
+    b = np.array([4.0, 5.0, 6.0])
+    c = np.array([0.5, 1.5, 2.5])
+    d = np.array([-1.0, 0.0, 1.0])
+    np.testing.assert_array_equal(bal(a, b, c, d), (a + b) * (c - d))
+    np.testing.assert_array_equal(non(a, b, c), (a - b) / (c + a))
+
+
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
+def test_wave2_fusion_nan_inf_signed_zero(project: CertifiedProject) -> None:
+    check = _require_native(project, "fuse_multi_op")
+    a = np.array([np.nan, np.inf, -np.inf, 0.0, -0.0])
+    b = np.array([1.0, 2.0, 3.0, -0.0, 0.0])
+    result = check(a, b)
+    expected = (a + b) * (a - b)
+    assert np.array_equal(result, expected, equal_nan=True)
+
+
+def test_wave2_fusion_i64_overflow_intermediate(project: CertifiedProject) -> None:
+    """i64 wrapping at intermediate nodes (e.g. near max int64)."""
+    check = _require_native(project, "fuse_i64")
+    big = np.array([2**62, -(2**62), 2**63 - 1], dtype=np.int64)
+    other = np.array([2**62, 2**62, 2], dtype=np.int64)
+    # NumPy release builds wrap; both legs must agree.
+    result = check(big, other)
+    np.testing.assert_array_equal(result, (big + other) * (big - other))
+
+
+def test_wave2_fusion_broadcast_mismatch_positions(project: CertifiedProject) -> None:
+    """Three mismatch positions: left child, right child, root — priority order."""
+    # (a + b) * (c - d) with independent shapes so each internal op can fail first.
+    bal = _require_native(project, "fuse_balanced")
+    # Left child mismatch: a+b fails first.
+    a = np.zeros(3)
+    b = np.zeros(4)
+    c = np.zeros(3)
+    d = np.zeros(3)
+    try:
+        (a + b) * (c - d)
+    except ValueError as exc:
+        expected_left = str(exc)
+    else:  # pragma: no cover
+        pytest.fail("numpy did not raise on left child mismatch")
+    with pytest.raises(ValueError) as excinfo:
+        bal(a, b, c, d)
+    assert str(excinfo.value) == expected_left
+
+    # Right child mismatch (left ok): c-d fails.
+    a = np.zeros(3)
+    b = np.zeros(3)
+    c = np.zeros(3)
+    d = np.zeros(5)
+    try:
+        (a + b) * (c - d)
+    except ValueError as exc:
+        expected_right = str(exc)
+    else:  # pragma: no cover
+        pytest.fail("numpy did not raise on right child mismatch")
+    with pytest.raises(ValueError) as excinfo:
+        bal(a, b, c, d)
+    assert str(excinfo.value) == expected_right
+
+    # Root mismatch: children succeed, root fails.
+    # (a+b) shape (3,), (c-d) shape (4,) when a,b len 3 and c,d len 4.
+    a = np.zeros(3)
+    b = np.zeros(3)
+    c = np.zeros(4)
+    d = np.zeros(4)
+    try:
+        (a + b) * (c - d)
+    except ValueError as exc:
+        expected_root = str(exc)
+    else:  # pragma: no cover
+        pytest.fail("numpy did not raise on root mismatch")
+    with pytest.raises(ValueError) as excinfo:
+        bal(a, b, c, d)
+    assert str(excinfo.value) == expected_root
+    # Trailing space is part of NumPy's message.
+    assert str(excinfo.value).endswith(" ")
+
+
+def test_wave2_fusion_strided_inputs(project: CertifiedProject) -> None:
+    check = checker(
+        project,
+        "fuse_multi_op",
+        equals=array_equals,
+        args_equals=array_equals,
+        copy_args=_stride_preserving_copy,
+    )
+    base_a = np.array([1.0, 99.0, 2.0, 99.0, 3.0, 99.0])
+    base_b = np.array([4.0, 99.0, 5.0, 99.0, 6.0, 99.0])
+    a = base_a[::2]
+    b = base_b[::2]
+    assert not a.flags["C_CONTIGUOUS"]
+    result = check(a, b)
+    np.testing.assert_array_equal(result, (a + b) * (a - b))
+
+
+@settings(max_examples=20, deadline=None)
+@given(pair=paired_arrays())
+def test_wave2_fusion_hypothesis_f64(project: CertifiedProject, pair) -> None:
+    a, b = pair
+    check = _require_native(project, "fuse_multi_op")
+    check(a, b)
+
+
+@settings(max_examples=15, deadline=None)
+@given(
+    a=npst.arrays(
+        dtype=np.int64,
+        shape=st.integers(0, 16),
+        elements=st.integers(-1000, 1000),
+    ),
+    b=npst.arrays(
+        dtype=np.int64,
+        shape=st.integers(0, 16),
+        elements=st.integers(-1000, 1000),
+    ),
+)
+def test_wave2_fusion_hypothesis_i64(project: CertifiedProject, a, b) -> None:
+    # Only equal-length pairs exercise the happy path without broadcast errors
+    # dominating the example budget.
+    if a.shape != b.shape:
+        return
+    check = _require_native(project, "fuse_i64")
+    check(a, b)
+
+
+def test_wave2_fusion_helper_allocation_evidence() -> None:
+    """Generated helper text: one from_shape_fn pass, zero intermediate ndarrays, no Zip."""
+    from rextio.plugins.api import ClaimExpr
+    from rextio_numpy.claim.fusion import try_match
+    from rextio_numpy.rust_snippets.fusion import build_tree_plan, fusion_helper
+
+    def _leaf(i: int) -> ClaimExpr:
+        return ClaimExpr(
+            kind="leaf",
+            result_type="rextio-numpy/f64-1d",
+            leaf_index=i,
+            leaf_kind="name",
+        )
+
+    expr = ClaimExpr(
+        kind="binop",
+        target="*",
+        result_type="rextio-numpy/f64-1d",
+        children=(
+            ClaimExpr(
+                kind="binop",
+                target="+",
+                result_type="rextio-numpy/f64-1d",
+                children=(_leaf(0), _leaf(1)),
+            ),
+            ClaimExpr(
+                kind="binop",
+                target="-",
+                result_type="rextio-numpy/f64-1d",
+                children=(_leaf(2), _leaf(3)),
+            ),
+        ),
+    )
+    match = try_match(expr)
+    assert match is not None
+    helper = fusion_helper(
+        signature=match.signature,
+        dtype=match.dtype,
+        result_rank=match.result_rank,
+        leaf_ranks=match.leaf_ranks,
+        expression_ops_postorder=match.postorder_ops,
+        tree_plan=build_tree_plan(expr),
+    )
+    assert helper.count("from_shape_fn") == 1
+    assert "Zip::" not in helper
+    assert "map_collect" not in helper
+    assert "to_owned()" not in helper
+    assert "Array::zeros" not in helper
+    # Broadcast views only for leaves (one per leaf).
+    assert helper.count(".broadcast(") == match.leaf_count
+    # Scalar temps for internal non-root nodes.
+    assert "let t0" in helper and "let t1" in helper
+
+
+def test_wave2_fusion_max_bound_f64_compiles_and_matches(project: CertifiedProject) -> None:
+    """8-binop / 9-leaf f64 tree: real Cargo native path matches NumPy."""
+    check = _require_native(project, "fuse_max_bound_f64")
+    arrays = [np.full(8, float(i + 1), dtype=np.float64) for i in range(9)]
+    result = check(*arrays)
+    expected = arrays[0]
+    for other in arrays[1:]:
+        expected = expected + other
+    np.testing.assert_array_equal(result, expected)
+    # Zero-sized max-bound output.
+    empty = [np.zeros(0, dtype=np.float64) for _ in range(9)]
+    out = check(*empty)
+    assert isinstance(out, np.ndarray) and out.shape == (0,)
+
+
+def test_wave2_fusion_max_bound_i64_overflow(project: CertifiedProject) -> None:
+    """8-binop / 9-leaf i64 tree: wrapping intermediates match NumPy release builds."""
+    check = _require_native(project, "fuse_max_bound_i64")
+    # Near i64 extremes so intermediate wrapping is observable.
+    arrays = [
+        np.array([2**62, -(2**62), 2**63 - 1], dtype=np.int64),
+        np.array([2**62, 2**62, 2], dtype=np.int64),
+        np.array([1, -1, 3], dtype=np.int64),
+        np.array([7, 8, 9], dtype=np.int64),
+        np.array([-3, 4, -5], dtype=np.int64),
+        np.array([11, -12, 13], dtype=np.int64),
+        np.array([0, 1, -1], dtype=np.int64),
+        np.array([5, 5, 5], dtype=np.int64),
+        np.array([-2, 2, -2], dtype=np.int64),
+    ]
+    result = check(*arrays)
+    expected = arrays[0]
+    for other in arrays[1:]:
+        expected = expected + other
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_wave2_fusion_max_bound_routes_and_generated_source(project: CertifiedProject) -> None:
+    """Max-bound kernels route through fusion and emit from_shape_fn (not Zip)."""
+    import json
+
+    root = project.project_root
+    check_path = root / ".rextio" / "reports" / "check.json"
+    assert check_path.is_file()
+    report = json.loads(check_path.read_text(encoding="utf-8"))
+    found_fusion = False
+    for module in report.get("modules", ()) or ():
+        for function in module.get("functions", ()) or ():
+            q = function.get("qualname") or ""
+            if not q.endswith("fuse_max_bound_f64"):
+                continue
+            claims = function.get("plugin_claims") or ()
+            assert any(
+                c.get("rule_id") == "rextio-numpy/elementwise-chain-fusion"
+                and (c.get("operand_mode") or "direct") == "leaves"
+                for c in claims
+            ), claims
+            found_fusion = True
+    assert found_fusion, "fuse_max_bound_f64 missing from check report"
+
+    import re
+
+    echain_bodies: list[str] = []
+    for path in (root / ".rextio").rglob("*.rs"):
+        text = path.read_text(encoding="utf-8")
+        if "__rxtnp_echain_" not in text:
+            continue
+        # Extract only fused helper fn bodies (module also holds ordinary Zip helpers).
+        for match in re.finditer(
+            r"fn (__rxtnp_echain_\w+)\([^)]*\)[^{]*\{",
+            text,
+        ):
+            start = match.start()
+            # Naive brace match from the opening '{' of this fn.
+            brace_at = text.find("{", match.end() - 1)
+            depth = 0
+            end = brace_at
+            for i in range(brace_at, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            body = text[start:end]
+            echain_bodies.append(body)
+            assert "from_shape_fn" in body, match.group(1)
+            assert "Zip::" not in body, match.group(1)
+            assert "map_collect" not in body, match.group(1)
+    assert echain_bodies, "no __rxtnp_echain_ helpers found in generated Rust"
+    # Max-bound tree needs 9 leaf broadcasts on at least one helper.
+    assert any(body.count("broadcast(dim)") >= 9 for body in echain_bodies)

@@ -70,10 +70,11 @@ def render_markdown(report: SuiteReport) -> str:
     lines.append("")
 
     honesty = report.honesty or {}
-    if honesty.get("unfused_chain"):
+    fusion_note = honesty.get("fused_chain") or honesty.get("unfused_chain")
+    if fusion_note:
         lines.append("## Fusion policy")
         lines.append("")
-        lines.append(str(honesty["unfused_chain"]))
+        lines.append(str(fusion_note))
         lines.append("")
     if honesty.get("blas_control"):
         lines.append("## BLAS control")
@@ -168,8 +169,23 @@ def _render_scenario_section(s: ScenarioResult) -> list[str]:
     lines.append(f"- **size:** `{s.size}`")
     if s.labels:
         lines.append(f"- **labels:** {', '.join(f'`{x}`' for x in s.labels)}")
-    if "unfused" in s.labels or any("UNFUSED" in n for n in s.notes):
+    # Authoritative labels: never treat substring "FUSED" inside "UNFUSED" as fused.
+    from benchmarks.fixture import scenario_fusion_label_state
+
+    fusion_state = scenario_fusion_label_state(list(s.labels), list(s.notes))
+    if fusion_state == "fused":
+        lines.append(
+            "- **fusion:** FUSED (fixture asserts elementwise-chain-fusion rule + "
+            "`__rxtnp_echain_` call in this function's generated body; "
+            "no speedup claimed from samples)."
+        )
+    elif fusion_state == "unfused":
         lines.append("- **fusion:** CURRENTLY UNFUSED (measured as-is; no fusion claim).")
+    elif fusion_state == "conflict":
+        lines.append(
+            "- **fusion:** CONFLICT (contradictory fused/unfused labels or notes; "
+            "honesty validation fails closed)."
+        )
     if "blas-control" in s.labels:
         lines.append(
             "- **role:** BLAS-dominated NumPy control — native losses are expected "

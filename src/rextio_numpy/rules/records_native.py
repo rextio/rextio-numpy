@@ -182,4 +182,62 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         stability="experimental",
         verified=True,
     ),
+    RuleRecord(
+        id="rextio-numpy/elementwise-chain-fusion",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="binop",
+            pattern=(
+                "binary-op trees of 2–8 element-wise array-array binops whose "
+                "leaves are simple names of same-dtype float64/float32/int64 "
+                "arrays of rank 1 or 2 (ClaimExpr leaf_kind=name; mixed ranks "
+                "under NumPy broadcasting; f64/f32 may use +,-,*,/; i64 may "
+                "use +,-,* only; no scalars/literals/calls/attributes/"
+                "subscripts). Claimed with operand_mode=leaves so core subsumes "
+                "descendant per-op claims."
+            ),
+        ),
+        constraint=(
+            "A pure array-array binary-op tree with 2 through 8 inclusive binop "
+            "nodes, every leaf a simple name with a resolved rextio-numpy array "
+            "type, one identical dtype, and ranks in {1,2}, lowers as one fused "
+            "helper under plugin API 1.2 ClaimExpr + operand_mode=leaves. "
+            "f64/f32 trees may use +,-,*,/; i64 trees may use +,-,* only (i64 "
+            "true division stays on ordinary per-op elementwise, which promotes "
+            "to float64). Out-of-scope trees (1 or ≥9 binops, literals, Python "
+            "scalars, calls, attributes, subscripts, opaque/unresolved leaves, "
+            "mixed dtypes, other ranks) retain ordinary direct per-op "
+            "claim/lowering — a failed fusion match is never a product fallback "
+            "and does not broaden scalar handling. Result type/rank match "
+            "current binop semantics (max leaf rank, same dtype). At lower time "
+            "the plugin consumes ctx.leaf_operands in leaf_index order and the "
+            "frozen ClaimExpr, re-validates invariants, and fails closed on "
+            "malformed metadata. Helper identities are deterministic from a "
+            "canonical tree/dtype/rank signature (never Python hash()). "
+            "Evaluation and rounding order are preserved: one typed temporary "
+            "per internal arithmetic node in left-to-right postorder inside the "
+            "element closure; no reassociation, constant-folding, or FMA; i64 "
+            "uses wrapping_add/wrapping_sub/wrapping_mul at every intermediate. "
+            "Broadcast shapes are validated for each internal binop in the same "
+            "LTR postorder as NumPy, before allocation/arithmetic, so the first "
+            "mismatch and exact trailing-space ValueError shape message match "
+            "existing behavior (including zero dimensions). After validation, "
+            "only leaf views are broadcast; exactly one output ndarray is "
+            "allocated and filled in one data pass (zero intermediate "
+            "ndarrays/collections); zero-sized results are supported. Inputs "
+            "are not mutated. Native elementwise continues to omit NumPy "
+            "RuntimeWarnings (documented divergence)."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-005",
+        guidance=(
+            "Write multi-op element-wise chains as pure array-name binary trees "
+            "(2–8 ops) on same-dtype float64/float32/int64 ranks 1–2 so "
+            "rextio-numpy can fuse them under elementwise-chain-fusion; keep "
+            "scalars, subscripts, and longer/shorter trees on the ordinary "
+            "per-op elementwise path."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
 )

@@ -150,11 +150,12 @@ def test_rule_records_shape() -> None:
     assert all(code.startswith("RXTP-NUMPY-") for code in codes)
     assert all(record.stability == "experimental" for record in records)
     assert all(record.constraint.strip() and record.guidance.strip() for record in records)
-    # The implemented lowering surface: elementwise, dot, whole-array sum/mean,
-    # and literal-axis reductions — all certified with the core kit (verified=True).
+    # The implemented lowering surface: elementwise, fusion, dot, whole-array
+    # sum/mean, and literal-axis reductions — all certified (verified=True).
     native_ids = {record.id for record in records if record.outcome == "native"}
     assert native_ids == {
         "rextio-numpy/elementwise-float64",
+        "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
         "rextio-numpy/reduction-axis",

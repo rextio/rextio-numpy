@@ -41,7 +41,7 @@ def small_elementwise(a: F64Arr1, b: F64Arr1) -> F64Arr1:
 
 
 def multi_op_chain(a: F64Arr1, b: F64Arr1) -> F64Arr1:
-    # CURRENTLY UNFUSED: (a + b) * (a - b) measured as-is; no fusion claim.
+    # FUSED route: (a + b) * (a - b) via rextio-numpy/elementwise-chain-fusion.
     return (a + b) * (a - b)
 
 
@@ -108,18 +108,21 @@ def registered_scenarios() -> list[ScenarioSpec]:
         ),
         ScenarioSpec(
             id="multi_op_chain",
-            name="Multi-op elementwise chain (CURRENTLY UNFUSED)",
+            name="Multi-op elementwise chain (FUSED)",
             description=(
                 "Expression (a + b) * (a - b) on 1-D float64 arrays. "
-                "CURRENTLY UNFUSED: measured as-is with no fusion claim."
+                "FUSED via rextio-numpy/elementwise-chain-fusion when the fixture "
+                "route/generated-source assertion confirms the fusion rule."
             ),
             function_name="multi_op_chain",
             compare_kind="array",
             size={"n": 4096},
-            labels=["elementwise", "chain", "unfused"],
+            labels=["elementwise", "chain", "fused"],
             notes=[
-                "CURRENTLY UNFUSED — no fusion claim is made or asserted.",
-                "Intermediates and op boundaries are whatever the current lowering emits.",
+                "FUSED — fixture asserts check-report claim "
+                "rextio-numpy/elementwise-chain-fusion (operand_mode=leaves) "
+                "and a __rxtnp_echain_ call inside multi_op_chain's generated body.",
+                "No speedup claim is encoded; low-sample runs remain descriptive only.",
             ],
             seed=2,
         ),

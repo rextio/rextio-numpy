@@ -78,11 +78,13 @@ class RextioNumpyPlugin:
 
         Deterministic by contract: the decision is a pure function of
         ``(site.kind, site.target, site.operand_types, site.keywords,
-        site.operand_literals)``. Covered targets with unresolved operands
-        return :class:`NotCovered`; covered targets with known-but-unsupported
-        operand types return :class:`Rejected` with RXTP-NUMPY-010 guidance;
-        unsupported call shapes (bare max/min, non-literal axis, extra kwargs)
-        return :class:`NotCovered`; everything else is :class:`NotCovered`.
+        site.operand_literals, site.expression)``. Covered targets with
+        unresolved operands return :class:`NotCovered`; covered targets with
+        known-but-unsupported operand types return :class:`Rejected` with
+        RXTP-NUMPY-010 guidance; multi-op pure-array trees may claim as
+        leaves-mode fusion; unsupported call shapes (bare max/min, non-literal
+        axis, extra kwargs) return :class:`NotCovered`; everything else is
+        :class:`NotCovered`.
         """
         return claim_site(site, config)
 
@@ -92,7 +94,8 @@ class RextioNumpyPlugin:
         Every emitted expression is fallible (``pyo3::PyResult``) and ends
         with ``?``; the helper ``fn`` items travel in ``helpers`` and are
         deduplicated by exact text in core codegen. Normalized axis values are
-        encoded in helper identity for literal-axis reductions.
+        encoded in helper identity for literal-axis reductions. Fusion claims
+        consume ``ctx.leaf_operands`` and the frozen ClaimExpr tree.
         """
         return lower_site(claimed, ctx)
 

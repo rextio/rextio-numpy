@@ -4,9 +4,10 @@ L2 rule records per the Rextio tooling contract: each states a pattern, the
 constraint that decides it, the RXTP-NUMPY diagnostic code it will fire as,
 and remediation guidance. The rule set covers the implemented Wave-1/Wave-2
 lowering surface — float64/float32/int64 ranks 1–2 element-wise arithmetic
-(array-array with NumPy broadcasting, array-scalar, scalar-array), 1-D
-float64/int64 ``numpy.dot``, whole-array float64/int64 ``sum`` and whole-array
-float64 ``mean``, plus literal-axis ``sum``/``mean``/``max``/``min``
+(array-array with NumPy broadcasting, array-scalar, scalar-array), multi-op
+elementwise chain fusion (2–8 pure array-name binops via ClaimExpr leaves
+mode), 1-D float64/int64 ``numpy.dot``, whole-array float64/int64 ``sum`` and
+whole-array float64 ``mean``, plus literal-axis ``sum``/``mean``/``max``/``min``
 (``axis=<int literal>``) via the Rust ``ndarray`` crate (float32 sum/mean/dot,
 rank-1 float32 max/min, and int64 mean stay fallback) — plus the explicit
 exclusions around it.

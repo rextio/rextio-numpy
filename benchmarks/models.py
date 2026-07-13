@@ -192,9 +192,13 @@ def default_honesty() -> dict[str, Any]:
             "This suite never encodes or asserts an expected speedup. "
             "Native losses (e.g. BLAS-dominated large dot) are first-class outcomes."
         ),
-        "unfused_chain": (
-            "The multi-op elementwise chain scenario is CURRENTLY UNFUSED: "
-            "it is measured as written with no fusion claim."
+        "fused_chain": (
+            "The multi-op elementwise chain scenario is FUSED only when the "
+            "fixture build proves the fusion rule (check-report claim "
+            "rextio-numpy/elementwise-chain-fusion with operand_mode=leaves and "
+            "the multi_op_chain generated Rust function body calls "
+            "__rxtnp_echain_). A helper definition elsewhere is insufficient. "
+            "No speedup is asserted from low-sample runs."
         ),
         "blas_control": (
             "The large 1-D numpy.dot scenario is a BLAS-dominated control on NumPy "
