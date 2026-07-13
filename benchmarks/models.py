@@ -193,11 +193,14 @@ def default_honesty() -> dict[str, Any]:
             "Native losses (e.g. BLAS-dominated large dot) are first-class outcomes."
         ),
         "fused_chain": (
-            "The multi-op elementwise chain scenario is FUSED only when the "
-            "fixture build proves the fusion rule (check-report claim "
+            "The public multi_op_chain scenario is statically labeled FUSED in "
+            "the registry. Measurement proceeds only after the fixture proves "
+            "the fusion rule (check-report claim "
             "rextio-numpy/elementwise-chain-fusion with operand_mode=leaves and "
             "the multi_op_chain generated Rust function body calls "
             "__rxtnp_echain_). A helper definition elsewhere is insufficient. "
+            "The static label alone is not proof; failed/skipped reports may "
+            "retain the label — status and reason are authoritative. "
             "No speedup is asserted from low-sample runs."
         ),
         "blas_control": (

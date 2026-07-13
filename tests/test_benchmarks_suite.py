@@ -249,6 +249,13 @@ class TestScenarioRegistry:
         assert scenario_fusion_label_state(list(chain.labels), list(chain.notes)) == "fused"
         assert not any("UNFUSED" in n for n in chain.notes)
         assert "elementwise-chain-fusion" in " ".join(chain.notes)
+        # Static declaration is distinct from the fixture proof gate.
+        text = chain.description + " " + " ".join(chain.notes)
+        assert "Statically labeled FUSED" in chain.description or "static FUSED" in text.lower()
+        assert "label alone is not proof" in text
+        assert "operand_mode=leaves" in text
+        assert "__rxtnp_echain_" in text
+        assert "required before" in text or "proceeds only after" in text
         dot = scenario_by_id("large_dot_blas_control")
         assert "blas-control" in dot.labels
 
@@ -1393,8 +1400,8 @@ class TestReports:
                     size={"n": 4096},
                     labels=["elementwise", "chain", "fused"],
                     notes=[
-                        "FUSED — fixture build asserts check-report claim "
-                        "rextio-numpy/elementwise-chain-fusion."
+                        "Static FUSED declaration — fixture proof gate required "
+                        "before timing; the label alone is not proof."
                     ],
                     fallback=_leg("fallback", [0.02, 0.02]),
                     native=_leg("native", [0.01, 0.01]),
@@ -1430,7 +1437,9 @@ class TestReports:
         assert "< 1" in md or "<1" in md.replace(" ", "")
         assert "0.2500x" in md
         assert "native was **slower**" in md
-        assert "FUSED" in md
+        assert "static FUSED label" in md
+        assert "label alone is not proof" in md
+        assert "Successful measurement implies the fixture gate passed" in md
         assert "CURRENTLY UNFUSED" not in md
         assert "BLAS" in md
         assert "Skipped" in md
@@ -1439,6 +1448,63 @@ class TestReports:
         assert "results diverged" in md
         # negative result not suppressed
         assert "0.2500x" in md
+        # Honesty policy distinguishes static label from proof.
+        assert "statically labeled FUSED" in md
+        assert "label alone is not proof" in default_honesty()["fused_chain"]
+
+    def test_markdown_fused_label_not_proof_when_failed_or_skipped(self) -> None:
+        """Static FUSED label must not be promoted to proof on non-ok status."""
+        failed = ScenarioResult(
+            id="multi_op_chain",
+            name="Multi-op elementwise chain (FUSED)",
+            description="chain",
+            status="failed",
+            qualname="np_bench.kernels.multi_op_chain",
+            size={"n": 4096},
+            labels=["elementwise", "chain", "fused"],
+            notes=[
+                "Static FUSED declaration — fixture proof gate required; "
+                "the label alone is not proof."
+            ],
+            reason=(
+                "multi_op_chain fusion honesty failed: missing leaves-mode "
+                "elementwise-chain-fusion claim"
+            ),
+        )
+        skipped = ScenarioResult(
+            id="multi_op_chain_skipped",
+            name="Multi-op elementwise chain (FUSED)",
+            description="chain",
+            status="skipped",
+            qualname="np_bench.kernels.multi_op_chain",
+            size={"n": 4096},
+            labels=["elementwise", "chain", "fused"],
+            notes=[
+                "Static FUSED declaration — fixture proof gate required; "
+                "the label alone is not proof."
+            ],
+            reason="cargo not found on PATH",
+        )
+        report = SuiteReport(
+            schema_version=REPORT_SCHEMA_VERSION,
+            suite_status="partial",
+            build_wall_s=None,
+            metadata=_fixed_meta(),
+            settings={},
+            scenarios=[failed, skipped],
+            honesty=default_honesty(),
+        )
+        md = render_markdown(report)
+        assert md.count("static FUSED label") >= 2
+        assert "label alone is not proof" in md
+        assert "status and reason are authoritative" in md
+        # Must not claim fixture proof succeeded merely because the label is FUSED.
+        assert "Successful measurement implies the fixture gate passed" not in md
+        assert "fixture asserts elementwise-chain-fusion" not in md
+        assert "missing leaves-mode" in md
+        assert "cargo not found" in md
+        assert "`failed`" in md
+        assert "`skipped`" in md
 
 
 # ---------------------------------------------------------------------------

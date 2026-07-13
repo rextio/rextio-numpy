@@ -174,11 +174,21 @@ def _render_scenario_section(s: ScenarioResult) -> list[str]:
 
     fusion_state = scenario_fusion_label_state(list(s.labels), list(s.notes))
     if fusion_state == "fused":
-        lines.append(
-            "- **fusion:** FUSED (fixture asserts elementwise-chain-fusion rule + "
-            "`__rxtnp_echain_` call in this function's generated body; "
-            "no speedup claimed from samples)."
-        )
+        # Labels/notes only declare intent; never promote the static label to proof.
+        if s.status == "ok":
+            lines.append(
+                "- **fusion:** static FUSED label (registry declaration only; "
+                "label alone is not proof). Successful measurement implies the "
+                "fixture gate passed (elementwise-chain-fusion with "
+                "operand_mode=leaves and a `__rxtnp_echain_` call in this "
+                "function's generated body). No speedup claimed from samples."
+            )
+        else:
+            lines.append(
+                "- **fusion:** static FUSED label (registry declaration only; "
+                "label alone is not proof). Measurement did not complete — "
+                "failed/skipped status and reason are authoritative."
+            )
     elif fusion_state == "unfused":
         lines.append("- **fusion:** CURRENTLY UNFUSED (measured as-is; no fusion claim).")
     elif fusion_state == "conflict":

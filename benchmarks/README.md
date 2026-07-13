@@ -48,7 +48,7 @@ released-surface inventory):
 | id | intent |
 |---|---|
 | `small_elementwise` | Small-array elementwise workload (`a + b`) |
-| `multi_op_chain` | Multi-op chain `(a + b) * (a - b)`, labeled **FUSED** only after fixture asserts `elementwise-chain-fusion` + `__rxtnp_echain_` in generated source |
+| `multi_op_chain` | Multi-op chain `(a + b) * (a - b)`, **statically labeled FUSED**; fixture construction must prove fusion before measurements proceed (see Reports) |
 | `mixed_control_flow` | Loop + elementwise adds (control flow around array ops) |
 | `large_dot_blas_control` | Large 1-D `numpy.dot` control — expected **BLAS-dominated on NumPy**, included to show **native losses** when they occur |
 
@@ -83,8 +83,8 @@ Schema **2.1.0** clarified package provenance (see below).
 speedup = fallback_per_call_median_s / native_per_call_median_s
 ```
 
-- **> 1** → native faster  
-- **< 1** → fallback faster (native loss)  
+- **> 1** → native faster
+- **< 1** → fallback faster (native loss)
 - mismatch / skip / failure → **no speedup claim**
 
 ## Method (honesty contract)
@@ -138,7 +138,14 @@ speedup = fallback_per_call_median_s / native_per_call_median_s
   - shows raw batch samples separately from per-call samples
   - explains `>1` / `<1` on per-call medians
   - lists skipped/failed scenarios
-  - calls the chain **unfused**
+  - reflects the public `multi_op_chain` scenario as **statically labeled
+    FUSED** in the registry; fixture construction must prove the exact fusion
+    rule (`rextio-numpy/elementwise-chain-fusion` with
+    `operand_mode=leaves` and a `__rxtnp_echain_` call in that function's
+    generated body) **before measurements proceed**; missing proof fails
+    closed before timing. Failed/skipped reports may still retain static
+    scenario labels, so a **FUSED label alone is not proof** — successful
+    measurement is the evidence that the gate passed
   - shows the BLAS control **without suppressing negative results**
 
 **Do not commit result numbers.** Default to a temp path, or use
@@ -149,15 +156,15 @@ speedup = fallback_per_call_median_s / native_per_call_median_s
 Each report records (with explicit `null` / `unavailable` when missing — never
 invented):
 
-- UTC timestamp  
-- platform / OS / architecture  
-- Python implementation, version, executable  
-- CPU info when discoverable  
-- Package provenance for NumPy / rextio / rextio-numpy (see below)  
-- cargo / rustc versions  
-- relevant BLAS / thread environment variables  
-- benchmark settings and scenario sizes  
-- git revision / dirty status when discoverable  
+- UTC timestamp
+- platform / OS / architecture
+- Python implementation, version, executable
+- CPU info when discoverable
+- Package provenance for NumPy / rextio / rextio-numpy (see below)
+- cargo / rustc versions
+- relevant BLAS / thread environment variables
+- benchmark settings and scenario sizes
+- git revision / dirty status when discoverable
 
 ### Package provenance (schema 2.1.0)
 
@@ -172,12 +179,13 @@ therefore separates:
 | `metadata.package_module_files.*` | Module origin path (`module.__file__`) |
 | `metadata.package_version_mismatches.*` | `true` when both versions are known and differ; `false` when both known and equal; `null` when either side is unavailable |
 
-`packages.*` is what the benchmark process executed. A source-checkout of
-rextio 0.1.1 next to a wheel still registered as 0.1.0 must report
-`packages.rextio = "0.1.1"`, `package_distributions.rextio = "0.1.0"`,
-`package_version_mismatches.rextio = true`, and the sibling `__file__` path.
-Missing imports or missing distributions yield `null` — versions are never
-invented.
+`packages.*` is what the benchmark process executed. When a source checkout's
+runtime `module.__version__` differs from the installed distribution version
+recorded by `importlib.metadata` (for example an editable/sibling Core
+checkout next to an older wheel), the report must set
+`package_version_mismatches.<pkg> = true`, record both version fields, and
+include the sibling `__file__` path. Missing imports or missing distributions
+yield `null` — versions are never invented.
 
 
 ## Suite exit codes

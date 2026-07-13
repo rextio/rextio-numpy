@@ -111,17 +111,21 @@ def registered_scenarios() -> list[ScenarioSpec]:
             name="Multi-op elementwise chain (FUSED)",
             description=(
                 "Expression (a + b) * (a - b) on 1-D float64 arrays. "
-                "FUSED via rextio-numpy/elementwise-chain-fusion when the fixture "
-                "route/generated-source assertion confirms the fusion rule."
+                "Statically labeled FUSED in the registry (declaration only). "
+                "Measurement proceeds only after the fixture proves "
+                "rextio-numpy/elementwise-chain-fusion with operand_mode=leaves "
+                "and a __rxtnp_echain_ call in multi_op_chain's generated body. "
+                "The static label alone is not proof."
             ),
             function_name="multi_op_chain",
             compare_kind="array",
             size={"n": 4096},
             labels=["elementwise", "chain", "fused"],
             notes=[
-                "FUSED — fixture asserts check-report claim "
-                "rextio-numpy/elementwise-chain-fusion (operand_mode=leaves) "
-                "and a __rxtnp_echain_ call inside multi_op_chain's generated body.",
+                "Static FUSED declaration — fixture proof gate "
+                "(rextio-numpy/elementwise-chain-fusion, operand_mode=leaves, "
+                "__rxtnp_echain_ in multi_op_chain's body) is required before "
+                "timing; the label alone is not proof.",
                 "No speedup claim is encoded; low-sample runs remain descriptive only.",
             ],
             seed=2,
