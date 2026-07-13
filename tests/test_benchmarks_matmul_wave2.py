@@ -66,6 +66,7 @@ from benchmarks.matmul_wave2.report import (  # noqa: E402
 from benchmarks.matmul_wave2.runner import (  # noqa: E402
     _cpu_info,
     _git_info,
+    _identify_blas_vendor,
     _numpy_blas_config,
     build_arg_parser,
     build_verdicts,
@@ -1378,6 +1379,221 @@ class TestEvidenceProvenanceIntegrity:
         info = _numpy_blas_config()
         assert "identified" in info
         assert "vendor_tokens_checked" in info
+
+    def test_numpy2_macos_accelerate_not_openblas(self) -> None:
+        """NumPy 2.x macOS Accelerate config must not be mislabeled openblas.
+
+        Real shape: Build Dependencies.blas.name=accelerate while
+        openblas configuration=unknown still appears as a sibling key.
+        Naively scanning the JSON dump matches the key name first.
+        """
+        build_info = {
+            "Compilers": {"c": {"name": "clang"}},
+            "Build Dependencies": {
+                "blas": {
+                    "name": "accelerate",
+                    "found": True,
+                    "version": "unknown",
+                    "detection method": "system",
+                    "include directory": "unknown",
+                    "lib directory": "unknown",
+                    "openblas configuration": "unknown",
+                    "pc file directory": "unknown",
+                },
+                "lapack": {
+                    "name": "accelerate",
+                    "found": True,
+                    "version": "unknown",
+                    "detection method": "system",
+                    "include directory": "unknown",
+                    "lib directory": "unknown",
+                    "openblas configuration": "unknown",
+                    "pc file directory": "unknown",
+                },
+            },
+        }
+        # Regression guard: naive blob scan would still see "openblas".
+        naive = json.dumps(build_info).lower()
+        assert "openblas" in naive
+        assert "accelerate" in naive
+
+        identified, label = _identify_blas_vendor(build_info, None, None)
+        assert identified is True
+        assert label == "accelerate"
+
+    def test_unknown_openblas_configuration_not_vendor_evidence(self) -> None:
+        """Keys/values for unavailable OpenBLAS config never identify openblas."""
+        only_unknown_key = {
+            "Build Dependencies": {
+                "blas": {
+                    "name": "unknown",
+                    "openblas configuration": "unknown",
+                },
+                "lapack": {
+                    "name": "unavailable",
+                    "openblas configuration": "unavailable",
+                },
+            }
+        }
+        identified, label = _identify_blas_vendor(only_unknown_key, None, None)
+        assert identified is False
+        assert label == "unidentified"
+
+        # Key alone with invalid marker value must not count even if dump contains
+        # the substring "openblas".
+        key_noise = {"openblas configuration": "unknown", "libraries": ["blas", "lapack"]}
+        identified, label = _identify_blas_vendor(key_noise, None, None)
+        assert identified is False
+        assert label == "unidentified"
+
+    def test_explicit_openblas_name_still_identified(self) -> None:
+        build_info = {
+            "Build Dependencies": {
+                "blas": {
+                    "name": "openblas",
+                    "found": True,
+                    "version": "0.3.28",
+                    "openblas configuration": "OpenBLAS 0.3.28 DYNAMIC_ARCH=1",
+                },
+                "lapack": {
+                    "name": "openblas",
+                    "found": True,
+                    "openblas configuration": "OpenBLAS 0.3.28 DYNAMIC_ARCH=1",
+                },
+            }
+        }
+        identified, label = _identify_blas_vendor(build_info, None, None)
+        assert identified is True
+        assert label == "openblas"
+
+    def test_explicit_name_precedes_conflicting_blob_noise(self) -> None:
+        """Explicit accelerate name wins even if another value mentions mkl."""
+        build_info = {
+            "Build Dependencies": {
+                "blas": {
+                    "name": "accelerate",
+                    "openblas configuration": "unknown",
+                    "notes": "see mkl docs for comparison only",
+                },
+                "lapack": {
+                    "name": "accelerate",
+                    "openblas configuration": "unknown",
+                },
+            }
+        }
+        identified, label = _identify_blas_vendor(build_info, None, None)
+        assert identified is True
+        assert label == "accelerate"
+
+    def test_conflicting_explicit_vendors_fail_closed(self) -> None:
+        build_info = {
+            "Build Dependencies": {
+                "blas": {"name": "accelerate"},
+                "lapack": {"name": "openblas"},
+            }
+        }
+        identified, label = _identify_blas_vendor(build_info, None, None)
+        assert identified is False
+        assert label == "unidentified"
+
+    def test_found_false_explicit_name_not_vendor_evidence(self) -> None:
+        """found=false dependency entries must not identify from name alone."""
+        build_info = {
+            "Build Dependencies": {
+                "blas": {"name": "openblas", "found": False},
+            }
+        }
+        identified, label = _identify_blas_vendor(build_info, None, None)
+        assert identified is False
+        assert label == "unidentified"
+
+        # Absent found remains legacy-compatible; found=true is accepted.
+        identified, label = _identify_blas_vendor(
+            {"Build Dependencies": {"blas": {"name": "openblas"}}},
+            None,
+            None,
+        )
+        assert identified is True
+        assert label == "openblas"
+
+        identified, label = _identify_blas_vendor(
+            {"Build Dependencies": {"blas": {"name": "openblas", "found": True}}},
+            None,
+            None,
+        )
+        assert identified is True
+        assert label == "openblas"
+
+    def test_found_false_blas_does_not_override_valid_lapack(self) -> None:
+        """Unfound BLAS name must not poison a valid found LAPACK vendor."""
+        build_info = {
+            "Build Dependencies": {
+                "blas": {"name": "openblas", "found": False},
+                "lapack": {"name": "accelerate", "found": True},
+            }
+        }
+        identified, label = _identify_blas_vendor(build_info, None, None)
+        assert identified is True
+        assert label == "accelerate"
+
+    def test_found_false_does_not_block_fallback_library_evidence(self) -> None:
+        """found=false explicit name is ignored; legacy library values still count."""
+        build_info = {
+            "Build Dependencies": {
+                "blas": {"name": "openblas", "found": False},
+            }
+        }
+        identified, label = _identify_blas_vendor(
+            build_info,
+            {"libraries": ["mkl_rt"]},
+            None,
+        )
+        assert identified is True
+        assert label == "mkl"
+
+    def test_legacy_library_values_identify_vendor(self) -> None:
+        # Values-only scan still picks up concrete library names (NumPy 1.x style).
+        identified, label = _identify_blas_vendor(
+            None,
+            {"libraries": ["openblas"], "library_dirs": ["/usr/lib"]},
+            {"libraries": ["openblas"]},
+        )
+        assert identified is True
+        assert label == "openblas"
+
+        identified, label = _identify_blas_vendor(
+            None,
+            {"libraries": ["mkl_rt", "mkl_intel_lp64"]},
+            None,
+        )
+        assert identified is True
+        assert label == "mkl"
+
+        # Generic blas/lapack libraries alone remain unidentified.
+        identified, label = _identify_blas_vendor(
+            None,
+            {"libraries": ["blas", "lapack"]},
+            None,
+        )
+        assert identified is False
+        assert label == "unidentified"
+
+    def test_live_numpy_blas_config_shape_on_accelerate(self) -> None:
+        """When this host is Accelerate-backed, live detector must say accelerate."""
+        info = _numpy_blas_config()
+        build = info.get("build_info")
+        if not isinstance(build, dict):
+            pytest.skip("NumPy build_info unavailable")
+        deps = build.get("Build Dependencies")
+        if not isinstance(deps, dict):
+            pytest.skip("NumPy 2.x Build Dependencies missing")
+        blas = deps.get("blas")
+        if not isinstance(blas, dict):
+            pytest.skip("blas build dependency missing")
+        if str(blas.get("name", "")).lower() != "accelerate":
+            pytest.skip("this NumPy build is not Accelerate-backed")
+        assert info["identified"] is True
+        assert info["label"] == "accelerate"
 
     def test_harness_source_hashes_complete(self) -> None:
         hashes = harness_source_hashes()

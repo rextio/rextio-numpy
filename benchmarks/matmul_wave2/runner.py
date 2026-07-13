@@ -40,6 +40,7 @@ from benchmarks.matmul_wave2.protocol import (
     EVIDENCE_WARMUPS,
     EXPECTED_CELL_IDS,
     HARNESS_SOURCE_FILES,
+    INVALID_BLAS_MARKERS,
     LEG_ORDER,
     PRODUCT_VERDICT,
     PRODUCT_VERDICT_DETAIL,
@@ -269,6 +270,162 @@ def _power_thermal_status() -> dict[str, Any]:
     return status
 
 
+def _is_invalid_blas_marker(value: object) -> bool:
+    """Return whether a config scalar is an unavailable/unknown/empty marker."""
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    if not normalized:
+        return True
+    return normalized in {marker for marker in INVALID_BLAS_MARKERS if marker}
+
+
+def _is_unknown_openblas_configuration(key: object, value: object) -> bool:
+    """Return whether an OpenBLAS configuration slot carries no vendor evidence.
+
+    NumPy 2.x Accelerate builds still expose an ``openblas configuration``
+    key with value ``unknown``. That key name must never be treated as
+    OpenBLAS vendor evidence.
+    """
+    key_l = str(key).lower()
+    if "openblas" not in key_l or "configuration" not in key_l:
+        return False
+    return _is_invalid_blas_marker(value)
+
+
+def _vendor_label_from_text(text: str) -> str | None:
+    """Map free text to a concrete BLAS vendor label, or None if none/invalid."""
+    if _is_invalid_blas_marker(text):
+        return None
+    lowered = text.strip().lower()
+    for token, label in BLAS_VENDOR_TOKENS:
+        if lowered == token:
+            return label
+    for token, label in BLAS_VENDOR_TOKENS:
+        if token in lowered:
+            return label
+    return None
+
+
+def _is_found_false_dependency_entry(entry: object) -> bool:
+    """Return whether a dependency-style mapping is explicitly not found.
+
+    ``found is False`` means the named backend is not vendor evidence.
+    Absent ``found`` stays compatible with legacy configs; ``found is True``
+    remains accepted. Only the exact boolean False is treated as unfound
+    (NumPy SIMD sections use ``found`` as a list of extension names).
+    """
+    return isinstance(entry, dict) and entry.get("found") is False
+
+
+def _explicit_build_dependency_vendors(build_info: dict[str, Any]) -> list[str]:
+    """Prefer explicit non-unknown Build Dependencies.*.name vendor values.
+
+    NumPy 2.x shape::
+
+        Build Dependencies.blas.name = accelerate
+        Build Dependencies.blas.openblas configuration = unknown
+
+    Entries with ``found`` exactly False are excluded even when ``name`` is
+    a concrete vendor token.
+    """
+    deps = build_info.get("Build Dependencies")
+    if not isinstance(deps, dict):
+        return []
+    labels: list[str] = []
+    for dep_key in ("blas", "lapack"):
+        entry = deps.get(dep_key)
+        if not isinstance(entry, dict):
+            continue
+        if _is_found_false_dependency_entry(entry):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str):
+            continue
+        label = _vendor_label_from_text(name)
+        if label is not None:
+            labels.append(label)
+    return labels
+
+
+def _collect_vendor_scan_values(obj: Any) -> list[str]:
+    """Collect config *values* usable as vendor evidence (never bare keys).
+
+    Skips unknown/unavailable OpenBLAS configuration entries and scalar
+    invalid markers so key names like ``openblas configuration`` cannot
+    falsely identify OpenBLAS. Dependency entries with ``found is False``
+    are skipped entirely so their ``name`` cannot leak into the fallback
+    values scan.
+    """
+    chunks: list[str] = []
+    if isinstance(obj, dict):
+        if _is_found_false_dependency_entry(obj):
+            return []
+        for key, value in obj.items():
+            if _is_unknown_openblas_configuration(key, value):
+                continue
+            if isinstance(value, str) and _is_invalid_blas_marker(value):
+                continue
+            chunks.extend(_collect_vendor_scan_values(value))
+    elif isinstance(obj, (list, tuple)):
+        for item in obj:
+            chunks.extend(_collect_vendor_scan_values(item))
+    elif isinstance(obj, str):
+        if not _is_invalid_blas_marker(obj):
+            chunks.append(obj.lower())
+    elif isinstance(obj, (int, float, bool)) or obj is None:
+        return chunks
+    else:
+        text = str(obj).lower()
+        if not _is_invalid_blas_marker(text):
+            chunks.append(text)
+    return chunks
+
+
+def _dedupe_preserve(labels: list[str]) -> list[str]:
+    return list(dict.fromkeys(labels))
+
+
+def _identify_blas_vendor(
+    build_info: Any,
+    blas_libs: Any,
+    lapack_libs: Any,
+) -> tuple[bool, str]:
+    """Identify a concrete BLAS/LAPACK vendor from NumPy config fragments.
+
+    Precedence:
+    1. Explicit non-unknown ``Build Dependencies.{blas,lapack}.name`` values.
+    2. Values-only token scan of remaining config (keys never count).
+    3. Fail closed on missing, unknown, or conflicting vendor signals.
+
+    Generic ``blas``/``lapack`` alone is never identification. Unknown
+    OpenBLAS configuration keys/values are never vendor evidence.
+    """
+    if isinstance(build_info, dict):
+        explicit = _dedupe_preserve(_explicit_build_dependency_vendors(build_info))
+        if len(explicit) == 1:
+            return True, explicit[0]
+        if len(explicit) > 1:
+            # Conflicting explicit backends — do not guess.
+            return False, "unidentified"
+
+    chunks: list[str] = []
+    for part in (build_info, blas_libs, lapack_libs):
+        if part is not None:
+            chunks.extend(_collect_vendor_scan_values(part))
+    blob = " ".join(chunks)
+    hits: list[str] = []
+    for token, label in BLAS_VENDOR_TOKENS:
+        if token in blob:
+            hits.append(label)
+    unique = _dedupe_preserve(hits)
+    if len(unique) == 1:
+        return True, unique[0]
+    return False, "unidentified"
+
+
 def _numpy_blas_config() -> dict[str, Any]:
     """Identify NumPy BLAS/LAPACK configuration; unknown is explicit."""
     try:
@@ -315,21 +472,9 @@ def _numpy_blas_config() -> dict[str, Any]:
         pass
 
     # Concrete vendor tokens only — generic "blas"/"lapack" is NOT identification.
-    identified = False
-    label = "unidentified"
-    parts: list[str] = []
-    if build_info is not None:
-        parts.append(json.dumps(build_info, default=str).lower())
-    if blas_libs is not None:
-        parts.append(json.dumps(blas_libs, default=str).lower())
-    if lapack_libs is not None:
-        parts.append(json.dumps(lapack_libs, default=str).lower())
-    blob = " ".join(parts)
-    for token, vendor_label in BLAS_VENDOR_TOKENS:
-        if token in blob:
-            identified = True
-            label = vendor_label
-            break
+    # Explicit Build Dependencies.*.name takes precedence over key-name noise
+    # such as openblas configuration=unknown on Accelerate-backed macOS builds.
+    identified, label = _identify_blas_vendor(build_info, blas_libs, lapack_libs)
     return {
         "identified": identified,
         "label": label if identified else "unidentified",
@@ -338,7 +483,7 @@ def _numpy_blas_config() -> dict[str, Any]:
         "lapack_libs": lapack_libs,
         "numpy_version": str(getattr(np, "__version__", None)),
         "numpy_file": str(getattr(np, "__file__", None)),
-        "vendor_tokens_checked": [label for _, label in BLAS_VENDOR_TOKENS],
+        "vendor_tokens_checked": [vendor_label for _, vendor_label in BLAS_VENDOR_TOKENS],
     }
 
 
