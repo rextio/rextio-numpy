@@ -1,0 +1,6 @@
+# Benchmark result artifacts must not enter source control.
+results/
+**/benchmark-report.json
+**/benchmark-report.md
+.fixture/
+*.bench-out/

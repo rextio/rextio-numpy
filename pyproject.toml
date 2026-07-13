@@ -50,7 +50,7 @@ version = {attr = "rextio_numpy.__about__.__version__"}
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.ruff]
