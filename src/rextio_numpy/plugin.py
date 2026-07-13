@@ -5,36 +5,37 @@ protocol-v2 describe/covers surface plus the lowering members — annotation
 vocabulary, the deterministic claim pass, expression lowering, and pinned
 crate dependencies. The plugin module itself never imports numpy; only the
 user-facing :mod:`rextio_numpy.types` vocabulary module does.
+
+Claim and lower logic live in :mod:`rextio_numpy.claim` and
+:mod:`rextio_numpy.lower`; this module is a thin facade.
 """
 
 from __future__ import annotations
 
-from rextio.analyzer.diagnostics import Diagnostic
 from rextio.config.schema import RextioConfig
 from rextio.plugins.api import (
     BoundaryConversion,
     ClaimResult,
-    Claimed,
     ClaimSite,
     CoverageDecl,
     CrateDependency,
     LoweredExpr,
     LoweringContext,
-    NotCovered,
     PluginType,
-    Rejected,
     RuleRecord,
 )
 from rextio.plugins.models import RextioPlugin
 
-from rextio_numpy import rust_snippets
 from rextio_numpy.__about__ import __version__
+from rextio_numpy.claim import claim as claim_site
+from rextio_numpy.diagnostics import F64_1D
+from rextio_numpy.lower import lower as lower_site
 from rextio_numpy.rules import COVERAGE, numpy_rule_records
 
 PLUGIN_ID = "rextio-numpy"
 
-#: The plugin type key for 1-D float64 arrays.
-F64_1D = "rextio-numpy/f64-1d"
+# Re-export for existing test and internal imports.
+__all__ = ["F64_1D", "PLUGIN_ID", "RextioNumpyPlugin", "plugin"]
 
 # The proven boundary conversion (compiled and certified under cargo with
 # pyo3 0.29 + rust-numpy =0.29.0). The native type is rust-numpy's ndarray
@@ -50,19 +51,6 @@ _F64_1D_TYPE = PluginType(
         return_rust="pyo3::Bound<'py, numpy::PyArray1<f64>>",
         return_expr="numpy::ToPyArray::to_pyarray(&{value}, py)",
     ),
-)
-
-# Binary operator token -> the elementwise helper op name.
-_BINOP_NAMES = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
-
-_REDUCTION_TARGETS = ("numpy.sum", "numpy.mean")
-
-# The remediation guidance for claim rejections comes from the rule record
-# that owns diagnostic code RXTP-NUMPY-010 (unsupported dtype/operand types).
-_REJECTION_GUIDANCE = next(
-    record.guidance
-    for record in numpy_rule_records()
-    if record.diagnostic_code == "RXTP-NUMPY-010"
 )
 
 
@@ -109,53 +97,7 @@ class RextioNumpyPlugin:
         known-but-unsupported operand types return :class:`Rejected` with
         RXTP-NUMPY-010 guidance; everything else is :class:`NotCovered`.
         """
-        del config
-        kind, target, operands = site.kind, site.target, site.operand_types
-        if kind == "call" and target == "numpy.dot":
-            if len(operands) != 2:
-                # Wrong arity is an unsupported call SHAPE, not an operand-type
-                # problem; hand it back so core's RXT030 names the real cause
-                # instead of the dtype-oriented RXTP-NUMPY-010 (council round 8).
-                return NotCovered()
-            if operands == (F64_1D, F64_1D):
-                return Claimed(rule_id="rextio-numpy/dot-float64", result_type="float")
-            return self._not_covered_or_rejected(site)
-        if kind == "call" and target in _REDUCTION_TARGETS:
-            if len(operands) != 1:
-                return NotCovered()
-            if operands == (F64_1D,):
-                return Claimed(rule_id="rextio-numpy/reduction-sum-mean", result_type="float")
-            return self._not_covered_or_rejected(site)
-        if kind == "binop" and target in _BINOP_NAMES:
-            if operands in ((F64_1D, F64_1D), (F64_1D, "float"), ("float", F64_1D)):
-                return Claimed(rule_id="rextio-numpy/elementwise-float64", result_type=F64_1D)
-            if F64_1D not in operands:
-                # No plugin-typed operand: not this plugin's business.
-                return NotCovered()
-            return self._not_covered_or_rejected(site)
-        return NotCovered()
-
-    @staticmethod
-    def _not_covered_or_rejected(site: ClaimSite) -> ClaimResult:
-        """Resolve a covered-target miss: NotCovered when unresolved, else Rejected."""
-        if any(operand is None for operand in site.operand_types):
-            return NotCovered()
-        named = ", ".join(str(operand) for operand in site.operand_types)
-        return Rejected(
-            diagnostic=Diagnostic(
-                code="RXTP-NUMPY-010",
-                severity="error",
-                message=(
-                    f"rextio-numpy cannot lower {site.target!r}: operand types "
-                    f"({named}) are outside the float64 1-D surface "
-                    f"({F64_1D} and float scalars only)"
-                ),
-                file_path="",
-                line=0,
-                column=0,
-                suggestion=_REJECTION_GUIDANCE,
-            )
-        )
+        return claim_site(site, config)
 
     def lower(self, claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr:
         """Emit the Rust expression for a previously claimed site.
@@ -164,46 +106,7 @@ class RextioNumpyPlugin:
         with ``?``; the helper ``fn`` items travel in ``helpers`` and are
         deduplicated by exact text in core codegen.
         """
-        kind, target = claimed.kind, claimed.target
-        if kind == "call" and target == "numpy.dot":
-            return LoweredExpr(
-                rust=f"__rxtnp_dot1(&{ctx.operands[0]}, &{ctx.operands[1]})?",
-                helpers=(rust_snippets.dot1(),),
-            )
-        if kind == "call" and target == "numpy.sum":
-            return LoweredExpr(
-                rust=f"__rxtnp_sum1(&{ctx.operands[0]})?",
-                helpers=(rust_snippets.sum1(),),
-            )
-        if kind == "call" and target == "numpy.mean":
-            return LoweredExpr(
-                rust=f"__rxtnp_mean1(&{ctx.operands[0]})?",
-                helpers=(rust_snippets.mean1(),),
-            )
-        if kind == "binop" and target in _BINOP_NAMES:
-            return self._lower_binop(claimed, ctx)
-        raise ValueError(f"rextio-numpy cannot lower unclaimed site: {kind} {target!r}")
-
-    @staticmethod
-    def _lower_binop(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr:
-        """Dispatch an elementwise binop on which operand carries the array."""
-        op = _BINOP_NAMES[claimed.target]
-        left, right = claimed.operand_types
-        first, second = ctx.operands
-        if left == F64_1D and right == F64_1D:
-            return LoweredExpr(
-                rust=f"__rxtnp_{op}1_aa(&{first}, &{second})?",
-                helpers=(rust_snippets.elementwise_aa(op),),
-            )
-        if left == F64_1D:
-            return LoweredExpr(
-                rust=f"__rxtnp_{op}1_as(&{first}, {second})?",
-                helpers=(rust_snippets.elementwise_as(op),),
-            )
-        return LoweredExpr(
-            rust=f"__rxtnp_{op}1_sa({first}, &{second})?",
-            helpers=(rust_snippets.elementwise_sa(op),),
-        )
+        return lower_site(claimed, ctx)
 
     def crate_dependencies(self) -> tuple[CrateDependency, ...]:
         """Return the pinned crates the generated helpers depend on."""
