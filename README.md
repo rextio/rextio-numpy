@@ -28,11 +28,12 @@ a runtime dependency of this package — only the user-facing
 
 ### Safe deployment order
 
-Publish / deploy in this order (or ship lsp + core simultaneously for step 1–2):
+Publish / deploy in this **strict sequential order only** (do **not** ship these
+simultaneously):
 
-1. **`rextio-lsp` 0.1.1** dual-map **first**, **or simultaneous** with core
-2. **core `rextio` 0.1.2** (plugin API 1.2 claim metadata)
-3. **`rextio-numpy` 0.1.1** only after core 0.1.2 resolves
+1. **`rextio-lsp` 0.1.1** dual-map first
+2. **core `rextio` 0.1.2** second (plugin API 1.2 claim metadata)
+3. **`rextio-numpy` 0.1.1** third, only after core 0.1.2 resolves
 
 **`rextio-numpy` cannot be published before its core dependency resolves.**
 
@@ -103,6 +104,17 @@ within-tolerance (not universal bit-equivalence). Whole-array float64
 sum/mean may still differ from NumPy pairwise order within 1e-12; **literal-
 axis f64 sum/mean** intentionally match NumPy's pairwise/sequential layout
 rules.
+
+### Optimization-safe lower validation
+
+Only the **covered binop and reduction lower-time invariants** that previously
+relied on `assert` were replaced with explicit **`ValueError`** guards. Those
+guards remain active under `python -O` / `PYTHONOPTIMIZE=1` and fail closed for
+the **covered** malformed `ClaimSite` / `LoweringContext` metadata. This does
+**not** claim that all malformed metadata is rejected or that incorrect helpers
+can never be emitted. Two real optimized-interpreter subprocess regressions —
+one per lowerer (`tests/test_lower_binops.py`,
+`tests/test_lower_reductions.py`) — protect that covered fail-closed path.
 
 ### Accepted release divergence: missing NumPy `RuntimeWarning`
 
@@ -198,6 +210,15 @@ Benchmark suite (from a source checkout; see [benchmarks/README.md](benchmarks/R
 python -m benchmarks --list
 python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 ```
+
+### Verified suite totals (this branch)
+
+On this tree, `pytest --collect-only` reports **661** collected tests total and
+**115** collected real-Cargo certification cases in
+`tests/test_certification_real_cargo.py`. Those 115 cases are **cargo-gated**
+and may also skip via dependency `importorskip` conditions (e.g. NumPy,
+Hypothesis). Re-collect after material test changes; do not treat these numbers
+as a product API.
 
 ## License
 

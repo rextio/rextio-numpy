@@ -12,9 +12,11 @@ is deliberately **not** a package dependency.
 
 ### Safe deployment order
 
-1. **`rextio-lsp` 0.1.1** dual-map first, **or** simultaneous with core
-2. **core `rextio` 0.1.2** (plugin API 1.2 claim metadata)
-3. **`rextio-numpy` 0.1.1** only after that core dependency resolves
+Strict sequential order only (do **not** ship these simultaneously):
+
+1. **`rextio-lsp` 0.1.1** dual-map first
+2. **core `rextio` 0.1.2** second (plugin API 1.2 claim metadata)
+3. **`rextio-numpy` 0.1.1** third, only after that core dependency resolves
 
 `rextio-numpy` **cannot** be published before its core dependency is available.
 
@@ -23,12 +25,37 @@ is deliberately **not** a package dependency.
 - **Element-wise `+ - * /`** on same-dtype **float64 / float32 / int64**, ranks
   **1–2**, covering the certified supported NumPy broadcasting cases (array–array,
   array–scalar, scalar–array); unsafe dtype/rank combinations remain fallback.
+- **`numpy.dot(a, b)`** on same-dtype **1-D float64 and int64** (module-call);
+  float32 1-D dots and rank-2 / `@` stay unclaimed.
+- **Whole-array** `numpy.sum` (f64/i64 ranks 1–2) and `numpy.mean` (f64 ranks
+  1–2); bare max/min and method forms stay fallback.
 - **Literal-axis reductions** `numpy.sum|mean|max|min(a, axis=<int literal>)`
   for the certified dtype/rank matrix (see README / rule records).
-- **Multi-op elementwise chain fusion** (2–8 pure array-name binops) via
-  `operand_mode="leaves"`.
+- **Multi-op elementwise chain fusion** (2–8 pure array-name binop nodes) via
+  `operand_mode="leaves"`: f64/f32 support `+ - * /`; i64 supports `+ - *`
+  only.
 - Whole-array and 1-D linear ops carried forward and extended from 0.1.0 within
   the ranks/dtypes above (see rule records RXTP-NUMPY-001…005).
+
+### Optimization-safe lower validation
+
+Only the **covered binop and reduction lower-time invariants** that previously
+relied on `assert` were replaced with explicit **`ValueError`** guards. Those
+guards remain active under `python -O` / `PYTHONOPTIMIZE=1` and fail closed for
+the **covered** malformed `ClaimSite` / `LoweringContext` metadata. This does
+**not** claim that all malformed metadata is rejected or that incorrect helpers
+can never be emitted. Two real optimized-interpreter subprocess regressions —
+one per lowerer (`tests/test_lower_binops.py`,
+`tests/test_lower_reductions.py`) — protect that covered fail-closed path.
+
+### Verified suite totals (this branch)
+
+Repository evidence via `pytest --collect-only` on this tree:
+
+- **661** collected tests total
+- **115** collected real-Cargo certification cases in
+  `tests/test_certification_real_cargo.py` (cargo-gated; may also skip via
+  dependency `importorskip` conditions such as NumPy/Hypothesis)
 
 ### Rank-2 matmul decision
 
