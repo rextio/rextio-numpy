@@ -14,10 +14,12 @@ def claim(site: ClaimSite, config: RextioConfig) -> ClaimResult:
     """Decide, at analysis time, whether this plugin lowers the site.
 
     Deterministic by contract: the decision is a pure function of
-    ``(site.kind, site.target, site.operand_types)``. Covered targets with
-    unresolved operands return :class:`NotCovered`; covered targets with
-    known-but-unsupported operand types return :class:`Rejected` with
-    RXTP-NUMPY-010 guidance; everything else is :class:`NotCovered`.
+    ``(site.kind, site.target, site.operand_types, site.keywords,
+    site.operand_literals)``. Covered targets with unresolved operands return
+    :class:`NotCovered`; covered targets with known-but-unsupported operand
+    types return :class:`Rejected` with RXTP-NUMPY-010 guidance; unsupported
+    call shapes return :class:`NotCovered`; everything else is
+    :class:`NotCovered`.
     """
     del config
     for handler in (linear.try_claim, reductions.try_claim, binops.try_claim):

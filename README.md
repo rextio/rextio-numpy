@@ -8,19 +8,23 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: expanded Wave 1 surface (this branch)
+## Status: Wave 1 + Wave 2 literal-axis surface (this branch)
 
 This repository branch is the **unreleased 0.1.1 development line** for
-`rextio-numpy`. It implements **plugin API 1.1** end to end: the annotation
-vocabulary, the deterministic `claim` pass, `lower()` emission to Rust via
-the `ndarray` crate, and pinned crate injection (rust-numpy
-`numpy =0.29.0`; ndarray via its re-export).
+`rextio-numpy`. It implements **plugin API 1.2** end to end: the annotation
+vocabulary, the deterministic `claim` pass (including keyword/literal axis
+metadata from core API 1.2), `lower()` emission to Rust via the `ndarray`
+crate, and pinned crate injection (rust-numpy `numpy =0.29.0`; ndarray via
+its re-export).
 
 **Release boundary:** core Rextio **0.1.1 was released 2026-07-12 and is on
-PyPI**. The expanded claim surface documented here lives on this development
-branch only. Package metadata, changelog, and a PyPI `rextio-numpy` cut that
-ships this surface remain a later **Wave 3** release-integration task — do
-not assume an installed PyPI `rextio-numpy` wheel already exposes it.
+PyPI**; this branch expects a core build that provides **plugin API 1.2**
+claim-site keyword/literal metadata (e.g. the editable core checkout at the
+API 1.2 commit). The expanded claim surface documented here lives on this
+development branch only. Package metadata, changelog, and a PyPI
+`rextio-numpy` cut that ships this surface remain a later **Wave 3**
+release-integration task — do not assume an installed PyPI `rextio-numpy`
+wheel already exposes it.
 
 ### Annotation vocabulary (`rextio_numpy.types`)
 
@@ -46,19 +50,41 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   (sequential f32 accumulation diverges materially from NumPy pairwise
   summation; the plugin API has no enforceable runtime length gate).
   **2-D** operands and **`@` / matmul** stay unclaimed (`RXTP-NUMPY-002`).
-- **Whole-array reductions** (module-call form, no `axis=` / kwargs):
+- **Whole-array reductions** (module-call form, **no** keywords):
   - `numpy.sum` on **float64 and int64**, ranks **1–2**
   - `numpy.mean` on **float64**, ranks **1–2**
   - **float32** sum/mean and **int64 mean** are fallback (material
     accumulation-order divergence; no runtime length gate).
+  - Bare `numpy.max` / `numpy.min` (no `axis=`) stay fallback.
   - `a.sum()` / `a.mean()` method forms fallback (`RXTP-NUMPY-003`).
+- **Literal-axis reductions** (module-call,
+  `numpy.sum|mean|max|min(a, axis=<int literal>)` only — exactly one
+  positional array and exactly one named `axis` keyword):
+  - `sum`: f64/i64 ranks 1–2; `mean`: f64 ranks 1–2
+  - `max`/`min`: f64/i64 ranks 1–2; **f32 rank 2 only** (rank-1 f32 stays
+    fallback to preserve `numpy.float32` scalar semantics)
+  - Negative axes are normalized at claim time; out-of-range, positional,
+    `None`, tuple, dynamic, `axis=+N` (when core does not extract `UAdd`),
+    and extra-kw forms stay fallback
+  - Rank-1 → core builtin `float`/`int` (not NumPy scalar subclasses);
+    rank-2 single-axis → matching rank-1 plugin array
+  - **f64 axis sum/mean**: NumPy-compatible pairwise (fast-stride) /
+    sequential (slow-stride) dispatch from runtime strides — C and F layouts
+  - Float extrema: first NaN in logical order is preserved (sign/payload);
+    `max(+0,-0)=+0`, `min(+0,-0)=-0`
+  - Empty max/min reduced dimension → `ValueError` with NumPy-compatible text
+  - Empty mean value semantics match; native leg omits NumPy's
+    `RuntimeWarning` (documented divergence) (`RXTP-NUMPY-004`)
 
 Shape/length mismatches raise `ValueError` with NumPy's exact messages.
 int64 `+`, `-`, `*`, `sum`, and `dot` use **wraparound** arithmetic matching
 NumPy **release** builds. Floating reductions/dots are certified
-within-tolerance (not bit-equivalent): float summation order may differ from
-NumPy's pairwise summation. Native mean of an empty array returns nan without
-NumPy's `RuntimeWarning`.
+within-tolerance (not universal bit-equivalence). Whole-array float64
+sum/mean may still differ from NumPy pairwise order within 1e-12; **literal-
+axis f64 sum/mean** intentionally match NumPy's pairwise/sequential layout
+rules. Native mean of an empty array (or empty reduced lane) returns nan
+without NumPy's `RuntimeWarning`. Native reductions also omit warnings for
+invalid ops such as `+inf + -inf`.
 
 ### Full rule surface
 
@@ -66,11 +92,12 @@ NumPy's `RuntimeWarning`.
 |---|---|---|
 | Element-wise `+ - * /` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar) | native (verified) | RXTP-NUMPY-001 |
 | `numpy.dot(a, b)` on same-dtype 1-D f64/i64 (module-call; not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
-| Whole-array `numpy.sum` on f64/i64 ranks 1–2; `numpy.mean` on f64 ranks 1–2 (module-call) | native (verified) | RXTP-NUMPY-003 |
-| Operand types outside the claimed set (incl. f32 dots/reductions, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
+| Whole-array `numpy.sum` on f64/i64 ranks 1–2; `numpy.mean` on f64 ranks 1–2 (module-call, no kwargs) | native (verified) | RXTP-NUMPY-003 |
+| Literal-axis `numpy.sum/mean/max/min(a, axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
+| Operand types outside the claimed set (incl. f32 sum/mean/dots, rank-1 f32 max/min, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
-| Any other NumPy API (`axis=`, method forms, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
+| Any other NumPy API (method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
 
 All rules are `experimental`. Codes RXTP-NUMPY-011/012/019 are
 declarative-only: they document fallback boundaries in the rule records but

@@ -1,19 +1,24 @@
-"""Focused lower coverage for whole-array sum/mean."""
+"""Focused lower coverage for whole-array and literal-axis sum/mean/max/min."""
 
 from __future__ import annotations
 
 import pytest
 
-from rextio.plugins.api import ClaimSite, LoweringContext
+from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext
 
-from rextio_numpy.diagnostics import F64_1D, F64_2D, I64_1D
+from rextio_numpy.diagnostics import F32_2D, F64_1D, F64_2D, I64_1D, I64_2D
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.reductions import try_lower
 
 K = F64_1D
 
 
-def site(target: str, operand_types: tuple[str, ...] = (K,)) -> ClaimSite:
+def site(
+    target: str,
+    operand_types: tuple[str, ...] = (K,),
+    *,
+    keywords: tuple[KeywordArg, ...] = (),
+) -> ClaimSite:
     return ClaimSite(
         kind="call",
         target=target,
@@ -21,6 +26,7 @@ def site(target: str, operand_types: tuple[str, ...] = (K,)) -> ClaimSite:
         file_path="",
         line=0,
         column=0,
+        keywords=keywords,
     )
 
 
@@ -29,6 +35,16 @@ def ctx(*operands: str) -> LoweringContext:
         operands=tuple(operands),
         target_language="rust",
         fresh_name=lambda prefix: f"{prefix}_0",
+    )
+
+
+def axis_kw(value: int) -> tuple[KeywordArg, ...]:
+    return (
+        KeywordArg(
+            name="axis",
+            arg_type="int",
+            literal=ClaimLiteral(is_literal=True, value=value),
+        ),
     )
 
 
@@ -77,3 +93,102 @@ def test_router_matches_try_lower() -> None:
     s = site("numpy.sum")
     c = ctx("a")
     assert lower(s, c) == try_lower(s, c)
+
+
+# ---------------------------------------------------------------- axis form
+
+
+def test_try_lower_axis_rank1_sum_encodes_normalized_axis() -> None:
+    # axis=-1 on rank-1 normalizes to 0 in the helper identity.
+    lowered = try_lower(site("numpy.sum", (K,), keywords=axis_kw(-1)), ctx("values"))
+    assert lowered is not None
+    assert lowered.rust == "__rxtnp_sum1_f64_axis0(&values)?"
+    text = "\n".join(lowered.helpers)
+    assert "fn __rxtnp_sum1_f64_axis0" in text
+    # Axis f64 sum uses NumPy pairwise, not ndarray sequential sum.
+    assert "__rxtnp_numpy_pairwise_sum_f64" in text
+    assert "PW_BLOCKSIZE" in text
+
+
+def test_try_lower_axis_rank2_sum_axis0_and_axis1() -> None:
+    lo0 = try_lower(site("numpy.sum", (F64_2D,), keywords=axis_kw(0)), ctx("a"))
+    assert lo0 is not None
+    assert lo0.rust == "__rxtnp_sum2_f64_axis0(&a)?"
+    text0 = "\n".join(lo0.helpers)
+    assert "__rxtnp_numpy_pairwise_sum_f64" in text0
+    assert "Array1<f64>" in text0
+    assert "nrows" in text0
+    # Unit-stride → pairwise; non-unit → sequential (NumPy layout match).
+    assert "sequential_sum" in text0
+    assert "stride_of" in text0
+
+    lo1 = try_lower(site("numpy.sum", (F64_2D,), keywords=axis_kw(-1)), ctx("a"))
+    assert lo1 is not None
+    assert lo1.rust == "__rxtnp_sum2_f64_axis1(&a)?"
+    text1 = "\n".join(lo1.helpers)
+    assert "__rxtnp_numpy_pairwise_sum_f64" in text1
+    assert "ncols" in text1
+    assert "sequential_sum" in text1
+
+
+def test_try_lower_axis_i64_sum_wraps_per_add() -> None:
+    lowered = try_lower(site("numpy.sum", (I64_2D,), keywords=axis_kw(0)), ctx("a"))
+    assert lowered is not None
+    assert lowered.rust == "__rxtnp_sum2_i64_axis0(&a)?"
+    assert "wrapping_add" in lowered.helpers[-1]
+    assert "Array1<i64>" in lowered.helpers[-1]
+
+
+def test_try_lower_axis_mean_empty_lane_nan() -> None:
+    lowered = try_lower(site("numpy.mean", (F64_2D,), keywords=axis_kw(0)), ctx("a"))
+    assert lowered is not None
+    text = "\n".join(lowered.helpers)
+    assert "__rxtnp_numpy_pairwise_sum_f64" in text
+    assert "f64::NAN" in text
+    assert "nrows == 0" in text or "n == 0" in text
+    assert "sequential_sum" in text
+
+
+def test_try_lower_axis_max_propagates_nan_and_signed_zero() -> None:
+    lowered = try_lower(site("numpy.max", (F64_2D,), keywords=axis_kw(1)), ctx("a"))
+    assert lowered is not None
+    assert lowered.rust == "__rxtnp_max2_f64_axis1(&a)?"
+    text = "\n".join(lowered.helpers)
+    assert "__rxtnp_numpy_max_f64" in text
+    # First-NaN preservation (sign/payload), not canonical quiet NaN.
+    assert "if a.is_nan()" in text
+    assert "else if b.is_nan()" in text
+    assert "is_sign_positive()" in text
+    assert "maximum which has no identity" in text
+
+
+def test_try_lower_axis_min_signed_zero_prefers_neg() -> None:
+    lowered = try_lower(site("numpy.min", (F64_1D,), keywords=axis_kw(0)), ctx("a"))
+    assert lowered is not None
+    text = "\n".join(lowered.helpers)
+    assert "__rxtnp_numpy_min_f64" in text
+    assert "is_sign_negative()" in text
+    assert "minimum which has no identity" in text
+
+
+def test_try_lower_axis_f32_max_rank2() -> None:
+    lowered = try_lower(site("numpy.max", (F32_2D,), keywords=axis_kw(0)), ctx("a"))
+    assert lowered is not None
+    assert lowered.rust == "__rxtnp_max2_f32_axis0(&a)?"
+    text = "\n".join(lowered.helpers)
+    assert "Array1<f32>" in text
+    assert "__rxtnp_numpy_max_f32" in text
+
+
+def test_try_lower_axis_i64_max() -> None:
+    lowered = try_lower(site("numpy.max", (I64_1D,), keywords=axis_kw(0)), ctx("a"))
+    assert lowered is not None
+    assert "PyResult<i64>" in lowered.helpers[-1]
+    assert "maximum which has no identity" in lowered.helpers[-1]
+
+
+def test_router_matches_try_lower_axis() -> None:
+    s = site("numpy.min", (F64_2D,), keywords=axis_kw(-2))
+    c = ctx("m")
+    assert lower(s, c) == try_lower(s, c)
+    assert lower(s, c).rust == "__rxtnp_min2_f64_axis0(&m)?"

@@ -1,10 +1,11 @@
 """The rextio-numpy plugin object and entry-point factory.
 
-Implements plugin API 1.1 (``rextio.plugins.api.RextioLoweringPlugin``): the
+Implements plugin API 1.2 (``rextio.plugins.api.RextioLoweringPlugin``): the
 protocol-v2 describe/covers surface plus the lowering members — annotation
-vocabulary, the deterministic claim pass, expression lowering, and pinned
-crate dependencies. The plugin module itself never imports numpy; only the
-user-facing :mod:`rextio_numpy.types` vocabulary module does.
+vocabulary, the deterministic claim pass (including keyword/literal axis
+metadata), expression lowering, and pinned crate dependencies. The plugin
+module itself never imports numpy; only the user-facing
+:mod:`rextio_numpy.types` vocabulary module does.
 
 Claim and lower logic live in :mod:`rextio_numpy.claim` and
 :mod:`rextio_numpy.lower`; this module is a thin facade.
@@ -39,10 +40,10 @@ __all__ = ["F64_1D", "PLUGIN_ID", "RextioNumpyPlugin", "plugin"]
 
 
 class RextioNumpyPlugin:
-    """Plugin API 1.1: describes AND lowers eligible NumPy usage to Rust."""
+    """Plugin API 1.2: describes AND lowers eligible NumPy usage to Rust."""
 
     plugin_id = PLUGIN_ID
-    api_version = "1.1"
+    api_version = "1.2"
 
     def to_rextio_plugin(self) -> RextioPlugin:
         """Return the v1 metadata Rextio core registers this plugin under."""
@@ -76,10 +77,12 @@ class RextioNumpyPlugin:
         """Decide, at analysis time, whether this plugin lowers the site.
 
         Deterministic by contract: the decision is a pure function of
-        ``(site.kind, site.target, site.operand_types)``. Covered targets with
-        unresolved operands return :class:`NotCovered`; covered targets with
-        known-but-unsupported operand types return :class:`Rejected` with
-        RXTP-NUMPY-010 guidance; everything else is :class:`NotCovered`.
+        ``(site.kind, site.target, site.operand_types, site.keywords,
+        site.operand_literals)``. Covered targets with unresolved operands
+        return :class:`NotCovered`; covered targets with known-but-unsupported
+        operand types return :class:`Rejected` with RXTP-NUMPY-010 guidance;
+        unsupported call shapes (bare max/min, non-literal axis, extra kwargs)
+        return :class:`NotCovered`; everything else is :class:`NotCovered`.
         """
         return claim_site(site, config)
 
@@ -88,7 +91,8 @@ class RextioNumpyPlugin:
 
         Every emitted expression is fallible (``pyo3::PyResult``) and ends
         with ``?``; the helper ``fn`` items travel in ``helpers`` and are
-        deduplicated by exact text in core codegen.
+        deduplicated by exact text in core codegen. Normalized axis values are
+        encoded in helper identity for literal-axis reductions.
         """
         return lower_site(claimed, ctx)
 

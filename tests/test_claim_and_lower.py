@@ -5,9 +5,17 @@ from __future__ import annotations
 import pytest
 
 from rextio.config.schema import RextioConfig
-from rextio.plugins.api import Claimed, ClaimSite, LoweringContext, NotCovered, Rejected
+from rextio.plugins.api import (
+    Claimed,
+    ClaimLiteral,
+    ClaimSite,
+    KeywordArg,
+    LoweringContext,
+    NotCovered,
+    Rejected,
+)
 
-from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D, I64_2D
+from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D
 from rextio_numpy.plugin import F64_1D as PLUGIN_F64_1D
 from rextio_numpy.plugin import RextioNumpyPlugin
 
@@ -17,7 +25,13 @@ CONFIG = RextioConfig()
 PLUGIN = RextioNumpyPlugin()
 
 
-def site(kind: str, target: str, operand_types: tuple[str | None, ...]) -> ClaimSite:
+def site(
+    kind: str,
+    target: str,
+    operand_types: tuple[str | None, ...],
+    *,
+    keywords: tuple[KeywordArg, ...] = (),
+) -> ClaimSite:
     return ClaimSite(
         kind=kind,
         target=target,
@@ -25,6 +39,17 @@ def site(kind: str, target: str, operand_types: tuple[str | None, ...]) -> Claim
         file_path="",
         line=0,
         column=0,
+        keywords=keywords,
+    )
+
+
+def axis_kw(value: int) -> tuple[KeywordArg, ...]:
+    return (
+        KeywordArg(
+            name="axis",
+            arg_type="int",
+            literal=ClaimLiteral(is_literal=True, value=value),
+        ),
     )
 
 
@@ -178,11 +203,25 @@ def test_claim_is_deterministic() -> None:
         site("binop", "*", (K, "float")),
         site("binop", "%", (K, K)),
         site("binop", "+", (I64_1D, I64_2D)),
+        site("call", "numpy.max", (F64_2D,), keywords=axis_kw(-1)),
     ]
     for claim_site in sites:
         first = PLUGIN.claim(claim_site, CONFIG)
         second = PLUGIN.claim(claim_site, CONFIG)
         assert first == second
+
+
+def test_claim_literal_axis_surface() -> None:
+    assert PLUGIN.claim(
+        site("call", "numpy.sum", (F64_2D,), keywords=axis_kw(0)), CONFIG
+    ) == Claimed(rule_id="rextio-numpy/reduction-axis", result_type=F64_1D)
+    assert PLUGIN.claim(
+        site("call", "numpy.max", (F32_2D,), keywords=axis_kw(1)), CONFIG
+    ) == Claimed(rule_id="rextio-numpy/reduction-axis", result_type=F32_1D)
+    assert PLUGIN.claim(site("call", "numpy.min", (K,)), CONFIG) == NotCovered()
+    rejected = PLUGIN.claim(site("call", "numpy.max", (F32_1D,), keywords=axis_kw(0)), CONFIG)
+    assert isinstance(rejected, Rejected)
+    assert rejected.diagnostic.code == "RXTP-NUMPY-010"
 
 
 # ---------------------------------------------------------------- lower ----
@@ -286,3 +325,20 @@ def test_lower_wave1_helpers_are_fallible() -> None:
 def test_lower_rejects_unclaimed_sites() -> None:
     with pytest.raises(ValueError, match="unclaimed site"):
         PLUGIN.lower(site("call", "numpy.zeros", ("int",)), ctx("n"))
+
+
+def test_lower_literal_axis_encodes_normalized_axis() -> None:
+    lowered = PLUGIN.lower(
+        site("call", "numpy.sum", (F64_2D,), keywords=axis_kw(-1)),
+        ctx("mat"),
+    )
+    assert lowered.rust == "__rxtnp_sum2_f64_axis1(&mat)?"
+    assert "Axis(1)" in "\n".join(lowered.helpers)
+    assert "__rxtnp_numpy_pairwise_sum_f64" in "\n".join(lowered.helpers)
+
+    maxed = PLUGIN.lower(
+        site("call", "numpy.max", (F64_1D,), keywords=axis_kw(0)),
+        ctx("v"),
+    )
+    assert maxed.rust == "__rxtnp_max1_f64_axis0(&v)?"
+    assert "maximum which has no identity" in "\n".join(maxed.helpers)

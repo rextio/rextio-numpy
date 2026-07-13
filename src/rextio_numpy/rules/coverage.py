@@ -8,8 +8,8 @@ from rextio.plugins.api import CoverageDecl
 # pass routes sites by package + operand-type ownership, not by this list. In
 # particular ``numpy.ndarray`` denotes the type this plugin lowers -- it is NOT
 # a claimed call target: ndarray METHOD forms (a.dot(b), a.sum()) are never
-# claimed (they stay on the fallback). ``numpy.dot/sum/mean`` are the covered
-# module-call forms (council round 8: clarify the dual meaning).
+# claimed (they stay on the fallback). ``numpy.dot/sum/mean/max/min`` are the
+# covered module-call forms (council round 8: clarify the dual meaning).
 COVERAGE = CoverageDecl(
     packages=("numpy",),
     modules=("numpy",),
@@ -18,5 +18,7 @@ COVERAGE = CoverageDecl(
         "numpy.dot",
         "numpy.sum",
         "numpy.mean",
+        "numpy.max",
+        "numpy.min",
     ),
 )

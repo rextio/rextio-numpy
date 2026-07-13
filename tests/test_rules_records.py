@@ -18,6 +18,8 @@ def test_public_coverage_import() -> None:
         "numpy.dot",
         "numpy.sum",
         "numpy.mean",
+        "numpy.max",
+        "numpy.min",
     )
 
 
@@ -51,6 +53,7 @@ def test_native_records_broadened_but_ids_stable() -> None:
         "rextio-numpy/elementwise-float64",
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
+        "rextio-numpy/reduction-axis",
     }
     elem = by_id["rextio-numpy/elementwise-float64"]
     assert elem.diagnostic_code == "RXTP-NUMPY-001"
@@ -71,6 +74,13 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "rejected" in red.constraint.lower() or "not claimed" in red.scope.pattern
     # Native rule must not advertise verified int64 mean.
     assert "int64 mean is float64" not in red.constraint
+    axis = by_id["rextio-numpy/reduction-axis"]
+    assert axis.diagnostic_code == "RXTP-NUMPY-004"
+    assert "axis=" in axis.scope.pattern
+    assert "max" in axis.scope.pattern and "min" in axis.scope.pattern
+    assert "RuntimeWarning" in axis.constraint
+    assert "no identity" in axis.constraint
+    assert axis.verified is True
 
 
 def test_fallback_ndim_is_rank_gt_2() -> None:
@@ -94,3 +104,9 @@ def test_rust_snippets_package_public_api() -> None:
     assert "fn __rxtnp_add1_aa" in rust_snippets.elementwise_aa("add")
     assert "wrapping_add" in rust_snippets.elementwise_aa_typed("add", "i64", 1, 1)
     assert "broadcast" in rust_snippets.broadcast_shape_helper()
+    assert rust_snippets.axis_call_name("sum", "f64", 2, 1) == "__rxtnp_sum2_f64_axis1"
+    helpers = rust_snippets.axis_typed("max", "f64", 2, 0)
+    joined = "\n".join(helpers)
+    assert "__rxtnp_max2_f64_axis0" in joined
+    assert "maximum which has no identity" in joined
+    assert rust_snippets.op_from_target("numpy.min") == "min"

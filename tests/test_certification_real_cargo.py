@@ -248,6 +248,117 @@ def average_i64_2d(a: I64Arr2) -> float:
 
 def dot_i64(a: I64Arr1, b: I64Arr1) -> int:
     return np.dot(a, b)
+
+
+# --- Wave 2 literal-axis reduction surface ---
+
+def sum_f64_1d_axis0(a: F64Arr1) -> float:
+    return np.sum(a, axis=0)
+
+
+def sum_f64_1d_axis_neg1(a: F64Arr1) -> float:
+    return np.sum(a, axis=-1)
+
+
+def mean_f64_1d_axis0(a: F64Arr1) -> float:
+    return np.mean(a, axis=0)
+
+
+def max_f64_1d_axis0(a: F64Arr1) -> float:
+    return np.max(a, axis=0)
+
+
+def min_f64_1d_axis0(a: F64Arr1) -> float:
+    return np.min(a, axis=0)
+
+
+def sum_f64_2d_axis0(a: F64Arr2) -> F64Arr1:
+    return np.sum(a, axis=0)
+
+
+def sum_f64_2d_axis1(a: F64Arr2) -> F64Arr1:
+    return np.sum(a, axis=1)
+
+
+def sum_f64_2d_axis_neg1(a: F64Arr2) -> F64Arr1:
+    return np.sum(a, axis=-1)
+
+
+def sum_f64_2d_axis_neg2(a: F64Arr2) -> F64Arr1:
+    return np.sum(a, axis=-2)
+
+
+def mean_f64_2d_axis0(a: F64Arr2) -> F64Arr1:
+    return np.mean(a, axis=0)
+
+
+def mean_f64_2d_axis1(a: F64Arr2) -> F64Arr1:
+    return np.mean(a, axis=1)
+
+
+def max_f64_2d_axis0(a: F64Arr2) -> F64Arr1:
+    return np.max(a, axis=0)
+
+
+def max_f64_2d_axis1(a: F64Arr2) -> F64Arr1:
+    return np.max(a, axis=1)
+
+
+def min_f64_2d_axis0(a: F64Arr2) -> F64Arr1:
+    return np.min(a, axis=0)
+
+
+def min_f64_2d_axis1(a: F64Arr2) -> F64Arr1:
+    return np.min(a, axis=1)
+
+
+def sum_i64_1d_axis0(a: I64Arr1) -> int:
+    return np.sum(a, axis=0)
+
+
+def sum_i64_2d_axis0(a: I64Arr2) -> I64Arr1:
+    return np.sum(a, axis=0)
+
+
+def sum_i64_2d_axis1(a: I64Arr2) -> I64Arr1:
+    return np.sum(a, axis=1)
+
+
+def max_i64_2d_axis0(a: I64Arr2) -> I64Arr1:
+    return np.max(a, axis=0)
+
+
+def min_i64_2d_axis1(a: I64Arr2) -> I64Arr1:
+    return np.min(a, axis=1)
+
+
+def max_f32_2d_axis0(a: F32Arr2) -> F32Arr1:
+    return np.max(a, axis=0)
+
+
+def min_f32_2d_axis1(a: F32Arr2) -> F32Arr1:
+    return np.min(a, axis=1)
+
+
+# Intentionally unclaimed Wave-2 cells (must stay fallback).
+def bare_max_f64(a: F64Arr1) -> float:
+    return np.max(a)
+
+
+def bare_min_f64(a: F64Arr1) -> float:
+    return np.min(a)
+
+
+def max_f32_1d_axis0(a: F32Arr1) -> float:
+    return np.max(a, axis=0)
+
+
+def sum_f32_2d_axis0(a: F32Arr2) -> F32Arr1:
+    return np.sum(a, axis=0)
+
+
+def mean_i64_2d_axis0(a: I64Arr2) -> F64Arr1:
+    return np.mean(a, axis=0)
 """
 
 
@@ -945,3 +1056,519 @@ def test_wave1_i64_elementwise_noncommutative_scalar_order(
     np.testing.assert_array_equal(rsub(10, a), 10 - a)
     scale = _require_native(project, "scale_i64_1d")
     np.testing.assert_array_equal(scale(a, 4), a * 4)
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 literal-axis reduction certification matrix
+# ---------------------------------------------------------------------------
+
+
+def _signed_zero_equal(left: object, right: object) -> bool:
+    """Array/scalar equality that distinguishes +0.0 from -0.0 and treats NaN==NaN."""
+    if isinstance(left, np.ndarray) and isinstance(right, np.ndarray):
+        if left.shape != right.shape or left.dtype != right.dtype:
+            return False
+        # bitwise for floats catches signed-zero; equal_nan for NaN payload.
+        if np.issubdtype(left.dtype, np.floating):
+            return bool(
+                np.array_equal(left, right, equal_nan=True)
+                and np.array_equal(np.signbit(left), np.signbit(right))
+            )
+        return bool(np.array_equal(left, right))
+    if isinstance(left, numbers.Real) and isinstance(right, numbers.Real):
+        lf, rf = float(left), float(right)
+        if math.isnan(lf) and math.isnan(rf):
+            return True
+        if lf == 0.0 and rf == 0.0:
+            return math.copysign(1.0, lf) == math.copysign(1.0, rf)
+        return math.isclose(lf, rf, rel_tol=SCALAR_REL_TOL, abs_tol=SCALAR_ABS_TOL)
+    return default_equals(left, right)
+
+
+@pytest.mark.parametrize(
+    ("name", "arr", "equals"),
+    [
+        ("sum_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
+        ("sum_f64_1d_axis_neg1", np.array([1.0, -2.5, 3.25]), scalar_close),
+        ("mean_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
+        ("max_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
+        ("min_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
+        ("sum_i64_1d_axis0", np.array([1, 2, 3], dtype=np.int64), scalar_int_equal),
+    ],
+)
+def test_wave2_rank1_axis_scalar(
+    project: CertifiedProject, name: str, arr: Any, equals: Callable[..., bool]
+) -> None:
+    check = _require_native_scalar(project, name, equals)
+    result = check(arr)
+    if name.startswith("sum"):
+        expected = np.sum(arr, axis=0 if "neg" not in name else -1)
+    elif name.startswith("mean"):
+        expected = np.mean(arr, axis=0)
+    elif name.startswith("max"):
+        expected = np.max(arr, axis=0)
+    else:
+        expected = np.min(arr, axis=0)
+    if equals is scalar_int_equal:
+        assert int(result) == int(expected)
+    else:
+        assert float(result) == pytest.approx(
+            float(expected), rel=SCALAR_REL_TOL, abs=SCALAR_ABS_TOL
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "axis"),
+    [
+        ("sum_f64_2d_axis0", 0),
+        ("sum_f64_2d_axis1", 1),
+        ("sum_f64_2d_axis_neg1", -1),
+        ("sum_f64_2d_axis_neg2", -2),
+        ("mean_f64_2d_axis0", 0),
+        ("mean_f64_2d_axis1", 1),
+        ("max_f64_2d_axis0", 0),
+        ("max_f64_2d_axis1", 1),
+        ("min_f64_2d_axis0", 0),
+        ("min_f64_2d_axis1", 1),
+    ],
+)
+def test_wave2_f64_rank2_axis(project: CertifiedProject, name: str, axis: int) -> None:
+    a = np.array([[1.0, -2.0, 0.5], [3.0, 4.0, -1.0]])
+    check = _require_native(project, name)
+    result = check(a)
+    if name.startswith("sum"):
+        expected = np.sum(a, axis=axis)
+    elif name.startswith("mean"):
+        expected = np.mean(a, axis=axis)
+    elif name.startswith("max"):
+        expected = np.max(a, axis=axis)
+    else:
+        expected = np.min(a, axis=axis)
+    assert isinstance(result, np.ndarray)
+    assert result.dtype == np.float64
+    assert result.shape == expected.shape
+    if name.startswith("sum") or name.startswith("mean"):
+        np.testing.assert_allclose(result, expected, rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL)
+    else:
+        np.testing.assert_array_equal(result, expected)
+
+
+def test_wave2_i64_axis_wraparound(project: CertifiedProject) -> None:
+    total = _require_native_scalar(project, "sum_i64_1d_axis0", scalar_int_equal)
+    assert int(total(np.array([2**63 - 1, 1], dtype=np.int64))) == int(
+        np.sum(np.array([2**63 - 1, 1], dtype=np.int64), axis=0)
+    )
+    a = np.array([[2**63 - 1, 1], [1, 2**63 - 1]], dtype=np.int64)
+    s0 = _require_native(project, "sum_i64_2d_axis0")
+    s1 = _require_native(project, "sum_i64_2d_axis1")
+    np.testing.assert_array_equal(s0(a), np.sum(a, axis=0))
+    np.testing.assert_array_equal(s1(a), np.sum(a, axis=1))
+
+
+def test_wave2_i64_axis_max_min(project: CertifiedProject) -> None:
+    a = np.array([[1, -2, 3], [4, 0, -5]], dtype=np.int64)
+    mx = _require_native(project, "max_i64_2d_axis0")
+    mn = _require_native(project, "min_i64_2d_axis1")
+    np.testing.assert_array_equal(mx(a), np.max(a, axis=0))
+    np.testing.assert_array_equal(mn(a), np.min(a, axis=1))
+
+
+def test_wave2_f32_rank2_max_min(project: CertifiedProject) -> None:
+    a = np.array([[1.0, -2.0], [0.5, 3.5]], dtype=np.float32)
+    mx = _require_native(project, "max_f32_2d_axis0")
+    mn = _require_native(project, "min_f32_2d_axis1")
+    r0 = mx(a)
+    r1 = mn(a)
+    assert r0.dtype == np.float32 and r1.dtype == np.float32
+    np.testing.assert_array_equal(r0, np.max(a, axis=0))
+    np.testing.assert_array_equal(r1, np.min(a, axis=1))
+
+
+def test_wave2_float_extrema_nan_and_signed_zero(project: CertifiedProject) -> None:
+    max1 = checker(project, "max_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
+    min1 = checker(project, "min_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
+    # NaN propagates.
+    assert math.isnan(float(max1(np.array([1.0, float("nan"), 2.0]))))
+    assert math.isnan(float(min1(np.array([1.0, float("nan"), 2.0]))))
+    # Signed-zero extrema: max(+0, -0) = +0; min(+0, -0) = -0.
+    assert not math.copysign(1.0, float(max1(np.array([0.0, -0.0])))) < 0
+    assert math.copysign(1.0, float(min1(np.array([0.0, -0.0])))) < 0
+    assert not math.copysign(1.0, float(max1(np.array([-0.0, 0.0])))) < 0
+    assert math.copysign(1.0, float(min1(np.array([-0.0, 0.0])))) < 0
+
+    max2 = checker(project, "max_f64_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
+    min2 = checker(project, "min_f64_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
+    z = np.array([[0.0, -0.0], [-0.0, 0.0]])
+    max2(z)
+    min2(z)
+    nan_mat = np.array([[1.0, float("nan")], [2.0, 3.0]])
+    max2(nan_mat)
+    min2(nan_mat)
+
+
+def test_wave2_empty_max_min_raises_equivalently(project: CertifiedProject) -> None:
+    max1 = checker(project, "max_f64_1d_axis0", equals=scalar_close, args_equals=array_equals)
+    min1 = checker(project, "min_f64_1d_axis0", equals=scalar_close, args_equals=array_equals)
+    empty = np.zeros(0)
+    try:
+        np.max(empty, axis=0)
+    except ValueError as exc:
+        expected_max = str(exc)
+    else:  # pragma: no cover
+        pytest.fail("numpy.max empty did not raise")
+    with pytest.raises(ValueError) as excinfo:
+        max1(empty)
+    assert str(excinfo.value) == expected_max
+
+    try:
+        np.min(empty, axis=0)
+    except ValueError as exc:
+        expected_min = str(exc)
+    else:  # pragma: no cover
+        pytest.fail("numpy.min empty did not raise")
+    with pytest.raises(ValueError) as excinfo:
+        min1(empty)
+    assert str(excinfo.value) == expected_min
+
+    max2 = _require_native(project, "max_f64_2d_axis0")
+    min2 = _require_native(project, "min_f64_2d_axis1")
+    with pytest.raises(ValueError) as excinfo:
+        max2(np.zeros((0, 3)))
+    assert "maximum which has no identity" in str(excinfo.value)
+    with pytest.raises(ValueError) as excinfo:
+        min2(np.zeros((3, 0)))
+    assert "minimum which has no identity" in str(excinfo.value)
+
+
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
+def test_wave2_empty_sum_mean_value_semantics(project: CertifiedProject) -> None:
+    s0 = _require_native(project, "sum_f64_2d_axis0")
+    s1 = _require_native(project, "sum_f64_2d_axis1")
+    m0 = _require_native(project, "mean_f64_2d_axis0")
+    m1 = _require_native(project, "mean_f64_2d_axis1")
+    # (0, n) / (n, 0) / (0, 0)
+    for shape in ((0, 3), (3, 0), (0, 0)):
+        a = np.zeros(shape)
+        np.testing.assert_array_equal(s0(a), np.sum(a, axis=0))
+        np.testing.assert_array_equal(s1(a), np.sum(a, axis=1))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            r0 = m0(a)
+            r1 = m1(a)
+            e0 = np.mean(a, axis=0)
+            e1 = np.mean(a, axis=1)
+        assert r0.shape == e0.shape and r1.shape == e1.shape
+        assert np.allclose(r0, e0, equal_nan=True) or (r0.size == 0 and e0.size == 0)
+        assert np.allclose(r1, e1, equal_nan=True) or (r1.size == 0 and e1.size == 0)
+
+
+def test_wave2_axis_does_not_mutate_input(project: CertifiedProject) -> None:
+    a = np.array([[1.0, 2.0], [3.0, 4.0]])
+    for name in ("sum_f64_2d_axis0", "max_f64_2d_axis1", "mean_f64_2d_axis0"):
+        check = _require_native(project, name)
+        check(a)
+    np.testing.assert_array_equal(a, np.array([[1.0, 2.0], [3.0, 4.0]]))
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "bare_max_f64",
+        "bare_min_f64",
+        "max_f32_1d_axis0",
+        "sum_f32_2d_axis0",
+        "mean_i64_2d_axis0",
+    ],
+)
+def test_wave2_excluded_cells_not_natively_served(project: CertifiedProject, name: str) -> None:
+    with pytest.raises(CertificationError):
+        checker(project, name, equals=array_equals, args_equals=array_equals)
+
+
+@settings(max_examples=20, deadline=None)
+@given(
+    a=npst.arrays(
+        dtype=np.float64,
+        shape=st.tuples(st.integers(0, 8), st.integers(0, 8)),
+        elements=st.floats(
+            allow_nan=False, allow_infinity=False, width=64, min_value=-1e6, max_value=1e6
+        ),
+    )
+)
+def test_wave2_hypothesis_axis_sum_mean(project: CertifiedProject, a) -> None:
+    s0 = _require_native(project, "sum_f64_2d_axis0")
+    s1 = _require_native(project, "sum_f64_2d_axis1")
+    m0 = _require_native(project, "mean_f64_2d_axis0")
+    m1 = _require_native(project, "mean_f64_2d_axis1")
+    s0(a)
+    s1(a)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        m0(a)
+        m1(a)
+
+
+@settings(max_examples=15, deadline=None)
+@given(
+    a=npst.arrays(
+        dtype=np.float64,
+        shape=st.tuples(st.integers(1, 8), st.integers(1, 8)),
+        elements=st.one_of(
+            st.floats(
+                allow_nan=False,
+                allow_infinity=False,
+                width=64,
+                min_value=-1e6,
+                max_value=1e6,
+            ),
+            st.just(float("nan")),
+            st.just(float("inf")),
+            st.just(float("-inf")),
+            st.just(0.0),
+            st.just(-0.0),
+        ),
+    )
+)
+def test_wave2_hypothesis_axis_max_min(project: CertifiedProject, a) -> None:
+    mx0 = checker(project, "max_f64_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
+    mn1 = checker(project, "min_f64_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
+    mx0(a)
+    mn1(a)
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 f64 axis pairwise-sum regression (NumPy cancellation pattern)
+# ---------------------------------------------------------------------------
+# Confirmed blocker: tile([1e16, 1.0, -1e16], 10000) as float64 —
+# sequential/ndarray sum → 0 or ~3, NumPy pairwise sum → 476.0.
+# Axis f64 sum/mean must track NumPy within the certified 1e-12 tolerance.
+
+
+F64_AXIS_PAIRWISE_REPEATS = 10_000
+F64_AXIS_PAIRWISE_PATTERN = np.array([1e16, 1.0, -1e16], dtype=np.float64)
+
+
+def _f64_axis_pairwise_vector(repeats: int = F64_AXIS_PAIRWISE_REPEATS) -> np.ndarray:
+    return np.tile(F64_AXIS_PAIRWISE_PATTERN, repeats)
+
+
+def test_wave2_f64_axis_pairwise_adversarial_rank1(project: CertifiedProject) -> None:
+    """Rank-1 axis sum/mean must match NumPy pairwise on cancellation input."""
+    a = _f64_axis_pairwise_vector()
+    assert a.dtype == np.float64 and a.size == 3 * F64_AXIS_PAIRWISE_REPEATS
+    np_sum = float(np.sum(a, axis=0))
+    np_mean = float(np.mean(a, axis=0))
+    # Guard: sequential accumulation loses the 1.0 contributions entirely.
+    seq = 0.0
+    for x in a:
+        seq += float(x)
+    assert abs(np_sum - seq) > 100.0
+    assert np_sum == pytest.approx(476.0, abs=0.0)
+
+    total = _require_native_scalar(project, "sum_f64_1d_axis0", scalar_close)
+    average = _require_native_scalar(project, "mean_f64_1d_axis0", scalar_close)
+    # Equivalence checker compares native vs fallback (NumPy); also pin absolute.
+    assert float(total(a)) == pytest.approx(np_sum, rel=SCALAR_REL_TOL, abs=SCALAR_ABS_TOL)
+    assert float(average(a)) == pytest.approx(np_mean, rel=SCALAR_REL_TOL, abs=SCALAR_ABS_TOL)
+    # Negative axis route shares the same pairwise helper identity (axis0).
+    total_neg = _require_native_scalar(project, "sum_f64_1d_axis_neg1", scalar_close)
+    assert float(total_neg(a)) == pytest.approx(np_sum, rel=SCALAR_REL_TOL, abs=SCALAR_ABS_TOL)
+
+
+def test_wave2_f64_axis_pairwise_adversarial_rank2_orientations(
+    project: CertifiedProject,
+) -> None:
+    """Cancellation on unit-stride axis 0 and axis 1 must match NumPy pairwise.
+
+    NumPy only applies pairwise when the reduced axis is contiguous:
+    * axis=1 on C-order (row-contiguous) → pairwise (476)
+    * axis=0 on F-order (column-contiguous) → pairwise (476)
+    * axis=0 on C-order multi-column → sequential (loses cancellation; both legs
+      agree near 0 — covered separately)
+    """
+    v = _f64_axis_pairwise_vector()
+    # Axis 0 unit-stride: single column is always contiguous along axis 0.
+    col = np.ascontiguousarray(v.reshape(-1, 1))
+    # Multi-column axis-0 pairwise: F-order so each column is contiguous.
+    mat_f = np.asfortranarray(np.column_stack([v, v, np.flip(v)]))
+    assert mat_f.flags["F_CONTIGUOUS"]
+    # Axis 1 unit-stride: pattern along rows (C-order).
+    row = np.ascontiguousarray(v.reshape(1, -1))
+    wide = np.ascontiguousarray(np.vstack([v, np.flip(v), v]))
+    assert wide.flags["C_CONTIGUOUS"]
+
+    s0 = _require_native(project, "sum_f64_2d_axis0")
+    s1 = _require_native(project, "sum_f64_2d_axis1")
+    m0 = _require_native(project, "mean_f64_2d_axis0")
+    m1 = _require_native(project, "mean_f64_2d_axis1")
+    s_neg1 = _require_native(project, "sum_f64_2d_axis_neg1")
+    s_neg2 = _require_native(project, "sum_f64_2d_axis_neg2")
+
+    for arr in (col, mat_f):
+        np.testing.assert_allclose(
+            s0(arr), np.sum(arr, axis=0), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+        )
+        np.testing.assert_allclose(
+            m0(arr), np.mean(arr, axis=0), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+        )
+        np.testing.assert_allclose(
+            s_neg2(arr), np.sum(arr, axis=-2), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+        )
+
+    for arr in (row, wide):
+        np.testing.assert_allclose(
+            s1(arr), np.sum(arr, axis=1), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+        )
+        np.testing.assert_allclose(
+            m1(arr), np.mean(arr, axis=1), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+        )
+        np.testing.assert_allclose(
+            s_neg1(arr), np.sum(arr, axis=-1), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+        )
+
+    # Absolute anchors: NumPy pairwise result on unit-stride lanes.
+    assert float(np.sum(col, axis=0)[0]) == pytest.approx(476.0, abs=0.0)
+    assert float(s0(col)[0]) == pytest.approx(476.0, abs=SCALAR_ABS_TOL)
+    assert float(s0(mat_f)[0]) == pytest.approx(476.0, abs=SCALAR_ABS_TOL)
+    assert float(s1(row)[0]) == pytest.approx(476.0, abs=SCALAR_ABS_TOL)
+    assert float(m0(col)[0]) == pytest.approx(
+        float(np.mean(col, axis=0)[0]), rel=SCALAR_REL_TOL, abs=SCALAR_ABS_TOL
+    )
+
+
+def test_wave2_f64_axis_c_order_axis0_matches_numpy_sequential(
+    project: CertifiedProject,
+) -> None:
+    """C-order multi-column axis=0 stays NumPy-equivalent (sequential, not pairwise).
+
+    On C-contiguous multi-column arrays NumPy's axis=0 reduction is non-unit
+    stride and loses the adversarial 1.0 contributions (sum → 0). Native must
+    match that fallback result — not invent a more accurate column-wise sum.
+    """
+    v = _f64_axis_pairwise_vector()
+    mat_c = np.ascontiguousarray(np.column_stack([v, v, np.flip(v)]))
+    assert mat_c.flags["C_CONTIGUOUS"] and not mat_c.flags["F_CONTIGUOUS"]
+    np_sum = np.sum(mat_c, axis=0)
+    # NumPy sequential path cancels; pairwise-on-columns would be ~476.
+    assert np.allclose(np_sum, 0.0)
+    s0 = _require_native(project, "sum_f64_2d_axis0")
+    m0 = _require_native(project, "mean_f64_2d_axis0")
+    np.testing.assert_allclose(s0(mat_c), np_sum, rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL)
+    np.testing.assert_allclose(
+        m0(mat_c), np.mean(mat_c, axis=0), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+    )
+
+
+def test_wave2_f64_axis_pairwise_helper_text_in_generated_source() -> None:
+    """Generated-source guard: axis f64 helpers embed NumPy pairwise (+ stride dispatch)."""
+    from rextio_numpy import rust_snippets
+
+    for rank, axis in ((1, 0), (2, 0), (2, 1)):
+        helpers = rust_snippets.axis_typed("sum", "f64", rank, axis)
+        text = "\n".join(helpers)
+        assert "__rxtnp_numpy_pairwise_sum_f64" in text
+        assert "PW_BLOCKSIZE" in text
+        assert "sum_axis" not in text
+        if rank == 2:
+            assert "sequential_sum" in text
+            assert "stride_of" in text
+        mean_helpers = rust_snippets.axis_typed("mean", "f64", rank, axis)
+        mean_text = "\n".join(mean_helpers)
+        assert "__rxtnp_numpy_pairwise_sum_f64" in mean_text
+        assert "mean_axis" not in mean_text
+    # Whole-array route stays on ndarray sum (not rewritten by this fix).
+    assert "Ok(a.sum())" in rust_snippets.sum_typed("f64", 1)
+    assert "__rxtnp_numpy_pairwise_sum_f64" not in rust_snippets.sum_typed("f64", 1)
+
+
+def test_wave2_nan_payload_and_signed_zero_extrema(project: CertifiedProject) -> None:
+    """First NaN (sign/payload) and signed-zero extrema must match NumPy."""
+    neg_nan = np.copysign(np.nan, -1.0)
+    pos_nan = np.copysign(np.nan, 1.0)
+    max1 = checker(project, "max_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
+    min1 = checker(project, "min_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
+    a = np.array([1.0, neg_nan, pos_nan], dtype=np.float64)
+    rmax = max1(a)
+    rmin = min1(a)
+    assert math.isnan(float(rmax)) and math.isnan(float(rmin))
+    assert bool(np.signbit(np.asarray(rmax))) == bool(np.signbit(np.max(a)))
+    assert bool(np.signbit(np.asarray(rmin))) == bool(np.signbit(np.min(a)))
+    maxf = checker(project, "max_f32_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
+    minf = checker(project, "min_f32_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
+    f32 = np.array(
+        [[np.float32(0.0), np.float32(-0.0)], [np.float32(neg_nan), np.float32(1.0)]],
+        dtype=np.float32,
+    )
+    maxf(f32)
+    minf(f32)
+
+
+def test_wave2_empty_max_min_all_zero_shapes(project: CertifiedProject) -> None:
+    """Empty (0,0)/(0,n)/(n,0) max/min raise NumPy-compatible text on both axes."""
+    max0 = _require_native(project, "max_f64_2d_axis0")
+    max1 = _require_native(project, "max_f64_2d_axis1")
+    min0 = _require_native(project, "min_f64_2d_axis0")
+    min1 = _require_native(project, "min_f64_2d_axis1")
+    maxf = _require_native(project, "max_f32_2d_axis0")
+    minf = _require_native(project, "min_f32_2d_axis1")
+    cases = (
+        (np.zeros((0, 0)), 0, "maximum"),
+        (np.zeros((0, 0)), 1, "maximum"),
+        (np.zeros((0, 3)), 0, "maximum"),
+        (np.zeros((3, 0)), 1, "maximum"),
+        (np.zeros((0, 3)), 0, "minimum"),
+        (np.zeros((3, 0)), 1, "minimum"),
+    )
+    for arr, axis, word in cases:
+        fn = {
+            ("maximum", 0): max0,
+            ("maximum", 1): max1,
+            ("minimum", 0): min0,
+            ("minimum", 1): min1,
+        }[(word, axis)]
+        try:
+            (np.max if word == "maximum" else np.min)(arr, axis=axis)
+        except ValueError as exc:
+            expected = str(exc)
+        else:  # pragma: no cover
+            pytest.fail("numpy empty extrema did not raise")
+        with pytest.raises(ValueError) as excinfo:
+            fn(arr)
+        assert str(excinfo.value) == expected
+        assert f"{word} which has no identity" in str(excinfo.value)
+    with pytest.raises(ValueError) as excinfo:
+        maxf(np.zeros((0, 2), dtype=np.float32))
+    assert "maximum which has no identity" in str(excinfo.value)
+    with pytest.raises(ValueError) as excinfo:
+        minf(np.zeros((2, 0), dtype=np.float32))
+    assert "minimum which has no identity" in str(excinfo.value)
+
+
+def test_wave2_rank1_builtin_scalar_not_numpy_subclass(project: CertifiedProject) -> None:
+    """Documented divergence: rank-1 native results are builtin float/int."""
+    total = _require_native_scalar(project, "sum_f64_1d_axis0", scalar_close)
+    isum = _require_native_scalar(project, "sum_i64_1d_axis0", scalar_int_equal)
+    f = total(np.array([1.0, 2.0, 3.0]))
+    i = isum(np.array([1, 2, 3], dtype=np.int64))
+    assert not isinstance(f, np.ndarray)
+    assert not isinstance(i, np.ndarray)
+    assert isinstance(float(f), float)
+    assert isinstance(int(i), int)
+
+
+def test_wave2_strided_axis0_matches_numpy(project: CertifiedProject) -> None:
+    """Non-contiguous axis-0 view matches NumPy (typically sequential)."""
+    v = _f64_axis_pairwise_vector()
+    tall = np.zeros((v.size * 2, 2), dtype=np.float64)
+    tall[::2, 0] = v
+    tall[::2, 1] = np.flip(v)
+    strided = tall[::2, :]
+    assert not strided.flags["C_CONTIGUOUS"]
+    s0 = _require_native(project, "sum_f64_2d_axis0")
+    m0 = _require_native(project, "mean_f64_2d_axis0")
+    np.testing.assert_allclose(
+        s0(strided), np.sum(strided, axis=0), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+    )
+    np.testing.assert_allclose(
+        m0(strided), np.mean(strided, axis=0), rtol=SCALAR_REL_TOL, atol=SCALAR_ABS_TOL
+    )

@@ -37,7 +37,7 @@ def load_registry(enabled: tuple[str, ...] = ("rextio-numpy",)):
 def test_plugin_object_satisfies_protocol_v2() -> None:
     instance = RextioNumpyPlugin()
     assert instance.plugin_id == "rextio-numpy"
-    assert instance.api_version == "1.1"
+    assert instance.api_version == "1.2"
     assert isinstance(instance.covers(), CoverageDecl)
     records = instance.describe(RextioConfig())
     assert records and all(isinstance(record, RuleRecord) for record in records)
@@ -50,7 +50,7 @@ def test_core_loader_accepts_the_plugin() -> None:
     assert active.id == "rextio-numpy"
     assert active.rules_provided is True
     assert active.lowering_provided is True
-    assert active.api_version == "1.1"
+    assert active.api_version == "1.2"
     assert active.packages == ("numpy",)
     assert __version__ in active.name
 
@@ -150,13 +150,14 @@ def test_rule_records_shape() -> None:
     assert all(code.startswith("RXTP-NUMPY-") for code in codes)
     assert all(record.stability == "experimental" for record in records)
     assert all(record.constraint.strip() and record.guidance.strip() for record in records)
-    # The implemented lowering surface: elementwise, dot, and sum/mean
-    # reductions — all certified with the core kit (verified=True).
+    # The implemented lowering surface: elementwise, dot, whole-array sum/mean,
+    # and literal-axis reductions — all certified with the core kit (verified=True).
     native_ids = {record.id for record in records if record.outcome == "native"}
     assert native_ids == {
         "rextio-numpy/elementwise-float64",
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
+        "rextio-numpy/reduction-axis",
     }
     assert all(record.verified is True for record in records if record.outcome == "native")
     assert all(record.verified is None for record in records if record.outcome != "native")

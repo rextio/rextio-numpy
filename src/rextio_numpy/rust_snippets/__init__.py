@@ -44,9 +44,12 @@ from rextio_numpy.rust_snippets.elementwise import (
 )
 from rextio_numpy.rust_snippets.linear import dot1, dot_call_name, dot_typed
 from rextio_numpy.rust_snippets.reductions import (
+    axis_call_name,
+    axis_typed,
     mean1,
     mean_call_name,
     mean_typed,
+    op_from_target,
     sum1,
     sum_call_name,
     sum_typed,
@@ -54,6 +57,8 @@ from rextio_numpy.rust_snippets.reductions import (
 
 __all__ = [
     "OP_SYMBOLS",
+    "axis_call_name",
+    "axis_typed",
     "broadcast_shape_helper",
     "dot1",
     "dot_call_name",
@@ -71,6 +76,7 @@ __all__ = [
     "mean1",
     "mean_call_name",
     "mean_typed",
+    "op_from_target",
     "shared_broadcast_helpers",
     "sum1",
     "sum_call_name",
