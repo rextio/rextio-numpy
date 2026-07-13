@@ -1,0 +1,90 @@
+"""Feature-owned plugin type registry for the rextio-numpy array surface.
+
+Holds the complete ``PluginType`` / ``BoundaryConversion`` definitions for
+float64, float32, and int64 at ranks 1 and 2 (six types). ``plugin.py``
+exposes this registry via ``type_vocabulary()`` → ``plugin_types()``.
+"""
+
+from __future__ import annotations
+
+from rextio.plugins.api import BoundaryConversion, PluginType
+
+from rextio_numpy.diagnostics import (
+    F32_1D,
+    F32_2D,
+    F64_1D,
+    F64_2D,
+    I64_1D,
+    I64_2D,
+)
+
+# rust-numpy 0.29 element type tokens used in ArrayN / PyArrayN paths.
+_RUST_ELEM = {
+    "f64": "f64",
+    "f32": "f32",
+    "i64": "i64",
+}
+
+
+def _boundary(rank: int, elem: str) -> BoundaryConversion:
+    """Return the proven rust-numpy 0.29 boundary conversion for rank/elem."""
+    rust_elem = _RUST_ELEM[elem]
+    return BoundaryConversion(
+        param_rust=f"numpy::PyReadonlyArray{rank}<'py, {rust_elem}>",
+        param_expr="{param}.as_array().to_owned()",
+        return_rust=f"pyo3::Bound<'py, numpy::PyArray{rank}<{rust_elem}>>",
+        return_expr="numpy::ToPyArray::to_pyarray(&{value}, py)",
+    )
+
+
+def _array_type(
+    *,
+    key: str,
+    annotation: str,
+    rank: int,
+    elem: str,
+) -> PluginType:
+    """Build one array PluginType with Array{rank}<elem> native representation."""
+    rust_elem = _RUST_ELEM[elem]
+    return PluginType(
+        key=key,
+        annotations=(f"rextio_numpy.types.{annotation}",),
+        rust_type=f"numpy::ndarray::Array{rank}<{rust_elem}>",
+        conversion=_boundary(rank, elem),
+    )
+
+
+# Stable, ordered registry: f64/f32/i64 × ranks 1–2 (f64 rank-1 first for compat).
+PLUGIN_TYPES: tuple[PluginType, ...] = (
+    _array_type(key=F64_1D, annotation="F64Arr1", rank=1, elem="f64"),
+    _array_type(key=F64_2D, annotation="F64Arr2", rank=2, elem="f64"),
+    _array_type(key=F32_1D, annotation="F32Arr1", rank=1, elem="f32"),
+    _array_type(key=F32_2D, annotation="F32Arr2", rank=2, elem="f32"),
+    _array_type(key=I64_1D, annotation="I64Arr1", rank=1, elem="i64"),
+    _array_type(key=I64_2D, annotation="I64Arr2", rank=2, elem="i64"),
+)
+
+_PLUGIN_TYPES_BY_KEY: dict[str, PluginType] = {t.key: t for t in PLUGIN_TYPES}
+
+
+def plugin_types() -> tuple[PluginType, ...]:
+    """Return the full six-type array vocabulary (stable public registry API)."""
+    return PLUGIN_TYPES
+
+
+def plugin_type(key: str) -> PluginType:
+    """Return the ``PluginType`` for ``key``, or raise ``KeyError``."""
+    return _PLUGIN_TYPES_BY_KEY[key]
+
+
+def plugin_type_keys() -> frozenset[str]:
+    """Return the set of type keys this registry owns."""
+    return frozenset(_PLUGIN_TYPES_BY_KEY)
+
+
+__all__ = [
+    "PLUGIN_TYPES",
+    "plugin_type",
+    "plugin_type_keys",
+    "plugin_types",
+]

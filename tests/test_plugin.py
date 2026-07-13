@@ -62,20 +62,62 @@ def test_core_loader_accepts_the_plugin() -> None:
 
 
 def test_core_loader_registers_the_type_vocabulary() -> None:
+    """Loader facade: plugin.py exposes the Wave-1 six-type registry exactly."""
+    from rextio_numpy.plugin_types import PLUGIN_TYPES
+
     registry = load_registry()
 
-    assert len(registry.types) == 1
-    binding = registry.types[0]
-    assert binding.plugin_id == "rextio-numpy"
-    plugin_type = binding.plugin_type
-    assert plugin_type.key == "rextio-numpy/f64-1d"
-    assert plugin_type.annotations == ("rextio_numpy.types.F64Arr1",)
-    assert plugin_type.rust_type == "numpy::ndarray::Array1<f64>"
-    conversion = plugin_type.conversion
+    assert len(registry.types) == 6
+    assert all(binding.plugin_id == "rextio-numpy" for binding in registry.types)
+    loaded = tuple(binding.plugin_type for binding in registry.types)
+    # Exact stable order: f64 r1/r2, f32 r1/r2, i64 r1/r2.
+    assert [pt.key for pt in loaded] == [
+        "rextio-numpy/f64-1d",
+        "rextio-numpy/f64-2d",
+        "rextio-numpy/f32-1d",
+        "rextio-numpy/f32-2d",
+        "rextio-numpy/i64-1d",
+        "rextio-numpy/i64-2d",
+    ]
+    assert [pt.annotations for pt in loaded] == [
+        ("rextio_numpy.types.F64Arr1",),
+        ("rextio_numpy.types.F64Arr2",),
+        ("rextio_numpy.types.F32Arr1",),
+        ("rextio_numpy.types.F32Arr2",),
+        ("rextio_numpy.types.I64Arr1",),
+        ("rextio_numpy.types.I64Arr2",),
+    ]
+    # Identity with the feature-owned registry (no duplicate unit coverage).
+    assert loaded == PLUGIN_TYPES
+
+    # Wave-0 F64 rank-1 compatibility surface remains first and unchanged.
+    f64_r1 = loaded[0]
+    assert f64_r1.key == "rextio-numpy/f64-1d"
+    assert f64_r1.annotations == ("rextio_numpy.types.F64Arr1",)
+    assert f64_r1.rust_type == "numpy::ndarray::Array1<f64>"
+    conversion = f64_r1.conversion
     assert conversion.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
     assert conversion.param_expr == "{param}.as_array().to_owned()"
     assert conversion.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
     assert conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+
+    # Spot-check remaining ranks/dtypes via the integrated registry surface.
+    expected_rust = {
+        "rextio-numpy/f64-2d": ("Array2<f64>", "PyReadonlyArray2", "PyArray2"),
+        "rextio-numpy/f32-1d": ("Array1<f32>", "PyReadonlyArray1", "PyArray1"),
+        "rextio-numpy/f32-2d": ("Array2<f32>", "PyReadonlyArray2", "PyArray2"),
+        "rextio-numpy/i64-1d": ("Array1<i64>", "PyReadonlyArray1", "PyArray1"),
+        "rextio-numpy/i64-2d": ("Array2<i64>", "PyReadonlyArray2", "PyArray2"),
+    }
+    by_key = {pt.key: pt for pt in loaded}
+    for key, (array_ty, param_ty, return_ty) in expected_rust.items():
+        elem = key.split("/")[-1].split("-")[0]  # f64 / f32 / i64
+        pt = by_key[key]
+        assert pt.rust_type == f"numpy::ndarray::{array_ty}"
+        assert pt.conversion.param_rust == f"numpy::{param_ty}<'py, {elem}>"
+        assert pt.conversion.return_rust == f"pyo3::Bound<'py, numpy::{return_ty}<{elem}>>"
+        assert pt.conversion.param_expr == "{param}.as_array().to_owned()"
+        assert pt.conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
 
 
 def test_core_loader_registers_the_pinned_crates() -> None:

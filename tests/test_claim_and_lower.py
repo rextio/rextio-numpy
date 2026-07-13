@@ -7,9 +7,12 @@ import pytest
 from rextio.config.schema import RextioConfig
 from rextio.plugins.api import Claimed, ClaimSite, LoweringContext, NotCovered, Rejected
 
-from rextio_numpy.plugin import F64_1D, RextioNumpyPlugin
+from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D, I64_2D
+from rextio_numpy.plugin import F64_1D as PLUGIN_F64_1D
+from rextio_numpy.plugin import RextioNumpyPlugin
 
 K = F64_1D
+assert PLUGIN_F64_1D == K
 CONFIG = RextioConfig()
 PLUGIN = RextioNumpyPlugin()
 
@@ -54,6 +57,37 @@ def test_claim_elementwise_binops(op: str, operands: tuple[str, str]) -> None:
     assert result == Claimed(rule_id="rextio-numpy/elementwise-float64", result_type=K)
 
 
+def test_claim_wave1_matrix_via_plugin_claim_router() -> None:
+    # claim/lower routers are feature-owned; plugin.py only gates type_vocabulary.
+    assert PLUGIN.claim(site("binop", "+", (F64_2D, F64_1D)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/elementwise-float64", result_type=F64_2D
+    )
+    assert PLUGIN.claim(site("binop", "/", (I64_1D, I64_1D)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/elementwise-float64", result_type=F64_1D
+    )
+    assert PLUGIN.claim(site("call", "numpy.dot", (I64_1D, I64_1D)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/dot-float64", result_type="int"
+    )
+    assert PLUGIN.claim(site("call", "numpy.sum", (I64_2D,)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/reduction-sum-mean", result_type="int"
+    )
+    assert PLUGIN.claim(site("call", "numpy.sum", (I64_1D,)), CONFIG) == Claimed(
+        rule_id="rextio-numpy/reduction-sum-mean", result_type="int"
+    )
+    # float32 sum/mean/dot and int64 mean are claim-rejected (no runtime length
+    # /fallback gate for their divergent sequential accumulators).
+    for target, operands in (
+        ("numpy.mean", (F32_1D,)),
+        ("numpy.sum", (F32_1D,)),
+        ("numpy.dot", (F32_1D, F32_1D)),
+        ("numpy.mean", (I64_1D,)),
+        ("numpy.mean", (I64_2D,)),
+    ):
+        rejected = PLUGIN.claim(site("call", target, operands), CONFIG)
+        assert isinstance(rejected, Rejected)
+        assert rejected.diagnostic.code == "RXTP-NUMPY-010"
+
+
 @pytest.mark.parametrize(
     ("kind", "target", "operands"),
     [
@@ -95,6 +129,8 @@ def test_claim_uncovered_sites_are_not_covered(
         ("binop", "+", (K, "int")),
         ("binop", "-", ("int", K)),
         ("binop", "*", (K, "list[float]")),
+        ("binop", "+", (F64_1D, F32_1D)),
+        ("call", "numpy.dot", (F64_2D, F64_2D)),
     ],
 )
 def test_claim_covered_but_unsupported_operands_are_rejected(
@@ -141,6 +177,7 @@ def test_claim_is_deterministic() -> None:
         site("call", "numpy.dot", (K, "int")),
         site("binop", "*", (K, "float")),
         site("binop", "%", (K, K)),
+        site("binop", "+", (I64_1D, I64_2D)),
     ]
     for claim_site in sites:
         first = PLUGIN.claim(claim_site, CONFIG)
@@ -175,7 +212,10 @@ def test_lower_reductions(target: str, helper_name: str, body: str) -> None:
     lowered = PLUGIN.lower(site("call", target, (K,)), ctx("values"))
     assert lowered.rust == f"{helper_name}(&values)?"
     assert len(lowered.helpers) == 1
-    assert f"fn {helper_name}(a: &numpy::ndarray::Array1<f64>) -> pyo3::PyResult<f64>" in lowered.helpers[0]
+    assert (
+        f"fn {helper_name}(a: &numpy::ndarray::Array1<f64>) -> pyo3::PyResult<f64>"
+        in lowered.helpers[0]
+    )
     assert body in lowered.helpers[0]
 
 
@@ -219,7 +259,7 @@ def test_lower_binop_scalar_array(op: str, name: str, symbol: str) -> None:
     assert f"Ok(a.mapv(|x| s {symbol} x))" in helper
 
 
-def test_lower_expressions_are_fallible() -> None:
+def test_lower_wave1_helpers_are_fallible() -> None:
     lowered_all = [
         PLUGIN.lower(site("call", "numpy.dot", (K, K)), ctx("a", "b")),
         PLUGIN.lower(site("call", "numpy.sum", (K,)), ctx("a")),
@@ -227,10 +267,20 @@ def test_lower_expressions_are_fallible() -> None:
         PLUGIN.lower(site("binop", "+", (K, K)), ctx("a", "b")),
         PLUGIN.lower(site("binop", "-", (K, "float")), ctx("a", "s")),
         PLUGIN.lower(site("binop", "/", ("float", K)), ctx("s", "a")),
+        PLUGIN.lower(site("binop", "+", (F64_1D, F64_2D)), ctx("a", "b")),
+        PLUGIN.lower(site("binop", "/", (I64_1D, "int")), ctx("a", "s")),
+        PLUGIN.lower(site("call", "numpy.dot", (I64_1D, I64_1D)), ctx("a", "b")),
+        PLUGIN.lower(site("call", "numpy.sum", (I64_1D,)), ctx("a")),
     ]
     for lowered in lowered_all:
         assert lowered.rust.endswith("?")
-        assert all("pyo3::PyResult<" in helper for helper in lowered.helpers)
+        # Shared shape formatters return String; op helpers and broadcast_shape
+        # return PyResult. At least one fallible helper must be present.
+        assert any("pyo3::PyResult<" in helper for helper in lowered.helpers)
+        for helper in lowered.helpers:
+            if "__rxtnp_fmt_shape" in helper:
+                continue
+            assert "pyo3::PyResult<" in helper
 
 
 def test_lower_rejects_unclaimed_sites() -> None:

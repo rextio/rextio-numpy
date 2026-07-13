@@ -20,6 +20,4 @@ def lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr:
         result = handler(claimed, ctx)
         if result is not None:
             return result
-    raise ValueError(
-        f"rextio-numpy cannot lower unclaimed site: {claimed.kind} {claimed.target!r}"
-    )
+    raise ValueError(f"rextio-numpy cannot lower unclaimed site: {claimed.kind} {claimed.target!r}")

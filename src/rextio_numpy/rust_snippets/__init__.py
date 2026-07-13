@@ -13,10 +13,12 @@ byte-for-byte (the certification kit compares exception type *and* message):
 - element-wise shape mismatch (note the trailing space, verbatim from NumPy):
   ``operands could not be broadcast together with shapes (N,) (M,) ``
 
-Division by zero needs no special handling: both NumPy and Rust f64 follow
-IEEE-754 (inf/nan), and NumPy does not raise.
+Division by zero needs no special handling for floats: both NumPy and Rust
+follow IEEE-754 (inf/nan), and NumPy does not raise. Integer true division
+promotes to float64. Integer ``+``/``-``/``*``/sum/dot use wrapping
+arithmetic so NumPy release-mode wraparound holds under debug Cargo.
 
-Array types are spelled ``numpy::ndarray::Array1<f64>`` — rust-numpy's own
+Array types are spelled ``numpy::ndarray::ArrayN<T>`` — rust-numpy's own
 re-export of the ndarray crate. The boundary conversion produces values of
 exactly that version; naming the top-level ``ndarray`` crate instead can pick
 a *second* incompatible copy when cargo resolves rust-numpy's ndarray range
@@ -27,19 +29,50 @@ from __future__ import annotations
 
 from rextio_numpy.rust_snippets.elementwise import (
     OP_SYMBOLS,
+    broadcast_shape_helper,
     elementwise_aa,
+    elementwise_aa_typed,
     elementwise_as,
+    elementwise_as_typed,
+    elementwise_call_name_aa,
+    elementwise_call_name_as,
+    elementwise_call_name_sa,
     elementwise_sa,
+    elementwise_sa_typed,
+    fmt_shape_helper,
+    shared_broadcast_helpers,
 )
-from rextio_numpy.rust_snippets.linear import dot1
-from rextio_numpy.rust_snippets.reductions import mean1, sum1
+from rextio_numpy.rust_snippets.linear import dot1, dot_call_name, dot_typed
+from rextio_numpy.rust_snippets.reductions import (
+    mean1,
+    mean_call_name,
+    mean_typed,
+    sum1,
+    sum_call_name,
+    sum_typed,
+)
 
 __all__ = [
     "OP_SYMBOLS",
+    "broadcast_shape_helper",
     "dot1",
+    "dot_call_name",
+    "dot_typed",
     "elementwise_aa",
+    "elementwise_aa_typed",
     "elementwise_as",
+    "elementwise_as_typed",
+    "elementwise_call_name_aa",
+    "elementwise_call_name_as",
+    "elementwise_call_name_sa",
     "elementwise_sa",
+    "elementwise_sa_typed",
+    "fmt_shape_helper",
     "mean1",
+    "mean_call_name",
+    "mean_typed",
+    "shared_broadcast_helpers",
     "sum1",
+    "sum_call_name",
+    "sum_typed",
 ]

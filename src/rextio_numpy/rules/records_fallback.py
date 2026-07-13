@@ -12,22 +12,30 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             kind="call",
             pattern=(
                 "covered numpy.dot/sum/mean call or elementwise +/-/*// binop whose "
-                "resolved operand types are outside the float64 1-D surface"
+                "resolved operand types are outside the float64/float32/int64 rank-1/2 surface"
             ),
         ),
         constraint=(
             "A covered numpy operation whose operand types are known but outside the "
-            "supported set (float64 1-D arrays, plus float scalars for elementwise binops) "
-            "is rejected here so the plugin's guidance is delivered. Unresolved operands and "
-            "wrong-arity/unsupported call shapes are NotCovered instead, so core's own "
-            "diagnostic fires. Emitted from both call and binop sites -- the code is the "
+            "supported set is rejected here so the plugin's guidance is delivered. "
+            "Elementwise covers same-dtype float64/float32/int64 arrays of rank 1 or 2 "
+            "plus matching float/int scalars. Whole-array sum covers float64/int64 "
+            "ranks 1–2; mean covers float64 ranks 1–2 only (float32 reductions and "
+            "int64 mean are excluded). 1-D dot covers same-dtype float64/int64 only "
+            "(float32 dots are excluded). Unresolved operands and wrong-arity/"
+            "unsupported call shapes are NotCovered instead, so core's own diagnostic "
+            "fires. Emitted from both call and binop sites — the code is the "
             "operand-type rejection, not a dtype-annotation rule."
         ),
         outcome="fallback",
         diagnostic_code="RXTP-NUMPY-010",
         guidance=(
-            "Cast operands to float64 1-D arrays (x.astype(np.float64)) at the boundary of "
-            "the hot path, or keep the function on the Python fallback."
+            "Cast operands to a supported dtype and rank at the boundary of the hot "
+            "path (float64/float32/int64 for elementwise; float64 for sum/mean and "
+            "float64/int64 for sum/dot — float32 whole-array reductions/dots and "
+            "int64 mean stay on the fallback, so cast those to float64 if native "
+            "lowering is required), keep array dtypes uniform, or keep the function "
+            "on the Python fallback."
         ),
         stability="experimental",
     ),
@@ -36,12 +44,11 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         provider="rextio-numpy",
         scope=RuleScope(
             kind="type",
-            pattern="ndarray with more than 1 dimension, or a dynamically unknown rank",
+            pattern="ndarray with more than 2 dimensions, or a dynamically unknown rank",
         ),
         constraint=(
-            "The initial surface covers statically known 1-D arrays only (2-D support "
-            "is planned but not implemented); higher ranks and rank-polymorphic code "
-            "stay on the Python fallback."
+            "The implemented surface covers statically known 1-D and 2-D arrays only; "
+            "higher ranks and rank-polymorphic code stay on the Python fallback."
         ),
         outcome="fallback",
         diagnostic_code="RXTP-NUMPY-011",
@@ -76,7 +83,10 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         provider="rextio-numpy",
         scope=RuleScope(
             kind="call",
-            pattern="any numpy API outside the covered symbols (fancy indexing, broadcasting beyond scalars, ufunc kwargs, random, linalg, ...)",
+            pattern=(
+                "any numpy API outside the covered symbols (fancy indexing, axis= reductions, "
+                "2-D matmul/@, ufunc kwargs, random, linalg, ...)"
+            ),
         ),
         constraint=(
             "APIs outside the covered surface have no verified Rust lowering and keep the "

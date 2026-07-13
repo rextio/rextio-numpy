@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from rextio.config.schema import RextioConfig
 from rextio.plugins.api import (
-    BoundaryConversion,
     ClaimResult,
     ClaimSite,
     CoverageDecl,
@@ -30,28 +29,13 @@ from rextio_numpy.__about__ import __version__
 from rextio_numpy.claim import claim as claim_site
 from rextio_numpy.diagnostics import F64_1D
 from rextio_numpy.lower import lower as lower_site
+from rextio_numpy.plugin_types import plugin_types
 from rextio_numpy.rules import COVERAGE, numpy_rule_records
 
 PLUGIN_ID = "rextio-numpy"
 
 # Re-export for existing test and internal imports.
 __all__ = ["F64_1D", "PLUGIN_ID", "RextioNumpyPlugin", "plugin"]
-
-# The proven boundary conversion (compiled and certified under cargo with
-# pyo3 0.29 + rust-numpy =0.29.0). The native type is rust-numpy's ndarray
-# RE-EXPORT: rust-numpy pins its own compatible ndarray, so a direct ndarray
-# dependency would be a second, type-incompatible copy of the crate.
-_F64_1D_TYPE = PluginType(
-    key=F64_1D,
-    annotations=("rextio_numpy.types.F64Arr1",),
-    rust_type="numpy::ndarray::Array1<f64>",
-    conversion=BoundaryConversion(
-        param_rust="numpy::PyReadonlyArray1<'py, f64>",
-        param_expr="{param}.as_array().to_owned()",
-        return_rust="pyo3::Bound<'py, numpy::PyArray1<f64>>",
-        return_expr="numpy::ToPyArray::to_pyarray(&{value}, py)",
-    ),
-)
 
 
 class RextioNumpyPlugin:
@@ -86,7 +70,7 @@ class RextioNumpyPlugin:
 
     def type_vocabulary(self) -> tuple[PluginType, ...]:
         """Return the annotation vocabulary this plugin adds to the analyzer."""
-        return (_F64_1D_TYPE,)
+        return plugin_types()
 
     def claim(self, site: ClaimSite, config: RextioConfig) -> ClaimResult:
         """Decide, at analysis time, whether this plugin lowers the site.
@@ -110,9 +94,7 @@ class RextioNumpyPlugin:
 
     def crate_dependencies(self) -> tuple[CrateDependency, ...]:
         """Return the pinned crates the generated helpers depend on."""
-        return (
-            CrateDependency(name="numpy", version="=0.29.0"),
-        )
+        return (CrateDependency(name="numpy", version="=0.29.0"),)
 
 
 def plugin() -> RextioNumpyPlugin:

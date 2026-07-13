@@ -2,16 +2,18 @@
 
 L2 rule records per the Rextio tooling contract: each states a pattern, the
 constraint that decides it, the RXTP-NUMPY diagnostic code it will fire as,
-and remediation guidance. The rule set covers the implemented first lowering
-surface — float64 1-D element-wise arithmetic (array-array, array-scalar,
-scalar-array), ``numpy.dot``, and whole-array ``sum``/``mean`` reductions via
-the Rust ``ndarray`` crate — plus the explicit exclusions around it.
+and remediation guidance. The rule set covers the implemented Wave-1 lowering
+surface — float64/float32/int64 ranks 1–2 element-wise arithmetic (array-array
+with NumPy broadcasting, array-scalar, scalar-array), 1-D float64/int64
+``numpy.dot``, whole-array float64/int64 ``sum``, and whole-array float64
+``mean`` reductions via the Rust ``ndarray`` crate (float32 sum/mean/dot and
+int64 mean stay fallback) — plus the explicit exclusions around it.
 
 All records are ``experimental`` (plugin API 1.1, rextio 0.1.1 line). Records
-with outcome ``native`` carry ``verified=True``: their lowering passed the
-core plugin certification kit (``rextio.plugins.testing``) against CPython
-NumPy, with the divergences documented per rule in ``constraint``. Records
-with outcome ``fallback`` are exclusions that keep code on the Python
+with outcome ``native`` carry ``verified=True``: their lowering is certified
+via the core plugin certification kit (``rextio.plugins.testing``) against
+CPython NumPy, with the divergences documented per rule in ``constraint``.
+Records with outcome ``fallback`` are exclusions that keep code on the Python
 fallback.
 
 RXTP-NUMPY-011 (rank), RXTP-NUMPY-012 (view aliasing), and RXTP-NUMPY-019

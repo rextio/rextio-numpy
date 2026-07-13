@@ -45,6 +45,40 @@ def test_native_and_fallback_split() -> None:
     assert all(r.verified is None for r in FALLBACK_RECORDS)
 
 
+def test_native_records_broadened_but_ids_stable() -> None:
+    by_id = {r.id: r for r in NATIVE_RECORDS}
+    assert set(by_id) == {
+        "rextio-numpy/elementwise-float64",
+        "rextio-numpy/dot-float64",
+        "rextio-numpy/reduction-sum-mean",
+    }
+    elem = by_id["rextio-numpy/elementwise-float64"]
+    assert elem.diagnostic_code == "RXTP-NUMPY-001"
+    assert "rank 1 or 2" in elem.scope.pattern
+    assert "int64" in elem.constraint
+    assert "broadcast" in elem.constraint.lower()
+    dot = by_id["rextio-numpy/dot-float64"]
+    assert dot.diagnostic_code == "RXTP-NUMPY-002"
+    assert "2-D" in dot.scope.pattern or "2-D" in dot.constraint
+    # float32 is elementwise-only; sum/mean/dot claims must not cover it.
+    assert "float32" in dot.scope.pattern or "float32" in dot.constraint
+    assert "rejected" in dot.constraint.lower() or "not claimed" in dot.scope.pattern
+    red = by_id["rextio-numpy/reduction-sum-mean"]
+    assert red.diagnostic_code == "RXTP-NUMPY-003"
+    assert "int64 sum" in red.constraint or "float64/int64" in red.constraint
+    assert "float32" in red.scope.pattern or "float32" in red.constraint
+    assert "int64 mean" in red.scope.pattern or "int64 mean" in red.constraint
+    assert "rejected" in red.constraint.lower() or "not claimed" in red.scope.pattern
+    # Native rule must not advertise verified int64 mean.
+    assert "int64 mean is float64" not in red.constraint
+
+
+def test_fallback_ndim_is_rank_gt_2() -> None:
+    ndim = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-ndim")
+    assert ndim.diagnostic_code == "RXTP-NUMPY-011"
+    assert "more than 2" in ndim.scope.pattern
+
+
 def test_rust_snippets_package_public_api() -> None:
     # Same import path as the pre-split module.
     assert callable(rust_snippets.dot1)
@@ -58,3 +92,5 @@ def test_rust_snippets_package_public_api() -> None:
     assert "fn __rxtnp_sum1" in rust_snippets.sum1()
     assert "fn __rxtnp_mean1" in rust_snippets.mean1()
     assert "fn __rxtnp_add1_aa" in rust_snippets.elementwise_aa("add")
+    assert "wrapping_add" in rust_snippets.elementwise_aa_typed("add", "i64", 1, 1)
+    assert "broadcast" in rust_snippets.broadcast_shape_helper()
