@@ -9,6 +9,11 @@ build/
 .ruff_cache/
 .mypy_cache/
 
+# Wave 2 matmul research harness result artifacts (never stage)
+matmul-wave2-report-*.json
+matmul-wave2-report-*.md
+**/matmul_wave2/results/
+
 # direnv folder-scoped GitHub CLI config (machine-local)
 .envrc
 ~/
