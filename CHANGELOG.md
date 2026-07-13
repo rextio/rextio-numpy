@@ -1,11 +1,11 @@
 # Changelog
 
-## 0.1.1 — 2026-07-13 (release candidate)
+## 0.1.1 — 2026-07-14
 
-Release-candidate cut for package version **0.1.1** on this branch. This is an
-**untagged / unuploaded** RC: it is **not** a PyPI publication claim. Published
-PyPI **`rextio-numpy` 0.1.0** (2026-07-12) remains the last uploaded release;
-this section documents the surface shipped on the `0.1.1` branch for the RC.
+Released cut for package version **0.1.1**, tagged and uploaded to PyPI on
+2026-07-14. Published PyPI **`rextio-numpy` 0.1.0** (2026-07-12) was the prior
+uploaded release; this section documents the surface shipped in the `0.1.1`
+release.
 
 Requires **`rextio>=0.1.2,<0.2`** (plugin API **1.2**, Experimental tier). NumPy
 is deliberately **not** a package dependency.
@@ -67,7 +67,7 @@ Preregistered Wave-2 rank-2 f64 matmul research retains the product decision
 **Certified acceptance surface:** values, dtypes, and exceptions remain the
 equivalence contract under the core certification kit.
 
-**Accepted divergence (signed off for this RC):** native empty-mean /
+**Accepted divergence (signed off for this release):** native empty-mean /
 empty-axis-lane, divide-by-zero, invalid-value / invalid-reduction, elementwise,
 fused-elementwise, and related covered paths **may omit** NumPy
 `RuntimeWarning` emissions. Do **not** overclaim warning equivalence — only
@@ -96,7 +96,7 @@ uncovered dtypes/forms, rank > 2).
 
 Initial **published** release of the NumPy lowering plugin for Rextio (requires
 `rextio >= 0.1.1, < 0.2`; plugin API 1.1, Experimental tier). This is the last
-PyPI-uploaded cut prior to the 0.1.1 RC above.
+PyPI-uploaded cut prior to the 0.1.1 release above.
 
 ### Native surface (certified)
 

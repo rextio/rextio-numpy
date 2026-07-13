@@ -23,9 +23,8 @@ it stale and PyPI will ship RC language. Historical **0.1.0** changelog entries
 stay as history; only rewrite the **0.1.1** header/body where it claims the cut
 is still unreleased.
 
-**Current pre-release status (transient — clear at the gate above):** this
-branch is an untagged / unuploaded 0.1.1 release candidate; published PyPI
-remains **0.1.0** until upload.
+**Current release status:** `rextio-numpy` **0.1.1** is tagged and uploaded to
+PyPI (2026-07-14). The prior published cut was **0.1.0** (2026-07-12).
 
 ## Safe deployment order (strict)
 

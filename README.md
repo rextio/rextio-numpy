@@ -8,12 +8,11 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: 0.1.1 release candidate
+## Status: 0.1.1 released
 
-This repository branch is the **0.1.1 release candidate** for package version
-`rextio-numpy` **0.1.1**. It is an **untagged / unuploaded** RC on this branch —
-**not** a claim that 0.1.1 is published on PyPI. The last **published** cut is
-**`rextio-numpy` 0.1.0** (2026-07-12 on PyPI).
+`rextio-numpy` **0.1.1** is released — tagged and uploaded to PyPI on
+2026-07-14. The prior published cut was **`rextio-numpy` 0.1.0**
+(2026-07-12 on PyPI).
 
 Implements **plugin API 1.2** end to end: the annotation vocabulary, the
 deterministic `claim` pass (including keyword/literal axis metadata and
@@ -120,7 +119,7 @@ one per lowerer (`tests/test_lower_binops.py`,
 
 **Certified acceptance surface:** values, dtypes, and exceptions.
 
-**Accepted for this RC (do not overclaim warning equivalence):** native
+**Accepted for this release (do not overclaim warning equivalence):** native
 empty-mean / empty-axis-lane, divide-by-zero, invalid-value /
 invalid-reduction, elementwise, fused-elementwise, and related covered paths
 **may omit** NumPy `RuntimeWarning` emissions. Values still match the certified
@@ -178,22 +177,21 @@ def dot(a: F64Arr1, b: F64Arr1) -> float:
 ```
 
 ```bash
-pip install rextio-numpy   # requires rextio >= 0.1.2 (once both are available)
+pip install rextio-numpy   # requires rextio >= 0.1.2
 rextio capabilities --format json   # numpy rules appear under "rules"
 rextio build .                      # lowered kernels compile via cargo
 ```
 
-> **Note:** a PyPI `rextio-numpy` install tracks the last **published** cut
-> (**0.1.0**). This branch is the **0.1.1 RC** (untagged / unuploaded). To
-> exercise the 0.1.1 surface, install from a source checkout (see Development)
-> against a core that provides plugin API 1.2 (`rextio>=0.1.2`).
+> **Note:** `pip install rextio-numpy` now installs **0.1.1**. It requires a
+> core that provides plugin API 1.2 (`rextio>=0.1.2`). To work against the
+> surface from a source checkout, see Development below.
 
 ## Development
 
-Core for this RC requires **`rextio>=0.1.2,<0.2`**. For day-to-day work on this
-branch, install core from a build that exposes plugin API 1.2 (PyPI once
-0.1.2 is available, or a sibling checkout when co-developing) and this package
-editable without resolving a published `rextio-numpy` wheel over the tree:
+Core for this release requires **`rextio>=0.1.2,<0.2`**. For day-to-day work on
+this branch, install core from a build that exposes plugin API 1.2 (PyPI, or a
+sibling checkout when co-developing) and this package editable without resolving
+a published `rextio-numpy` wheel over the tree:
 
 ```bash
 uv venv --python 3.11 .venv
