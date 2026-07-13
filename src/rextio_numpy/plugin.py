@@ -9,31 +9,41 @@ module itself never imports numpy; only the user-facing
 
 Claim and lower logic live in :mod:`rextio_numpy.claim` and
 :mod:`rextio_numpy.lower`; this module is a thin facade.
+
+Import-time contract: this module (and therefore the package root and
+:mod:`rextio_numpy.types`) must load without analyzer/config/plugin modules
+from core. Generated project runtimes ship a minimal ``rextio`` package
+(``__about__``, ``__init__``, ``runtime`` only); fallback wrappers still
+import annotation aliases from this package. Core types are imported lazily
+inside methods that only run under a full analyzer/plugin host.
 """
 
 from __future__ import annotations
 
-from rextio.config.schema import RextioConfig
-from rextio.plugins.api import (
-    ClaimResult,
-    ClaimSite,
-    CoverageDecl,
-    CrateDependency,
-    LoweredExpr,
-    LoweringContext,
-    PluginType,
-    RuleRecord,
-)
-from rextio.plugins.models import RextioPlugin
+from typing import TYPE_CHECKING
 
 from rextio_numpy.__about__ import __version__
-from rextio_numpy.claim import claim as claim_site
-from rextio_numpy.diagnostics import F64_1D
-from rextio_numpy.lower import lower as lower_site
-from rextio_numpy.plugin_types import plugin_types
-from rextio_numpy.rules import COVERAGE, numpy_rule_records
+
+if TYPE_CHECKING:
+    from rextio.config.schema import RextioConfig
+    from rextio.plugins.api import (
+        ClaimResult,
+        ClaimSite,
+        CoverageDecl,
+        CrateDependency,
+        LoweredExpr,
+        LoweringContext,
+        PluginType,
+        RuleRecord,
+    )
+    from rextio.plugins.models import RextioPlugin
 
 PLUGIN_ID = "rextio-numpy"
+
+# Stable Wave-0 re-export (same value as rextio_numpy.diagnostics.F64_1D).
+# Defined here as a literal so importing this module never pulls analyzer/
+# diagnostics under a minimal generated-runtime rextio package.
+F64_1D = "rextio-numpy/f64-1d"
 
 # Re-export for existing test and internal imports.
 __all__ = ["F64_1D", "PLUGIN_ID", "RextioNumpyPlugin", "plugin"]
@@ -47,6 +57,10 @@ class RextioNumpyPlugin:
 
     def to_rextio_plugin(self) -> RextioPlugin:
         """Return the v1 metadata Rextio core registers this plugin under."""
+        from rextio.plugins.models import RextioPlugin
+
+        from rextio_numpy.rules import COVERAGE
+
         return RextioPlugin(
             id=PLUGIN_ID,
             name=f"NumPy to Rust (rextio-numpy {__version__})",
@@ -57,6 +71,8 @@ class RextioNumpyPlugin:
 
     def covers(self) -> CoverageDecl:
         """Return the packages, modules, and symbols this plugin covers."""
+        from rextio_numpy.rules import COVERAGE
+
         return COVERAGE
 
     def describe(self, config: RextioConfig) -> tuple[RuleRecord, ...]:
@@ -66,11 +82,15 @@ class RextioNumpyPlugin:
         of the protocol so future rules can vary with (for example) import
         policies or target versions.
         """
+        from rextio_numpy.rules import numpy_rule_records
+
         del config
         return numpy_rule_records()
 
     def type_vocabulary(self) -> tuple[PluginType, ...]:
         """Return the annotation vocabulary this plugin adds to the analyzer."""
+        from rextio_numpy.plugin_types import plugin_types
+
         return plugin_types()
 
     def claim(self, site: ClaimSite, config: RextioConfig) -> ClaimResult:
@@ -86,6 +106,8 @@ class RextioNumpyPlugin:
         axis, extra kwargs) return :class:`NotCovered`; everything else is
         :class:`NotCovered`.
         """
+        from rextio_numpy.claim import claim as claim_site
+
         return claim_site(site, config)
 
     def lower(self, claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr:
@@ -97,10 +119,14 @@ class RextioNumpyPlugin:
         encoded in helper identity for literal-axis reductions. Fusion claims
         consume ``ctx.leaf_operands`` and the frozen ClaimExpr tree.
         """
+        from rextio_numpy.lower import lower as lower_site
+
         return lower_site(claimed, ctx)
 
     def crate_dependencies(self) -> tuple[CrateDependency, ...]:
         """Return the pinned crates the generated helpers depend on."""
+        from rextio.plugins.api import CrateDependency
+
         return (CrateDependency(name="numpy", version="=0.29.0"),)
 
 

@@ -56,6 +56,13 @@ Ships protocol-v2 rule records (`RXTP-NUMPY-*`) for the certified native surface
 above (verified) plus explicit fallback exclusions (including matmul/`@`,
 uncovered dtypes/forms, rank > 2).
 
+### Import under generated runtimes
+
+- Package root and `rextio_numpy.types` import without requiring core
+  `rextio.config` / analyzer / plugin host modules, so fallback wrappers can
+  load annotation aliases when the built tree only ships a minimal `rextio`
+  package (`__about__`, `__init__`, `runtime`).
+
 ---
 
 ## 0.1.0 — 2026-07-12
