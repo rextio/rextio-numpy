@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext
@@ -15,7 +18,7 @@ K = F64_1D
 
 def site(
     target: str,
-    operand_types: tuple[str, ...] = (K,),
+    operand_types: tuple[str | None, ...] = (K,),
     *,
     keywords: tuple[KeywordArg, ...] = (),
 ) -> ClaimSite:
@@ -192,3 +195,143 @@ def test_router_matches_try_lower_axis() -> None:
     c = ctx("m")
     assert lower(s, c) == try_lower(s, c)
     assert lower(s, c).rust == "__rxtnp_min2_f64_axis0(&m)?"
+
+
+# ---------------------------------------------------------------- fail-closed
+
+
+def test_fail_closed_none_operand_type() -> None:
+    with pytest.raises(ValueError, match="non-None operand type"):
+        try_lower(site("numpy.sum", (None,)), ctx("a"))
+
+
+def test_fail_closed_non_array_operand_type() -> None:
+    with pytest.raises(ValueError, match="array operand type"):
+        try_lower(site("numpy.sum", ("float",)), ctx("a"))
+
+
+def test_fail_closed_multiple_keywords() -> None:
+    keywords = (
+        KeywordArg(
+            name="axis",
+            arg_type="int",
+            literal=ClaimLiteral(is_literal=True, value=0),
+        ),
+        KeywordArg(
+            name="keepdims",
+            arg_type="bool",
+            literal=ClaimLiteral(),
+        ),
+    )
+    with pytest.raises(ValueError, match="exactly one keyword"):
+        try_lower(site("numpy.sum", (F64_2D,), keywords=keywords), ctx("a"))
+
+
+def test_fail_closed_sole_wrong_keyword_name() -> None:
+    """A sole keepdims=0 must not be treated as axis=0."""
+    keywords = (
+        KeywordArg(
+            name="keepdims",
+            arg_type="int",
+            literal=ClaimLiteral(is_literal=True, value=0),
+        ),
+    )
+    with pytest.raises(ValueError, match="keyword name 'axis'"):
+        try_lower(site("numpy.sum", (F64_2D,), keywords=keywords), ctx("a"))
+
+
+def test_fail_closed_non_literal_axis_metadata() -> None:
+    """Default/non-literal ClaimLiteral must not lower as axis None/0."""
+    keywords = (
+        KeywordArg(
+            name="axis",
+            arg_type="int",
+            literal=ClaimLiteral(),  # is_literal=False, value=None
+        ),
+    )
+    with pytest.raises(ValueError, match="is_literal=True"):
+        try_lower(site("numpy.sum", (F64_2D,), keywords=keywords), ctx("a"))
+
+
+def test_fail_closed_non_int_axis_literal() -> None:
+    keywords = (
+        KeywordArg(
+            name="axis",
+            arg_type="int",
+            literal=ClaimLiteral(is_literal=True, value=(0, 1)),
+        ),
+    )
+    with pytest.raises(ValueError, match="int axis literal"):
+        try_lower(site("numpy.sum", (F64_2D,), keywords=keywords), ctx("a"))
+
+
+def test_fail_closed_extra_operand_type() -> None:
+    with pytest.raises(ValueError, match="exactly one operand type"):
+        try_lower(site("numpy.sum", (F64_1D, F64_1D)), ctx("a"))
+
+
+def test_fail_closed_wrong_ctx_arity() -> None:
+    with pytest.raises(ValueError, match="exactly one ctx.operands entry"):
+        try_lower(site("numpy.sum", (F64_1D,)), ctx("a", "b"))
+    with pytest.raises(ValueError, match="exactly one ctx.operands entry"):
+        try_lower(site("numpy.sum", (F64_2D,), keywords=axis_kw(0)), ctx())
+
+
+def test_fail_closed_axis_out_of_range() -> None:
+    with pytest.raises(ValueError, match="out of range"):
+        try_lower(site("numpy.sum", (F64_1D,), keywords=axis_kw(2)), ctx("a"))
+
+
+def test_fail_closed_under_python_optimize() -> None:
+    """Malformed axis lower must raise ValueError even under python -O.
+
+    Assert-based guards are stripped by optimization mode; this subprocess
+    proves the explicit exception path still rejects rather than emitting
+    helper names like ``__rxtnp_sum1_f64_axisNone``.
+    """
+    script = r"""
+from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext
+from rextio_numpy.diagnostics import F64_1D
+from rextio_numpy.lower.reductions import try_lower
+
+site = ClaimSite(
+    kind="call",
+    target="numpy.sum",
+    operand_types=(F64_1D,),
+    file_path="",
+    line=0,
+    column=0,
+    keywords=(
+        KeywordArg(
+            name="axis",
+            arg_type="int",
+            literal=ClaimLiteral(is_literal=True, value=99),
+        ),
+    ),
+)
+ctx = LoweringContext(
+    operands=("a",),
+    target_language="rust",
+    fresh_name=lambda prefix: f"{prefix}_0",
+)
+try:
+    lowered = try_lower(site, ctx)
+except ValueError as exc:
+    msg = str(exc)
+    if "out of range" in msg and "axisNone" not in msg:
+        print("rejected")
+    else:
+        print(f"wrong-error:{msg!r}")
+        raise SystemExit(2) from exc
+else:
+    print(f"leaked:{lowered!r}")
+    raise SystemExit(3)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-O", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.stdout.strip() == "rejected"

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from rextio.plugins.api import ClaimSite, LoweringContext
@@ -13,7 +16,7 @@ from rextio_numpy.lower.binops import try_lower
 K = F64_1D
 
 
-def site(target: str, operand_types: tuple[str, str]) -> ClaimSite:
+def site(target: str, operand_types: tuple[str | None, str | None]) -> ClaimSite:
     return ClaimSite(
         kind="binop",
         target=target,
@@ -107,3 +110,88 @@ def test_router_matches_try_lower() -> None:
     s = site("+", (K, K))
     c = ctx("x", "y")
     assert lower(s, c) == try_lower(s, c)
+
+
+# ---------------------------------------------------------------- fail-closed
+
+
+def test_fail_closed_dtype_mismatch() -> None:
+    with pytest.raises(ValueError, match="matching array dtypes"):
+        try_lower(site("+", (F64_1D, I64_1D)), ctx("a", "b"))
+
+
+def test_fail_closed_none_array_operand() -> None:
+    with pytest.raises(ValueError, match="non-None right array operand type"):
+        try_lower(site("+", ("float", None)), ctx("s", "a"))
+
+
+def test_fail_closed_non_array_scalar_array_path() -> None:
+    # Neither operand is a plugin array type → scalar-array path sees non-array right.
+    with pytest.raises(ValueError, match="array right operand type"):
+        try_lower(site("+", ("float", "float")), ctx("s", "t"))
+
+
+def test_fail_closed_wrong_operand_arity() -> None:
+    bad = ClaimSite(
+        kind="binop",
+        target="+",
+        operand_types=(K,),
+        file_path="",
+        line=0,
+        column=0,
+    )
+    with pytest.raises(ValueError, match="exactly two operand types"):
+        try_lower(bad, ctx("a", "b"))
+
+
+def test_fail_closed_wrong_ctx_operands() -> None:
+    with pytest.raises(ValueError, match="exactly two ctx.operands"):
+        try_lower(site("+", (K, K)), ctx("a"))
+
+
+def test_fail_closed_under_python_optimize() -> None:
+    """Mismatched-dtype binop lower must raise ValueError even under python -O.
+
+    With asserts stripped, dtype mismatch would otherwise emit a helper keyed
+    only by the left dtype and silently generate incorrect Rust.
+    """
+    script = r"""
+from rextio.plugins.api import ClaimSite, LoweringContext
+from rextio_numpy.diagnostics import F64_1D, I64_1D
+from rextio_numpy.lower.binops import try_lower
+
+site = ClaimSite(
+    kind="binop",
+    target="+",
+    operand_types=(F64_1D, I64_1D),
+    file_path="",
+    line=0,
+    column=0,
+)
+ctx = LoweringContext(
+    operands=("a", "b"),
+    target_language="rust",
+    fresh_name=lambda prefix: f"{prefix}_0",
+)
+try:
+    lowered = try_lower(site, ctx)
+except ValueError as exc:
+    msg = str(exc)
+    if "matching array dtypes" in msg:
+        print("rejected")
+    else:
+        print(f"wrong-error:{msg!r}")
+        raise SystemExit(2) from exc
+else:
+    # Silent emission under -O would look like a normal lowered helper.
+    print(f"leaked:{getattr(lowered, 'rust', lowered)!r}")
+    raise SystemExit(3)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-O", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.stdout.strip() == "rejected"

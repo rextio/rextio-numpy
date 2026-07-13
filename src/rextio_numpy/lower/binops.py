@@ -14,17 +14,37 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     if claimed.kind != "binop" or claimed.target not in BINOP_NAMES:
         return None
     op = BINOP_NAMES[claimed.target]
+    if len(claimed.operand_types) != 2:
+        raise ValueError(
+            "rextio-numpy binops lower requires exactly two operand types; "
+            f"got {len(claimed.operand_types)}"
+        )
     left, right = claimed.operand_types
+    if len(ctx.operands) != 2:
+        raise ValueError(
+            f"rextio-numpy binops lower requires exactly two ctx.operands; got {len(ctx.operands)}"
+        )
     first, second = ctx.operands
 
+    # Fail closed on malformed lower-time metadata rather than emitting
+    # incorrect elementwise code (asserts are stripped under PYTHONOPTIMIZE=1).
     if is_array_type(left) and is_array_type(right):
-        assert left is not None and right is not None
+        if left is None or right is None:
+            raise ValueError("rextio-numpy binops lower requires non-None array operand types")
         left_meta = array_meta(left)
         right_meta = array_meta(right)
-        assert left_meta is not None and right_meta is not None
+        if left_meta is None or right_meta is None:
+            raise ValueError(
+                "rextio-numpy binops lower requires array operand types, "
+                f"got {left!r} and {right!r}"
+            )
         dtype, left_rank = left_meta
         right_dtype, right_rank = right_meta
-        assert dtype == right_dtype
+        if dtype != right_dtype:
+            raise ValueError(
+                "rextio-numpy binops lower requires matching array dtypes, "
+                f"got {dtype!r} and {right_dtype!r}"
+            )
         name = rust_snippets.elementwise_call_name_aa(op, dtype, left_rank, right_rank)
         helper = rust_snippets.elementwise_aa_typed(op, dtype, left_rank, right_rank)
         helpers: tuple[str, ...]
@@ -38,9 +58,13 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         )
 
     if is_array_type(left):
-        assert left is not None
+        if left is None:
+            raise ValueError("rextio-numpy binops lower requires non-None left array operand type")
         meta = array_meta(left)
-        assert meta is not None
+        if meta is None:
+            raise ValueError(
+                f"rextio-numpy binops lower requires array left operand type, got {left!r}"
+            )
         dtype, rank = meta
         name = rust_snippets.elementwise_call_name_as(op, dtype, rank)
         helper = rust_snippets.elementwise_as_typed(op, dtype, rank)
@@ -49,9 +73,13 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             helpers=(helper,),
         )
 
-    assert right is not None
+    if right is None:
+        raise ValueError("rextio-numpy binops lower requires non-None right array operand type")
     meta = array_meta(right)
-    assert meta is not None
+    if meta is None:
+        raise ValueError(
+            f"rextio-numpy binops lower requires array right operand type, got {right!r}"
+        )
     dtype, rank = meta
     name = rust_snippets.elementwise_call_name_sa(op, dtype, rank)
     helper = rust_snippets.elementwise_sa_typed(op, dtype, rank)
