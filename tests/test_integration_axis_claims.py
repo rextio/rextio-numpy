@@ -227,8 +227,10 @@ def test_plugin_claim_on_analyzer_shaped_site_matches_unit_table(tmp_path: Path)
     assert result == NotCovered()
 
 
-def test_unsupported_axis_forms_stay_fallback_not_merely_no_claim(tmp_path: Path) -> None:
-    """Positional/None/tuple/dynamic/keepdims/UAdd axis must not natively serve."""
+def test_axis_call_forms_route_positional_literal_but_reject_dynamic_options(
+    tmp_path: Path,
+) -> None:
+    """One positional literal routes natively; dynamic/option forms do not."""
     root = _write_module(
         tmp_path,
         """
@@ -237,6 +239,9 @@ from rextio_numpy.types import F64Arr1, F64Arr2
 
 def positional(a: F64Arr1) -> float:
     return np.sum(a, 0)
+
+def positional_method(a: F64Arr2) -> F64Arr1:
+    return a.mean(1)
 
 def axis_none(a: F64Arr1) -> float:
     return np.sum(a, axis=None)
@@ -275,8 +280,33 @@ def ok_axis(a: F64Arr2) -> F64Arr1:
     assert any(c.rule_id == "rextio-numpy/reduction-axis" for c in ok.plugin_claims)
     assert ok.route.startswith("native-plugin")
 
+    positional = _function(analysis, "myapp.kernels.positional")
+    positional_claim = next(
+        claim
+        for claim in positional.plugin_claims
+        if claim.rule_id == "rextio-numpy/reduction-axis"
+    )
+    assert positional.route.startswith("native-plugin")
+    assert positional_claim.operand_types == (F64_1D, "int")
+    assert positional_claim.operand_literals[1] == ClaimLiteral(
+        is_literal=True,
+        value=0,
+    )
+
+    positional_method = _function(analysis, "myapp.kernels.positional_method")
+    method_claim = next(
+        claim
+        for claim in positional_method.plugin_claims
+        if claim.rule_id == "rextio-numpy/reduction-axis"
+    )
+    assert positional_method.route.startswith("native-plugin")
+    assert method_claim.receiver is not None
+    assert method_claim.operand_types == ("int",)
+    assert method_claim.operand_literals == (
+        ClaimLiteral(is_literal=True, value=1),
+    )
+
     for qualname in (
-        "myapp.kernels.positional",
         "myapp.kernels.axis_none",
         "myapp.kernels.tuple_axis",
         "myapp.kernels.dynamic",

@@ -11,6 +11,11 @@ capability.
   operator dtype/rank/broadcast matrix. Optional ufunc arguments (`out`,
   `where`, `dtype`, `casting`, and all other extras), mixed dtypes, and
   unsupported ranks remain fail-closed fallback.
+- Adds one positional signed-integer literal axis to the existing
+  `sum`/`mean`/`min`/`max` module and ndarray-method reduction matrix.
+  Dynamic, tuple, `None`, out-of-range, and additional option forms remain
+  fallback; lower time independently revalidates the positional type, literal,
+  arity, result type, and rendered-operand alignment.
 - Adds certified ndarray method parity for `a.dot(b)`, whole-array
   `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
   the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly

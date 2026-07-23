@@ -87,16 +87,16 @@ semantics matter, keep the enclosing function on Python fallback.
   - Bare `numpy.max` / `numpy.min` (no `axis=`) stay fallback.
   - Equivalent `a.sum()` / `a.mean()` method forms are native under Core's
     API-1.3 receiver contract (`RXTP-NUMPY-003`).
-- **Literal-axis reductions** (`numpy.sum|mean|max|min(a, axis=<int literal>)`
-  or `a.sum|mean|max|min(axis=<int literal>)` — exactly one named `axis`
-  keyword; module calls additionally carry exactly one positional array):
+- **Literal-axis reductions** (`numpy.sum|mean|max|min(a, axis=<int literal>)`,
+  `numpy.sum|mean|max|min(a, <int literal>)`, or the equivalent ndarray
+  method — exactly one named or positional axis):
   - `sum`: f64/i64 ranks 1–2; `mean`: f64 ranks 1–2
   - `max`/`min`: **int64 ranks 1–2 only**. Float extrema remain fallback:
     NumPy's NaN payload/sign and signed-zero tie behavior varies by supported
     platform/SIMD profile and has no single stable native equivalent.
-  - Negative axes are normalized at claim time; out-of-range, positional,
-    `None`, tuple, dynamic, `axis=+N` (when core does not extract `UAdd`),
-    and extra-kw forms stay fallback
+  - Negative axes are normalized at claim time; out-of-range, `None`, tuple,
+    dynamic, `axis=+N` (when core does not extract `UAdd`), additional
+    positional arguments, and extra-kw forms stay fallback
   - Rank-1 → core builtin `float`/`int` (not NumPy scalar subclasses);
     rank-2 single-axis → matching rank-1 plugin array
   - **f64 axis sum/mean**: NumPy-compatible pairwise (fast-stride) /
@@ -163,7 +163,7 @@ contract; warning parity is **not** part of the acceptance surface.
 | Exact two-positional/no-keyword `numpy.add/subtract/multiply/divide(a, b)` over the same matrix | native (verified) | RXTP-NUMPY-007 |
 | `numpy.dot(a, b)` / `a.dot(b)` on same-dtype 1-D f64/i64 (not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
 | Whole-array `numpy.sum` / `a.sum` on f64/i64 ranks 1–2; `numpy.mean` / `a.mean` on f64 ranks 1–2 (no kwargs) | native (verified) | RXTP-NUMPY-003 |
-| Literal-axis module or ndarray-method `sum/mean/max/min(axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
+| Literal-axis module or ndarray-method `sum/mean/max/min` with one named or positional integer axis (see native surface) | native (verified) | RXTP-NUMPY-004 |
 | Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
 | Exact `numpy.negative/absolute/abs/square(a)` on f64/f32/i64 ranks 1–2 | native (verified) | RXTP-NUMPY-006 |
 | Operand types outside the claimed set (incl. float extrema, f32 sum/mean/dots, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |

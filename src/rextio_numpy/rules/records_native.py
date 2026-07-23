@@ -171,17 +171,19 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             kind="call",
             pattern=(
                 "numpy.sum/mean/max/min(a, axis=<int literal>) or "
-                "a.sum/mean/max/min(axis=<int literal>) with exactly one named axis "
-                "keyword (ranks 1–2; see constraint for dtype matrix)"
+                "numpy.sum/mean/max/min(a, <int literal>), with equivalent ndarray "
+                "method forms and exactly one named or positional axis "
+                "(ranks 1–2; see constraint for dtype matrix)"
             ),
         ),
         constraint=(
             "Single-axis reductions with a static signed integer axis literal "
             "(normalized against rank at claim time; out-of-range axes are not "
-            "claimed). Accepted forms: module calls with exactly one positional array "
-            "argument, or ndarray method calls with that array as the API-1.3 receiver, "
-            "and in both forms exactly the keyword axis=<int>; no dtype/out/keepdims/initial/where, "
-            "no positional axis, no axis=None, no tuple axis, no dynamic axis, no "
+            "claimed). Accepted forms: module calls with one positional array plus "
+            "either named axis=<int> or one positional integer axis, and ndarray method "
+            "calls with the array as the API-1.3 receiver plus the same named/positional "
+            "axis alternatives; no dtype/out/keepdims/initial/where, "
+            "no axis=None, no tuple axis, no dynamic axis, no "
             "duplicate/extra keywords, no numpy.amax/amin. Core evaluates a method "
             "receiver exactly once before call operands. "
             "Dtype/rank matrix: sum on float64/int64 ranks 1–2; mean on float64 "
@@ -215,8 +217,9 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         outcome="native",
         diagnostic_code="RXTP-NUMPY-004",
         guidance=(
-            "Write numpy.sum/mean/max/min(a, axis=<int literal>) or "
-            "a.sum/mean/max/min(axis=<int literal>) with a static "
+            "Write numpy.sum/mean/max/min(a, axis=<int literal>), "
+            "numpy.sum/mean/max/min(a, <int literal>), or the equivalent ndarray "
+            "method form with a static "
             "integer axis on float64/int64 ranks 1–2 for sum, float64 ranks 1–2 "
             "for mean, or int64 ranks 1–2 for max/min. Float extrema, float32 "
             "sum/mean, and int64 mean stay on the Python fallback. Keep amax/amin, tuple "

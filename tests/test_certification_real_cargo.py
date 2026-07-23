@@ -380,6 +380,22 @@ def min_i64_2d_axis1(a: I64Arr2) -> I64Arr1:
     return np.min(a, axis=1)
 
 
+def sum_f64_2d_pos_axis0(a: F64Arr2) -> F64Arr1:
+    return np.sum(a, 0)
+
+
+def mean_f64_1d_pos_neg1(a: F64Arr1) -> float:
+    return np.mean(a, -1)
+
+
+def max_i64_1d_pos_axis0(a: I64Arr1) -> int:
+    return np.max(a, 0)
+
+
+def method_min_i64_2d_pos_axis1(a: I64Arr2) -> I64Arr1:
+    return a.min(1)
+
+
 def max_f32_2d_axis0(a: F32Arr2) -> F32Arr1:
     return np.max(a, axis=0)
 
@@ -1372,6 +1388,35 @@ def test_wave2_i64_axis_max_min(project: CertifiedProject) -> None:
     mn = _require_native(project, "min_i64_2d_axis1")
     np.testing.assert_array_equal(mx(a), np.max(a, axis=0))
     np.testing.assert_array_equal(mn(a), np.min(a, axis=1))
+
+
+def test_positional_literal_axis_module_and_method_forms(
+    project: CertifiedProject,
+) -> None:
+    """Static positional axes use the same certified helpers as axis=."""
+    f64_matrix = np.array([[1.0, -2.0, 3.0], [4.0, 0.5, -6.0]], dtype=np.float64)
+    f64_vector = np.array([1.0, -2.5, 3.25], dtype=np.float64)
+    i64_vector = np.array([1, -7, 4], dtype=np.int64)
+    i64_matrix = np.array([[1, -2, 3], [4, 0, -5]], dtype=np.int64)
+
+    total = _require_native(project, "sum_f64_2d_pos_axis0")
+    average = _require_native_scalar(project, "mean_f64_1d_pos_neg1", scalar_close)
+    maximum = _require_native_scalar(project, "max_i64_1d_pos_axis0", scalar_int_equal)
+    minimum = _require_native(project, "method_min_i64_2d_pos_axis1")
+
+    np.testing.assert_allclose(
+        total(f64_matrix),
+        np.sum(f64_matrix, 0),
+        rtol=SCALAR_REL_TOL,
+        atol=SCALAR_ABS_TOL,
+    )
+    assert float(average(f64_vector)) == pytest.approx(
+        float(np.mean(f64_vector, -1)),
+        rel=SCALAR_REL_TOL,
+        abs=SCALAR_ABS_TOL,
+    )
+    assert int(maximum(i64_vector)) == int(np.max(i64_vector, 0))
+    np.testing.assert_array_equal(minimum(i64_matrix), i64_matrix.min(1))
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
