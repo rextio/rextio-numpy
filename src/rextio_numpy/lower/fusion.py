@@ -6,12 +6,18 @@ from rextio.plugins.api import ClaimSite, LoweredExpr, LoweringContext
 
 from rextio_numpy import rust_snippets
 from rextio_numpy.claim.fusion import FUSION_RULE, site_consistent_with_match, try_match
+from rextio_numpy.lower.contracts import (
+    require_no_hidden_site_metadata,
+    require_rust_pyo3_context,
+)
 
 
 def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     """Return a fused lowering, or None if this site is not a fusion claim."""
     if claimed.rule_id != FUSION_RULE:
         return None
+
+    require_rust_pyo3_context(ctx, "fusion")
 
     # Fail closed on malformed lower-time metadata rather than emitting
     # incorrect fused code.
@@ -29,6 +35,16 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             "rextio-numpy fusion lower requires empty keywords on binop sites; "
             f"got {claimed.keywords!r}"
         )
+    require_no_hidden_site_metadata(
+        claimed,
+        "fusion",
+        allow_expression=True,
+        expected_operand_literals=2,
+    )
+    if claimed.receiver is not None:
+        raise ValueError("rextio-numpy fusion lower requires no ClaimSite.receiver")
+    if ctx.receiver is not None:
+        raise ValueError("rextio-numpy fusion lower requires no ctx.receiver")
     if claimed.result_type is None:
         raise ValueError(
             "rextio-numpy fusion lower requires non-None ClaimSite.result_type "

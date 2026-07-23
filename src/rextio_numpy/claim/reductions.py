@@ -6,7 +6,7 @@ Whole-array surface (no keywords):
 
 Literal-axis surface (exactly ``axis=<int literal>``):
   * ``numpy.sum`` / ``numpy.mean`` — same dtype matrix as whole-array
-  * ``numpy.max`` / ``numpy.min`` — float64/int64 ranks 1–2; float32 rank 2 only
+  * ``numpy.max`` / ``numpy.min`` — int64 ranks 1–2 only
 
 Bare ``max``/``min`` without ``axis=``, positional axis, ``axis=None``, tuple
 axis, dynamic axis, extra kwargs, and ``amax``/``amin`` stay unclaimed
@@ -37,11 +37,10 @@ _AXIS_RULE = "rextio-numpy/reduction-axis"
 # f32 accumulation diverges materially from NumPy pairwise summation.
 # int64 mean is unclaimed: sequential i64→f64 cast-and-sum diverges from NumPy
 # pairwise mean on large integers near the float64 mantissa boundary.
-# float32 max/min rank-1 stays unclaimed: a core float scalar would lose
-# numpy.float32 scalar semantics; rank-2 axis max/min return F32Arr1.
+# Float max/min stay unclaimed: NumPy NaN payload/sign and signed-zero tie
+# behavior differs across supported platform/SIMD profiles.
 _SUM_DTYPES = frozenset({"f64", "i64"})
 _MEAN_DTYPES = frozenset({"f64"})
-_EXTREMA_DTYPES = frozenset({"f64", "i64", "f32"})
 
 
 def normalize_axis(axis: int, rank: int) -> int | None:
@@ -83,11 +82,10 @@ def _dtype_allowed(target: str, dtype: str, rank: int, *, axis: bool) -> bool:
         return dtype in _SUM_DTYPES
     if target == "numpy.mean":
         return dtype in _MEAN_DTYPES
-    # max / min
-    if dtype == "f32":
-        # Rank-1 f32 extrema would surface as core float (losing float32 scalar).
-        return axis and rank == 2
-    return dtype in {"f64", "i64"}
+    # Float extrema reduction details (NaN payload/sign and signed-zero ties)
+    # vary across NumPy's supported platform/SIMD implementations. They cannot
+    # be reproduced by one stable native helper, so retain only exact i64.
+    return dtype == "i64"
 
 
 def _axis_literal(site: ClaimSite) -> int | None:
@@ -155,6 +153,10 @@ def try_claim(site: ClaimSite) -> ClaimResult | None:
     assert meta is not None
     dtype, rank = meta
     if normalize_axis(raw_axis, rank) is None:
+        return NotCovered()
+    if target in {"numpy.max", "numpy.min"} and dtype != "i64":
+        # Leave platform/SIMD-dependent float extrema on ordinary fallback;
+        # this is an exclusion, not a type error in user code.
         return NotCovered()
     if not _dtype_allowed(target, dtype, rank, axis=True):
         return not_covered_or_rejected(site)

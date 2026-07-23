@@ -21,14 +21,15 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install "rextio==${{ matrix.rextio }}" pytest ruff mypy numpy hypothesis build
       - run: python -m pip install --no-deps -e .
-      - run: python -m pytest tests/test_claim_and_lower.py tests/test_claim_linear.py tests/test_claim_reductions.py tests/test_claim_methods.py tests/test_claim_unary.py tests/test_lower_linear.py tests/test_lower_reductions.py tests/test_lower_methods.py tests/test_lower_unary.py tests/test_plugin.py tests/test_rules_records.py
+      - run: python -m pytest tests/test_claim_and_lower.py tests/test_claim_linear.py tests/test_claim_reductions.py tests/test_claim_methods.py tests/test_claim_unary.py tests/test_lower_binops.py tests/test_lower_contract_hardening.py tests/test_lower_linear.py tests/test_lower_reductions.py tests/test_lower_methods.py tests/test_lower_unary.py tests/test_plugin.py tests/test_rules_records.py
       - run: ruff check src tests
       - run: mypy src
       - run: python -m build
 
   native-certification:
-    name: Native certification (rextio ${{ matrix.rextio }})
+    name: Required native certification (rextio ${{ matrix.rextio }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -42,9 +43,9 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install "rextio==${{ matrix.rextio }}" pytest numpy hypothesis
       - run: python -m pip install --no-deps -e .
-      - name: Certify newly claimed native paths
-        run: >-
-          python -m pytest tests/test_certification_real_cargo.py
-          -k 'method_parity_is_natively_served or unary_module_calls_are_natively_served
-          or ndarray_subclasses_are_rejected_before_method_semantics
-          or array_ufunc_override_is_rejected_before_unary_helper'
+      - name: Run the complete required native certification suite
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -ra tests/test_certification_real_cargo.py | tee pytest-output.txt
+          ! grep -Eq '[0-9]+ skipped' pytest-output.txt

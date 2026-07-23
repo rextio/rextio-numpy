@@ -86,8 +86,9 @@ semantics matter, keep the enclosing function on Python fallback.
   or `a.sum|mean|max|min(axis=<int literal>)` — exactly one named `axis`
   keyword; module calls additionally carry exactly one positional array):
   - `sum`: f64/i64 ranks 1–2; `mean`: f64 ranks 1–2
-  - `max`/`min`: f64/i64 ranks 1–2; **f32 rank 2 only** (rank-1 f32 stays
-    fallback to preserve `numpy.float32` scalar semantics)
+  - `max`/`min`: **int64 ranks 1–2 only**. Float extrema remain fallback:
+    NumPy's NaN payload/sign and signed-zero tie behavior varies by supported
+    platform/SIMD profile and has no single stable native equivalent.
   - Negative axes are normalized at claim time; out-of-range, positional,
     `None`, tuple, dynamic, `axis=+N` (when core does not extract `UAdd`),
     and extra-kw forms stay fallback
@@ -95,8 +96,6 @@ semantics matter, keep the enclosing function on Python fallback.
     rank-2 single-axis → matching rank-1 plugin array
   - **f64 axis sum/mean**: NumPy-compatible pairwise (fast-stride) /
     sequential (slow-stride) dispatch from runtime strides — C and F layouts
-  - Float extrema: first NaN in logical order is preserved (sign/payload);
-    `max(+0,-0)=+0`, `min(+0,-0)=-0`
   - Empty max/min reduced dimension → `ValueError` with NumPy-compatible text
   - Empty mean value semantics match; native leg omits NumPy's
     `RuntimeWarning` (documented divergence) (`RXTP-NUMPY-004`)
@@ -124,14 +123,21 @@ rules.
 
 ### Optimization-safe lower validation
 
-Only the **covered binop and reduction lower-time invariants** that previously
-relied on `assert` were replaced with explicit **`ValueError`** guards. Those
-guards remain active under `python -O` / `PYTHONOPTIMIZE=1` and fail closed for
-the **covered** malformed `ClaimSite` / `LoweringContext` metadata. This does
-**not** claim that all malformed metadata is rejected or that incorrect helpers
-can never be emitted. Two real optimized-interpreter subprocess regressions —
-one per lowerer (`tests/test_lower_binops.py`,
-`tests/test_lower_reductions.py`) — protect that covered fail-closed path.
+Every native lowerer — elementwise binops, dot, reductions, unary calls, and
+fusion — independently revalidates its claim/context contract before emitting
+Rust. The explicit `ValueError` guards remain active under `python -O` /
+`PYTHONOPTIMIZE=1`: they verify the route rule and reconstructed result type,
+operand mode and placement, operand arity/types, and the route's permitted
+literals, keywords, callables, expression, and receiver metadata. Forged or
+inconsistent metadata therefore fails closed instead of emitting a helper.
+For non-literal operands, both Core's omitted `operand_literals` form and its
+arity-matched `ClaimLiteral(is_literal=False)` placeholders are accepted;
+populated slots require the route's exact count and lane-specific,
+type-compatible literal metadata.
+
+The required CI native-certification matrix runs the complete real-Cargo suite
+without test selection for both Core 0.1.3 and 0.1.5, and rejects skipped
+certification cases.
 
 ### Accepted release divergence: missing NumPy `RuntimeWarning`
 
@@ -153,7 +159,7 @@ contract; warning parity is **not** part of the acceptance surface.
 | Literal-axis module or ndarray-method `sum/mean/max/min(axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
 | Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
 | Exact `numpy.negative/absolute/abs/square(a)` on f64/f32/i64 ranks 1–2 | native (verified) | RXTP-NUMPY-006 |
-| Operand types outside the claimed set (incl. f32 sum/mean/dots, rank-1 f32 max/min, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
+| Operand types outside the claimed set (incl. float extrema, f32 sum/mean/dots, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
 | Runtime ndarray subclasses / `matrix` / `__array_ufunc__` overrides at a native boundary | reject (runtime TypeError; not static fallback) | RXTP-NUMPY-013 |
@@ -237,7 +243,7 @@ On this tree:
 - `.venv/bin/python -m pytest --collect-only -q` reports **743** collected tests total.
 - The focused collection command
   `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **119** real-Cargo certification cases.
+  reports **115** real-Cargo certification cases.
 
 Those 119 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material

@@ -24,6 +24,23 @@ capability.
   fallback. Exact base-ndarray views remain supported.
 - Revalidates the certified dot and reduction dtype/rank matrices at lower
   time, including dot RHS equality, so forged/corrupted claims fail closed.
+- Withdraws floating literal-axis `max`/`min` from native lowering. NumPy's
+  NaN payload/sign and signed-zero tie behavior varies across supported
+  platform/SIMD profiles; these routes now retain Python fallback. Int64
+  literal-axis extrema remain native.
+
+### Lower-time contract and CI hardening
+
+- Every native lowerer now independently fail-closes with `ValueError` when
+  its reconstructed `ClaimSite` / `LoweringContext` contract is inconsistent,
+  including route rule/result, direct-versus-leaves operands, types/arity, and
+  applicable literals, keywords, callables, expression, and receiver metadata.
+  The guards are covered under `python -O` as well as normal execution; an
+  omitted non-literal operand-literal tuple and Core's arity-matched nonliteral
+  placeholders remain valid representations.
+- Required CI now runs the complete real-Cargo certification suite, without
+  test selection, for both Core 0.1.3 and 0.1.5; skipped certification cases
+  fail the job.
 
 ## 0.1.1 — 2026-07-14
 

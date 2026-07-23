@@ -602,15 +602,12 @@ def test_method_parity_is_natively_served(project: CertifiedProject) -> None:
     dot = _require_native_scalar(project, "method_dot", scalar_close)
     total = _require_native_scalar(project, "method_total", scalar_close)
     mean_axis = _require_native(project, "method_average_axis")
-    max_axis = _require_native(project, "method_max_axis")
     a = np.array([1.0, -2.5, 3.25])
     b = np.array([0.5, 4.0, -1.0])
     matrix = np.array([[1.0, -2.0], [3.0, 4.0]], dtype=np.float64)
-    matrix32 = matrix.astype(np.float32)
     assert float(dot(a, b)) == pytest.approx(float(a.dot(b)), rel=SCALAR_REL_TOL)
     assert float(total(a)) == pytest.approx(float(a.sum()), rel=SCALAR_REL_TOL)
     np.testing.assert_allclose(mean_axis(matrix), matrix.mean(axis=1))
-    np.testing.assert_array_equal(max_axis(matrix32), matrix32.max(axis=0))
 
 
 def test_unary_module_calls_are_natively_served(project: CertifiedProject) -> None:
@@ -1260,8 +1257,6 @@ def _signed_zero_equal(left: object, right: object) -> bool:
         ("sum_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
         ("sum_f64_1d_axis_neg1", np.array([1.0, -2.5, 3.25]), scalar_close),
         ("mean_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
-        ("max_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
-        ("min_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
         ("sum_i64_1d_axis0", np.array([1, 2, 3], dtype=np.int64), scalar_int_equal),
     ],
 )
@@ -1295,10 +1290,6 @@ def test_wave2_rank1_axis_scalar(
         ("sum_f64_2d_axis_neg2", -2),
         ("mean_f64_2d_axis0", 0),
         ("mean_f64_2d_axis1", 1),
-        ("max_f64_2d_axis0", 0),
-        ("max_f64_2d_axis1", 1),
-        ("min_f64_2d_axis0", 0),
-        ("min_f64_2d_axis1", 1),
     ],
 )
 def test_wave2_f64_rank2_axis(project: CertifiedProject, name: str, axis: int) -> None:
@@ -1342,73 +1333,6 @@ def test_wave2_i64_axis_max_min(project: CertifiedProject) -> None:
     np.testing.assert_array_equal(mn(a), np.min(a, axis=1))
 
 
-def test_wave2_f32_rank2_max_min(project: CertifiedProject) -> None:
-    a = np.array([[1.0, -2.0], [0.5, 3.5]], dtype=np.float32)
-    mx = _require_native(project, "max_f32_2d_axis0")
-    mn = _require_native(project, "min_f32_2d_axis1")
-    r0 = mx(a)
-    r1 = mn(a)
-    assert r0.dtype == np.float32 and r1.dtype == np.float32
-    np.testing.assert_array_equal(r0, np.max(a, axis=0))
-    np.testing.assert_array_equal(r1, np.min(a, axis=1))
-
-
-def test_wave2_float_extrema_nan_and_signed_zero(project: CertifiedProject) -> None:
-    max1 = checker(project, "max_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    min1 = checker(project, "min_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    # NaN propagates.
-    assert math.isnan(float(max1(np.array([1.0, float("nan"), 2.0]))))
-    assert math.isnan(float(min1(np.array([1.0, float("nan"), 2.0]))))
-    # Signed-zero extrema: max(+0, -0) = +0; min(+0, -0) = -0.
-    assert not math.copysign(1.0, float(max1(np.array([0.0, -0.0])))) < 0
-    assert math.copysign(1.0, float(min1(np.array([0.0, -0.0])))) < 0
-    assert not math.copysign(1.0, float(max1(np.array([-0.0, 0.0])))) < 0
-    assert math.copysign(1.0, float(min1(np.array([-0.0, 0.0])))) < 0
-
-    max2 = checker(project, "max_f64_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    min2 = checker(project, "min_f64_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
-    z = np.array([[0.0, -0.0], [-0.0, 0.0]])
-    max2(z)
-    min2(z)
-    nan_mat = np.array([[1.0, float("nan")], [2.0, 3.0]])
-    max2(nan_mat)
-    min2(nan_mat)
-
-
-def test_wave2_empty_max_min_raises_equivalently(project: CertifiedProject) -> None:
-    max1 = checker(project, "max_f64_1d_axis0", equals=scalar_close, args_equals=array_equals)
-    min1 = checker(project, "min_f64_1d_axis0", equals=scalar_close, args_equals=array_equals)
-    empty = np.zeros(0)
-    try:
-        np.max(empty, axis=0)
-    except ValueError as exc:
-        expected_max = str(exc)
-    else:  # pragma: no cover
-        pytest.fail("numpy.max empty did not raise")
-    with pytest.raises(ValueError) as excinfo:
-        max1(empty)
-    assert str(excinfo.value) == expected_max
-
-    try:
-        np.min(empty, axis=0)
-    except ValueError as exc:
-        expected_min = str(exc)
-    else:  # pragma: no cover
-        pytest.fail("numpy.min empty did not raise")
-    with pytest.raises(ValueError) as excinfo:
-        min1(empty)
-    assert str(excinfo.value) == expected_min
-
-    max2 = _require_native(project, "max_f64_2d_axis0")
-    min2 = _require_native(project, "min_f64_2d_axis1")
-    with pytest.raises(ValueError) as excinfo:
-        max2(np.zeros((0, 3)))
-    assert "maximum which has no identity" in str(excinfo.value)
-    with pytest.raises(ValueError) as excinfo:
-        min2(np.zeros((3, 0)))
-    assert "minimum which has no identity" in str(excinfo.value)
-
-
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_wave2_empty_sum_mean_value_semantics(project: CertifiedProject) -> None:
     s0 = _require_native(project, "sum_f64_2d_axis0")
@@ -1433,7 +1357,7 @@ def test_wave2_empty_sum_mean_value_semantics(project: CertifiedProject) -> None
 
 def test_wave2_axis_does_not_mutate_input(project: CertifiedProject) -> None:
     a = np.array([[1.0, 2.0], [3.0, 4.0]])
-    for name in ("sum_f64_2d_axis0", "max_f64_2d_axis1", "mean_f64_2d_axis0"):
+    for name in ("sum_f64_2d_axis0", "mean_f64_2d_axis0"):
         check = _require_native(project, name)
         check(a)
     np.testing.assert_array_equal(a, np.array([[1.0, 2.0], [3.0, 4.0]]))
@@ -1444,7 +1368,16 @@ def test_wave2_axis_does_not_mutate_input(project: CertifiedProject) -> None:
     [
         "bare_max_f64",
         "bare_min_f64",
+        "method_max_axis",
         "max_f32_1d_axis0",
+        "max_f64_1d_axis0",
+        "min_f64_1d_axis0",
+        "max_f64_2d_axis0",
+        "max_f64_2d_axis1",
+        "min_f64_2d_axis0",
+        "min_f64_2d_axis1",
+        "max_f32_2d_axis0",
+        "min_f32_2d_axis1",
         "sum_f32_2d_axis0",
         "mean_i64_2d_axis0",
     ],
@@ -1475,34 +1408,6 @@ def test_wave2_hypothesis_axis_sum_mean(project: CertifiedProject, a) -> None:
         warnings.simplefilter("ignore", RuntimeWarning)
         m0(a)
         m1(a)
-
-
-@settings(max_examples=15, deadline=None)
-@given(
-    a=npst.arrays(
-        dtype=np.float64,
-        shape=st.tuples(st.integers(1, 8), st.integers(1, 8)),
-        elements=st.one_of(
-            st.floats(
-                allow_nan=False,
-                allow_infinity=False,
-                width=64,
-                min_value=-1e6,
-                max_value=1e6,
-            ),
-            st.just(float("nan")),
-            st.just(float("inf")),
-            st.just(float("-inf")),
-            st.just(0.0),
-            st.just(-0.0),
-        ),
-    )
-)
-def test_wave2_hypothesis_axis_max_min(project: CertifiedProject, a) -> None:
-    mx0 = checker(project, "max_f64_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    mn1 = checker(project, "min_f64_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
-    mx0(a)
-    mn1(a)
 
 
 # ---------------------------------------------------------------------------
@@ -1648,69 +1553,6 @@ def test_wave2_f64_axis_pairwise_helper_text_in_generated_source() -> None:
     # Whole-array route stays on ndarray sum (not rewritten by this fix).
     assert "Ok(a.sum())" in rust_snippets.sum_typed("f64", 1)
     assert "__rxtnp_numpy_pairwise_sum_f64" not in rust_snippets.sum_typed("f64", 1)
-
-
-def test_wave2_nan_payload_and_signed_zero_extrema(project: CertifiedProject) -> None:
-    """First NaN (sign/payload) and signed-zero extrema must match NumPy."""
-    neg_nan = np.copysign(np.nan, -1.0)
-    pos_nan = np.copysign(np.nan, 1.0)
-    max1 = checker(project, "max_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    min1 = checker(project, "min_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    a = np.array([1.0, neg_nan, pos_nan], dtype=np.float64)
-    rmax = max1(a)
-    rmin = min1(a)
-    assert math.isnan(float(rmax)) and math.isnan(float(rmin))
-    assert bool(np.signbit(np.asarray(rmax))) == bool(np.signbit(np.max(a)))
-    assert bool(np.signbit(np.asarray(rmin))) == bool(np.signbit(np.min(a)))
-    maxf = checker(project, "max_f32_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    minf = checker(project, "min_f32_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
-    f32 = np.array(
-        [[np.float32(0.0), np.float32(-0.0)], [np.float32(neg_nan), np.float32(1.0)]],
-        dtype=np.float32,
-    )
-    maxf(f32)
-    minf(f32)
-
-
-def test_wave2_empty_max_min_all_zero_shapes(project: CertifiedProject) -> None:
-    """Empty (0,0)/(0,n)/(n,0) max/min raise NumPy-compatible text on both axes."""
-    max0 = _require_native(project, "max_f64_2d_axis0")
-    max1 = _require_native(project, "max_f64_2d_axis1")
-    min0 = _require_native(project, "min_f64_2d_axis0")
-    min1 = _require_native(project, "min_f64_2d_axis1")
-    maxf = _require_native(project, "max_f32_2d_axis0")
-    minf = _require_native(project, "min_f32_2d_axis1")
-    cases = (
-        (np.zeros((0, 0)), 0, "maximum"),
-        (np.zeros((0, 0)), 1, "maximum"),
-        (np.zeros((0, 3)), 0, "maximum"),
-        (np.zeros((3, 0)), 1, "maximum"),
-        (np.zeros((0, 3)), 0, "minimum"),
-        (np.zeros((3, 0)), 1, "minimum"),
-    )
-    for arr, axis, word in cases:
-        fn = {
-            ("maximum", 0): max0,
-            ("maximum", 1): max1,
-            ("minimum", 0): min0,
-            ("minimum", 1): min1,
-        }[(word, axis)]
-        try:
-            (np.max if word == "maximum" else np.min)(arr, axis=axis)
-        except ValueError as exc:
-            expected = str(exc)
-        else:  # pragma: no cover
-            pytest.fail("numpy empty extrema did not raise")
-        with pytest.raises(ValueError) as excinfo:
-            fn(arr)
-        assert str(excinfo.value) == expected
-        assert f"{word} which has no identity" in str(excinfo.value)
-    with pytest.raises(ValueError) as excinfo:
-        maxf(np.zeros((0, 2), dtype=np.float32))
-    assert "maximum which has no identity" in str(excinfo.value)
-    with pytest.raises(ValueError) as excinfo:
-        minf(np.zeros((2, 0), dtype=np.float32))
-    assert "minimum which has no identity" in str(excinfo.value)
 
 
 def test_wave2_rank1_builtin_scalar_not_numpy_subclass(project: CertifiedProject) -> None:

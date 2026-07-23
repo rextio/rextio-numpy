@@ -7,6 +7,9 @@ import pytest
 from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext, ReceiverMeta
 
 from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D
+from rextio_numpy.claim.linear import _DOT_RESULT, _DOT_RULE
+from rextio_numpy.claim.reductions import _AXIS_RULE, _WHOLE_ARRAY_RULE, _axis_result_type, _whole_array_result_type
+from rextio_numpy.diagnostics import array_meta
 from rextio_numpy.lower import lower
 
 
@@ -17,10 +20,22 @@ def method_site(
     *,
     keywords: tuple[KeywordArg, ...] = (),
 ) -> ClaimSite:
+    meta = array_meta(receiver_type)
+    if method == "dot":
+        rule_id = _DOT_RULE
+        result_type = _DOT_RESULT[meta[0]] if meta is not None and meta[0] in _DOT_RESULT else "float"
+    elif keywords:
+        rule_id = _AXIS_RULE
+        result_type = _axis_result_type(f"numpy.{method}", meta[0], meta[1]) if meta else "float"
+    else:
+        rule_id = _WHOLE_ARRAY_RULE
+        result_type = _whole_array_result_type(f"numpy.{method}", meta[0]) if meta else "float"
     return ClaimSite(
         kind="call", target=f"values.{method}", operand_types=operand_types, file_path="", line=0,
         column=0, keywords=keywords,
         receiver=ReceiverMeta(arg_type=receiver_type, expr_kind="attribute", is_safe=False),
+        rule_id=rule_id,
+        result_type=result_type,
     )
 
 

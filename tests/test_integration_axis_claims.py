@@ -14,7 +14,7 @@ import pytest
 
 from rextio.analyzer.project_scanner import analyze_project
 from rextio.config.schema import PluginConfig, RextioConfig
-from rextio.plugins.api import Claimed, ClaimLiteral, LoweringContext
+from rextio.plugins.api import ClaimLiteral, LoweringContext, NotCovered
 from rextio.plugins.loader import load_plugin_registry
 from rextio.targets.models import TargetSpec
 
@@ -102,9 +102,7 @@ def whole_sum(a: F64Arr1) -> float:
     assert sum_claim.result_type == F64_1D
 
     col = _function(analysis, "myapp.kernels.col_max")
-    max_claim = next(c for c in col.plugin_claims if c.target == "numpy.max")
-    assert max_claim.keywords[0].literal.value == 0
-    assert max_claim.rule_id == "rextio-numpy/reduction-axis"
+    assert not any(c.target == "numpy.max" for c in col.plugin_claims)
 
     neg = _function(analysis, "myapp.kernels.neg_axis_mean")
     mean_claim = next(c for c in neg.plugin_claims if c.target == "numpy.mean")
@@ -226,7 +224,7 @@ def test_plugin_claim_on_analyzer_shaped_site_matches_unit_table(tmp_path: Path)
         ),
     )
     result = RextioNumpyPlugin().claim(site, RextioConfig())
-    assert result == Claimed(rule_id="rextio-numpy/reduction-axis", result_type=F64_1D)
+    assert result == NotCovered()
 
 
 def test_unsupported_axis_forms_stay_fallback_not_merely_no_claim(tmp_path: Path) -> None:

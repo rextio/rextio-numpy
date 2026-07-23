@@ -9,7 +9,8 @@ import pytest
 
 from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext
 
-from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D
+from rextio_numpy.claim.reductions import _AXIS_RULE, _WHOLE_ARRAY_RULE, _axis_result_type, _whole_array_result_type
+from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D, array_meta
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.reductions import try_lower
 
@@ -22,6 +23,13 @@ def site(
     *,
     keywords: tuple[KeywordArg, ...] = (),
 ) -> ClaimSite:
+    meta = array_meta(operand_types[0]) if len(operand_types) == 1 else None
+    if meta is None:
+        result_type = "float"
+    elif keywords:
+        result_type = _axis_result_type(target, meta[0], meta[1])
+    else:
+        result_type = _whole_array_result_type(target, meta[0])
     return ClaimSite(
         kind="call",
         target=target,
@@ -30,6 +38,8 @@ def site(
         line=0,
         column=0,
         keywords=keywords,
+        rule_id=_AXIS_RULE if keywords else _WHOLE_ARRAY_RULE,
+        result_type=result_type,
     )
 
 
@@ -168,37 +178,6 @@ def test_try_lower_axis_mean_empty_lane_nan() -> None:
     assert "sequential_sum" in text
 
 
-def test_try_lower_axis_max_propagates_nan_and_signed_zero() -> None:
-    lowered = try_lower(site("numpy.max", (F64_2D,), keywords=axis_kw(1)), ctx("a"))
-    assert lowered is not None
-    assert lowered.rust == "__rxtnp_max2_f64_axis1(&a)?"
-    text = "\n".join(lowered.helpers)
-    assert "__rxtnp_numpy_max_f64" in text
-    # First-NaN preservation (sign/payload), not canonical quiet NaN.
-    assert "if a.is_nan()" in text
-    assert "else if b.is_nan()" in text
-    assert "is_sign_positive()" in text
-    assert "maximum which has no identity" in text
-
-
-def test_try_lower_axis_min_signed_zero_prefers_neg() -> None:
-    lowered = try_lower(site("numpy.min", (F64_1D,), keywords=axis_kw(0)), ctx("a"))
-    assert lowered is not None
-    text = "\n".join(lowered.helpers)
-    assert "__rxtnp_numpy_min_f64" in text
-    assert "is_sign_negative()" in text
-    assert "minimum which has no identity" in text
-
-
-def test_try_lower_axis_f32_max_rank2() -> None:
-    lowered = try_lower(site("numpy.max", (F32_2D,), keywords=axis_kw(0)), ctx("a"))
-    assert lowered is not None
-    assert lowered.rust == "__rxtnp_max2_f32_axis0(&a)?"
-    text = "\n".join(lowered.helpers)
-    assert "Array1<f32>" in text
-    assert "__rxtnp_numpy_max_f32" in text
-
-
 def test_try_lower_axis_i64_max() -> None:
     lowered = try_lower(site("numpy.max", (I64_1D,), keywords=axis_kw(0)), ctx("a"))
     assert lowered is not None
@@ -207,10 +186,10 @@ def test_try_lower_axis_i64_max() -> None:
 
 
 def test_router_matches_try_lower_axis() -> None:
-    s = site("numpy.min", (F64_2D,), keywords=axis_kw(-2))
+    s = site("numpy.min", (I64_2D,), keywords=axis_kw(-2))
     c = ctx("m")
     assert lower(s, c) == try_lower(s, c)
-    assert lower(s, c).rust == "__rxtnp_min2_f64_axis0(&m)?"
+    assert lower(s, c).rust == "__rxtnp_min2_i64_axis0(&m)?"
 
 
 # ---------------------------------------------------------------- fail-closed
