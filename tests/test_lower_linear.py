@@ -6,7 +6,8 @@ import pytest
 
 from rextio.plugins.api import ClaimSite, LoweringContext
 
-from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D, I64_2D
+from rextio_numpy.claim.linear import _DOT_RESULT, _DOT_RULE
+from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D, I64_2D, array_meta
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.linear import try_lower
 
@@ -15,8 +16,10 @@ K = F64_1D
 
 def site(
     target: str = "numpy.dot",
-    operand_types: tuple[str, str] = (K, K),
+    operand_types: tuple[str | None, str | None] = (K, K),
 ) -> ClaimSite:
+    meta = array_meta(operand_types[0])
+    result_type = _DOT_RESULT[meta[0]] if meta is not None and meta[0] in _DOT_RESULT else "float"
     return ClaimSite(
         kind="call",
         target=target,
@@ -24,6 +27,8 @@ def site(
         file_path="",
         line=0,
         column=0,
+        rule_id=_DOT_RULE,
+        result_type=result_type,
     )
 
 

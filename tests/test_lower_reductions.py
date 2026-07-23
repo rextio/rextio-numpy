@@ -9,7 +9,8 @@ import pytest
 
 from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext
 
-from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D
+from rextio_numpy.claim.reductions import _AXIS_RULE, _WHOLE_ARRAY_RULE, _axis_result_type, _whole_array_result_type
+from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D, array_meta
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.reductions import try_lower
 
@@ -22,6 +23,13 @@ def site(
     *,
     keywords: tuple[KeywordArg, ...] = (),
 ) -> ClaimSite:
+    meta = array_meta(operand_types[0]) if len(operand_types) == 1 else None
+    if meta is None:
+        result_type = "float"
+    elif keywords:
+        result_type = _axis_result_type(target, meta[0], meta[1])
+    else:
+        result_type = _whole_array_result_type(target, meta[0])
     return ClaimSite(
         kind="call",
         target=target,
@@ -30,6 +38,8 @@ def site(
         line=0,
         column=0,
         keywords=keywords,
+        rule_id=_AXIS_RULE if keywords else _WHOLE_ARRAY_RULE,
+        result_type=result_type,
     )
 
 

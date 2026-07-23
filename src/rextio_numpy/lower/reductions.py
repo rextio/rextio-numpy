@@ -5,8 +5,22 @@ from __future__ import annotations
 from rextio.plugins.api import ClaimSite, LoweredExpr, LoweringContext
 
 from rextio_numpy import rust_snippets
-from rextio_numpy.claim.reductions import _dtype_allowed, normalize_axis
+from rextio_numpy.claim.reductions import (
+    _AXIS_RULE,
+    _WHOLE_ARRAY_RULE,
+    _axis_result_type,
+    _dtype_allowed,
+    _whole_array_result_type,
+    normalize_axis,
+)
 from rextio_numpy.diagnostics import array_meta
+from rextio_numpy.lower.contracts import (
+    require_direct_context,
+    require_no_hidden_site_metadata,
+    require_result_type,
+    require_rule_id,
+    require_site_expression_matches_claim,
+)
 from rextio_numpy.rust_snippets.reductions import axis_call_name, axis_typed, op_from_target
 
 _WHOLE_ARRAY_TARGETS = ("numpy.sum", "numpy.mean")
@@ -17,15 +31,29 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     """Return a lowered expression for sum/mean/max/min, or None if not this lane."""
     if claimed.kind != "call":
         return None
-    is_method = claimed.receiver is not None and claimed.target.rpartition(".")[2] in {
+    method_name = claimed.target.rpartition(".")[2]
+    is_module = claimed.target in _AXIS_TARGETS
+    is_method = not is_module and method_name in {
         "sum",
         "mean",
         "max",
         "min",
     }
-    target = f"numpy.{claimed.target.rpartition('.')[2]}" if is_method else claimed.target
-    if target not in _AXIS_TARGETS:
+    if not (is_module or is_method):
         return None
+    if is_module and claimed.receiver is not None:
+        raise ValueError("rextio-numpy module reductions lower requires no ClaimSite.receiver")
+    if is_method and claimed.receiver is None:
+        raise ValueError("rextio-numpy method reductions lower requires ClaimSite.receiver")
+    target = f"numpy.{method_name}" if is_method else claimed.target
+    require_direct_context(ctx, "reductions", receiver=is_method)
+    require_no_hidden_site_metadata(
+        claimed,
+        "reductions",
+        allow_expression=True,
+        expected_operand_literals=0 if is_method else 1,
+    )
+    require_site_expression_matches_claim(claimed, "reductions")
 
     # Fail closed on malformed lower-time metadata rather than emitting
     # incorrect reduction code (asserts are stripped under PYTHONOPTIMIZE=1).
@@ -70,6 +98,8 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
                 "rextio-numpy reduction lower operand is outside certified dtype/rank matrix: "
                 f"target={target!r}, dtype={dtype!r}, rank={rank}, axis=False"
             )
+        require_rule_id(claimed, _WHOLE_ARRAY_RULE, "reductions")
+        require_result_type(claimed, _whole_array_result_type(target, dtype), "reductions")
         if len(ctx.operands) != expected_ctx_arity:
             requirement = (
                 "exactly zero ctx.operands entries"
@@ -120,6 +150,8 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             "rextio-numpy reduction lower operand is outside certified dtype/rank matrix: "
             f"target={target!r}, dtype={dtype!r}, rank={rank}, axis=True"
         )
+    require_rule_id(claimed, _AXIS_RULE, "reductions")
+    require_result_type(claimed, _axis_result_type(target, dtype, rank), "reductions")
     if len(ctx.operands) != expected_ctx_arity:
         requirement = (
             "exactly zero ctx.operands entries"

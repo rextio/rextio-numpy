@@ -9,7 +9,8 @@ import pytest
 
 from rextio.plugins.api import ClaimSite, LoweringContext
 
-from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D, I64_2D
+from rextio_numpy.claim.binops import _ELEMENTWISE_RULE, _result_array_type
+from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D, I64_2D, array_meta
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.binops import try_lower
 
@@ -17,6 +18,15 @@ K = F64_1D
 
 
 def site(target: str, operand_types: tuple[str | None, str | None]) -> ClaimSite:
+    left_meta, right_meta = (array_meta(operand) for operand in operand_types)
+    if left_meta is not None and right_meta is not None:
+        result_type = _result_array_type(left_meta[0], max(left_meta[1], right_meta[1]), target)
+    elif left_meta is not None:
+        result_type = _result_array_type(left_meta[0], left_meta[1], target)
+    elif right_meta is not None:
+        result_type = _result_array_type(right_meta[0], right_meta[1], target)
+    else:
+        result_type = F64_1D
     return ClaimSite(
         kind="binop",
         target=target,
@@ -24,6 +34,8 @@ def site(target: str, operand_types: tuple[str | None, str | None]) -> ClaimSite
         file_path="",
         line=0,
         column=0,
+        rule_id=_ELEMENTWISE_RULE,
+        result_type=result_type,
     )
 
 
@@ -139,6 +151,8 @@ def test_fail_closed_wrong_operand_arity() -> None:
         file_path="",
         line=0,
         column=0,
+        rule_id=_ELEMENTWISE_RULE,
+        result_type=K,
     )
     with pytest.raises(ValueError, match="exactly two operand types"):
         try_lower(bad, ctx("a", "b"))
@@ -167,6 +181,8 @@ site = ClaimSite(
     file_path="",
     line=0,
     column=0,
+    rule_id="rextio-numpy/elementwise-float64",
+    result_type=F64_1D,
 )
 ctx = LoweringContext(
     operands=("a", "b"),

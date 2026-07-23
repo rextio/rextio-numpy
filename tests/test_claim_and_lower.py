@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from rextio.config.schema import RextioConfig
@@ -58,6 +60,17 @@ def ctx(*operands: str) -> LoweringContext:
         operands=tuple(operands),
         target_language="rust",
         fresh_name=lambda prefix: f"{prefix}_0",
+    )
+
+
+def claimed(claim_site: ClaimSite) -> ClaimSite:
+    """Return the complete metadata contract the core passes to lower()."""
+    decision = PLUGIN.claim(claim_site, CONFIG)
+    assert isinstance(decision, Claimed)
+    return replace(
+        claim_site,
+        rule_id=decision.rule_id,
+        result_type=decision.result_type,
     )
 
 
@@ -228,7 +241,7 @@ def test_claim_literal_axis_surface() -> None:
 
 
 def test_lower_dot() -> None:
-    lowered = PLUGIN.lower(site("call", "numpy.dot", (K, K)), ctx("a", "b"))
+    lowered = PLUGIN.lower(claimed(site("call", "numpy.dot", (K, K))), ctx("a", "b"))
     assert lowered.rust == "__rxtnp_dot1(&a, &b)?"
     assert lowered.uses == ()
     assert len(lowered.helpers) == 1
@@ -248,7 +261,7 @@ def test_lower_dot() -> None:
     ],
 )
 def test_lower_reductions(target: str, helper_name: str, body: str) -> None:
-    lowered = PLUGIN.lower(site("call", target, (K,)), ctx("values"))
+    lowered = PLUGIN.lower(claimed(site("call", target, (K,))), ctx("values"))
     assert lowered.rust == f"{helper_name}(&values)?"
     assert len(lowered.helpers) == 1
     assert (
@@ -263,7 +276,7 @@ def test_lower_reductions(target: str, helper_name: str, body: str) -> None:
     [("+", "add", "+"), ("-", "sub", "-"), ("*", "mul", "*"), ("/", "div", "/")],
 )
 def test_lower_binop_array_array(op: str, name: str, symbol: str) -> None:
-    lowered = PLUGIN.lower(site("binop", op, (K, K)), ctx("a", "b"))
+    lowered = PLUGIN.lower(claimed(site("binop", op, (K, K))), ctx("a", "b"))
     assert lowered.rust == f"__rxtnp_{name}1_aa(&a, &b)?"
     helper = lowered.helpers[0]
     assert f"fn __rxtnp_{name}1_aa(" in helper
@@ -276,7 +289,7 @@ def test_lower_binop_array_array(op: str, name: str, symbol: str) -> None:
     [("+", "add", "+"), ("-", "sub", "-"), ("*", "mul", "*"), ("/", "div", "/")],
 )
 def test_lower_binop_array_scalar(op: str, name: str, symbol: str) -> None:
-    lowered = PLUGIN.lower(site("binop", op, (K, "float")), ctx("a", "s"))
+    lowered = PLUGIN.lower(claimed(site("binop", op, (K, "float"))), ctx("a", "s"))
     assert lowered.rust == f"__rxtnp_{name}1_as(&a, s)?"
     helper = lowered.helpers[0]
     assert f"fn __rxtnp_{name}1_as(a: &numpy::ndarray::Array1<f64>, s: f64)" in helper
@@ -290,7 +303,7 @@ def test_lower_binop_array_scalar(op: str, name: str, symbol: str) -> None:
     [("+", "add", "+"), ("-", "sub", "-"), ("*", "mul", "*"), ("/", "div", "/")],
 )
 def test_lower_binop_scalar_array(op: str, name: str, symbol: str) -> None:
-    lowered = PLUGIN.lower(site("binop", op, ("float", K)), ctx("s", "a"))
+    lowered = PLUGIN.lower(claimed(site("binop", op, ("float", K))), ctx("s", "a"))
     assert lowered.rust == f"__rxtnp_{name}1_sa(s, &a)?"
     helper = lowered.helpers[0]
     assert f"fn __rxtnp_{name}1_sa(s: f64, a: &numpy::ndarray::Array1<f64>)" in helper
@@ -300,16 +313,16 @@ def test_lower_binop_scalar_array(op: str, name: str, symbol: str) -> None:
 
 def test_lower_wave1_helpers_are_fallible() -> None:
     lowered_all = [
-        PLUGIN.lower(site("call", "numpy.dot", (K, K)), ctx("a", "b")),
-        PLUGIN.lower(site("call", "numpy.sum", (K,)), ctx("a")),
-        PLUGIN.lower(site("call", "numpy.mean", (K,)), ctx("a")),
-        PLUGIN.lower(site("binop", "+", (K, K)), ctx("a", "b")),
-        PLUGIN.lower(site("binop", "-", (K, "float")), ctx("a", "s")),
-        PLUGIN.lower(site("binop", "/", ("float", K)), ctx("s", "a")),
-        PLUGIN.lower(site("binop", "+", (F64_1D, F64_2D)), ctx("a", "b")),
-        PLUGIN.lower(site("binop", "/", (I64_1D, "int")), ctx("a", "s")),
-        PLUGIN.lower(site("call", "numpy.dot", (I64_1D, I64_1D)), ctx("a", "b")),
-        PLUGIN.lower(site("call", "numpy.sum", (I64_1D,)), ctx("a")),
+        PLUGIN.lower(claimed(site("call", "numpy.dot", (K, K))), ctx("a", "b")),
+        PLUGIN.lower(claimed(site("call", "numpy.sum", (K,))), ctx("a")),
+        PLUGIN.lower(claimed(site("call", "numpy.mean", (K,))), ctx("a")),
+        PLUGIN.lower(claimed(site("binop", "+", (K, K))), ctx("a", "b")),
+        PLUGIN.lower(claimed(site("binop", "-", (K, "float"))), ctx("a", "s")),
+        PLUGIN.lower(claimed(site("binop", "/", ("float", K))), ctx("s", "a")),
+        PLUGIN.lower(claimed(site("binop", "+", (F64_1D, F64_2D))), ctx("a", "b")),
+        PLUGIN.lower(claimed(site("binop", "/", (I64_1D, "int"))), ctx("a", "s")),
+        PLUGIN.lower(claimed(site("call", "numpy.dot", (I64_1D, I64_1D))), ctx("a", "b")),
+        PLUGIN.lower(claimed(site("call", "numpy.sum", (I64_1D,))), ctx("a")),
     ]
     for lowered in lowered_all:
         assert lowered.rust.endswith("?")
@@ -329,7 +342,7 @@ def test_lower_rejects_unclaimed_sites() -> None:
 
 def test_lower_literal_axis_encodes_normalized_axis() -> None:
     lowered = PLUGIN.lower(
-        site("call", "numpy.sum", (F64_2D,), keywords=axis_kw(-1)),
+        claimed(site("call", "numpy.sum", (F64_2D,), keywords=axis_kw(-1))),
         ctx("mat"),
     )
     assert lowered.rust == "__rxtnp_sum2_f64_axis1(&mat)?"
@@ -337,7 +350,7 @@ def test_lower_literal_axis_encodes_normalized_axis() -> None:
     assert "__rxtnp_numpy_pairwise_sum_f64" in "\n".join(lowered.helpers)
 
     maxed = PLUGIN.lower(
-        site("call", "numpy.max", (F64_1D,), keywords=axis_kw(0)),
+        claimed(site("call", "numpy.max", (F64_1D,), keywords=axis_kw(0))),
         ctx("v"),
     )
     assert maxed.rust == "__rxtnp_max1_f64_axis0(&v)?"
