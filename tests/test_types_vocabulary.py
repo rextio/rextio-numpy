@@ -62,7 +62,12 @@ def test_type_vocabulary_surface_via_plugin_still_wave0() -> None:
     assert f64_r1.rust_type == "numpy::ndarray::Array1<f64>"
     conv = f64_r1.conversion
     assert conv.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
-    assert conv.param_expr == "{param}.as_array().to_owned()"
+    assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conv.param_expr
+    assert "requires exact numpy.ndarray" in conv.param_expr
+    assert conv.param_expr.endswith("{param}.as_array().to_owned() }}")
+    rendered = conv.param_expr.format(param="values")
+    assert rendered.startswith("{ if !values.is_exact_instance_of")
+    assert rendered.endswith("values.as_array().to_owned() }")
     assert conv.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
     assert conv.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
 

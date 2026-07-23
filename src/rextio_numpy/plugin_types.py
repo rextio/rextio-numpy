@@ -27,11 +27,29 @@ _RUST_ELEM = {
 
 
 def _boundary(rank: int, elem: str) -> BoundaryConversion:
-    """Return the proven rust-numpy 0.29 boundary conversion for rank/elem."""
+    """Return the exact-base-ndarray rust-numpy boundary for rank/elem.
+
+    ``PyReadonlyArray`` deliberately accepts ndarray subclasses. Those carry
+    observable method/ufunc dispatch (``matrix`` shape rules,
+    ``__array_ufunc__``, ``__array_priority__``), which the owned ndarray copy
+    cannot preserve. The conversion therefore checks NumPy's C-level exact
+    array predicate before materializing. This is a deterministic native
+    boundary rejection, not a static claim-time fallback.
+    """
     rust_elem = _RUST_ELEM[elem]
+    exact_type = f"numpy::PyArray{rank}<{rust_elem}>"
+    param_expr = (
+        "{{ "
+        f"if !{{param}}.is_exact_instance_of::<{exact_type}>() {{{{ "
+        "return Err(pyo3::exceptions::PyTypeError::new_err("
+        '"rextio-numpy native boundary requires exact numpy.ndarray; '
+        'ndarray subclasses are unsupported")); '
+        "}} "
+        "{param}.as_array().to_owned() }}"
+    )
     return BoundaryConversion(
         param_rust=f"numpy::PyReadonlyArray{rank}<'py, {rust_elem}>",
-        param_expr="{param}.as_array().to_owned()",
+        param_expr=param_expr,
         return_rust=f"pyo3::Bound<'py, numpy::PyArray{rank}<{rust_elem}>>",
         return_expr="numpy::ToPyArray::to_pyarray(&{value}, py)",
     )

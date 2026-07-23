@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from rextio.plugins.api import ClaimSite, LoweringContext
 
-from rextio_numpy.diagnostics import F64_1D, I64_1D
+from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D, I64_2D
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.linear import try_lower
 
@@ -48,6 +50,21 @@ def test_try_lower_dot_i64() -> None:
     assert lowered is not None
     assert lowered.rust == "__rxtnp_dot1_i64(&a, &b)?"
     assert "wrapping_mul" in lowered.helpers[0]
+
+
+@pytest.mark.parametrize(
+    "operand_types",
+    [
+        (F32_1D, F32_1D),
+        (F64_2D, F64_2D),
+        (F64_1D, I64_1D),
+        (I64_1D, I64_2D),
+        (F64_1D, "int"),
+    ],
+)
+def test_try_lower_forged_dot_claim_fails_closed(operand_types: tuple[str, str]) -> None:
+    with pytest.raises(ValueError, match="certified same-dtype rank-1 f64/i64"):
+        try_lower(site(operand_types=operand_types), ctx("a", "b"))
 
 
 def test_try_lower_ignores_non_dot() -> None:

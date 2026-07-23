@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.2 — unreleased
+
+Requires **`rextio>=0.1.3,<0.2`** and advertises plugin API **1.3** solely to
+consume Core receiver metadata; it does not advertise the API-1.4 artifact
+capability.
+
+- Adds certified ndarray method parity for `a.dot(b)`, whole-array
+  `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
+  the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly
+  once before ordinary operands.
+- Adds exact unary module calls `numpy.negative`, `numpy.absolute`/
+  `numpy.abs`, and `numpy.square` for f64/f32/i64 rank-1/rank-2 arrays;
+  float signed-zero/NaN/infinity behavior and wrapping int64 edge cases are
+  covered.
+- Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, float32
+  dot/sum/mean, int64 mean, unary method forms, and ufunc overrides (`out`,
+  `where`, dtype, etc.) on the Python fallback.
+- Hardens every plugin-array native boundary with an exact base
+  `numpy.ndarray` check. Nominal annotations cannot identify runtime subclasses,
+  so `matrix`, `memmap`, and custom `__array_ufunc__` subclasses now raise a
+  deterministic native-boundary `TypeError`; this is not an automatic static
+  fallback. Exact base-ndarray views remain supported.
+- Revalidates the certified dot and reduction dtype/rank matrices at lower
+  time, including dot RHS equality, so forged/corrupted claims fail closed.
+
 ## 0.1.1 — 2026-07-14
 
 Released cut for package version **0.1.1**, tagged and uploaded to PyPI on
@@ -50,12 +75,14 @@ one per lowerer (`tests/test_lower_binops.py`,
 
 ### Verified suite totals (this branch)
 
-Repository evidence via `pytest --collect-only` on this tree:
+Repository evidence on this tree:
 
-- **661** collected tests total
-- **115** collected real-Cargo certification cases in
-  `tests/test_certification_real_cargo.py` (cargo-gated; may also skip via
-  dependency `importorskip` conditions such as NumPy/Hypothesis)
+- **743** collected tests total from
+  `.venv/bin/python -m pytest --collect-only -q`
+- **119** collected real-Cargo certification cases from
+  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
+  (cargo-gated; may also skip via dependency `importorskip` conditions such as
+  NumPy/Hypothesis)
 
 ### Rank-2 matmul decision
 

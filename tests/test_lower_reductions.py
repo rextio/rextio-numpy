@@ -9,7 +9,7 @@ import pytest
 
 from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext
 
-from rextio_numpy.diagnostics import F32_2D, F64_1D, F64_2D, I64_1D, I64_2D
+from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.reductions import try_lower
 
@@ -73,12 +73,28 @@ def test_try_lower_i64_sum_wraps() -> None:
     assert "PyResult<i64>" in lowered.helpers[0]
 
 
-def test_try_lower_i64_mean_helper_still_exists() -> None:
-    """Lower helper remains for architecture symmetry; claim is the gate."""
-    lowered = try_lower(site("numpy.mean", (I64_1D,)), ctx("a"))
-    assert lowered is not None
-    assert "as f64" in lowered.helpers[0]
-    assert "PyResult<f64>" in lowered.helpers[0]
+def test_try_lower_i64_mean_forged_claim_fails_closed() -> None:
+    with pytest.raises(ValueError, match="outside certified dtype/rank matrix"):
+        try_lower(site("numpy.mean", (I64_1D,)), ctx("a"))
+
+
+@pytest.mark.parametrize(
+    ("target", "operand_types", "keywords"),
+    [
+        ("numpy.sum", (F32_2D,), ()),
+        ("numpy.mean", (F32_1D,), ()),
+        ("numpy.mean", (I64_2D,), axis_kw(0)),
+        ("numpy.sum", (F32_1D,), axis_kw(0)),
+        ("numpy.max", (F32_1D,), axis_kw(0)),
+    ],
+)
+def test_try_lower_forged_reduction_claim_fails_closed(
+    target: str,
+    operand_types: tuple[str, ...],
+    keywords: tuple[KeywordArg, ...],
+) -> None:
+    with pytest.raises(ValueError, match="outside certified dtype/rank matrix"):
+        try_lower(site(target, operand_types, keywords=keywords), ctx("a"))
 
 
 def test_try_lower_f64_rank2_sum() -> None:

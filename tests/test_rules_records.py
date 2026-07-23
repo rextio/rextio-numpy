@@ -20,6 +20,15 @@ def test_public_coverage_import() -> None:
         "numpy.mean",
         "numpy.max",
         "numpy.min",
+        "numpy.ndarray.dot",
+        "numpy.ndarray.sum",
+        "numpy.ndarray.mean",
+        "numpy.ndarray.max",
+        "numpy.ndarray.min",
+        "numpy.negative",
+        "numpy.absolute",
+        "numpy.abs",
+        "numpy.square",
     )
 
 
@@ -43,7 +52,7 @@ def test_numpy_rule_records_order_and_ids() -> None:
 def test_native_and_fallback_split() -> None:
     assert {r.outcome for r in NATIVE_RECORDS} == {"native"}
     assert all(r.verified is True for r in NATIVE_RECORDS)
-    assert {r.outcome for r in FALLBACK_RECORDS} == {"fallback"}
+    assert {r.outcome for r in FALLBACK_RECORDS} == {"fallback", "reject"}
     assert all(r.verified is None for r in FALLBACK_RECORDS)
 
 
@@ -55,6 +64,7 @@ def test_native_records_broadened_but_ids_stable() -> None:
         "rextio-numpy/reduction-sum-mean",
         "rextio-numpy/reduction-axis",
         "rextio-numpy/elementwise-chain-fusion",
+        "rextio-numpy/unary-module",
     }
     elem = by_id["rextio-numpy/elementwise-float64"]
     assert elem.diagnostic_code == "RXTP-NUMPY-001"
@@ -88,12 +98,28 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "operand_mode" in fusion.scope.pattern or "leaves" in fusion.scope.pattern
     assert "wrapping" in fusion.constraint.lower()
     assert fusion.verified is True
+    unary = by_id["rextio-numpy/unary-module"]
+    assert unary.diagnostic_code == "RXTP-NUMPY-006"
+    assert "numpy.negative" in unary.scope.pattern
+    assert "wrapping" in unary.constraint
+    assert "out" in unary.constraint
 
 
 def test_fallback_ndim_is_rank_gt_2() -> None:
     ndim = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-ndim")
     assert ndim.diagnostic_code == "RXTP-NUMPY-011"
     assert "more than 2" in ndim.scope.pattern
+
+
+def test_ndarray_subclass_rule_is_runtime_rejection_not_static_fallback() -> None:
+    record = next(
+        r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/ndarray-subclass-boundary"
+    )
+    assert record.outcome == "reject"
+    assert record.diagnostic_code == "RXTP-NUMPY-013"
+    assert "runtime" in record.constraint
+    assert "not an automatic claim-time fallback" in record.constraint
+    assert "exact numpy.ndarray" in record.constraint
 
 
 def test_rust_snippets_package_public_api() -> None:
@@ -119,3 +145,5 @@ def test_rust_snippets_package_public_api() -> None:
     assert "__rxtnp_max2_f64_axis0" in joined
     assert "maximum which has no identity" in joined
     assert rust_snippets.op_from_target("numpy.min") == "min"
+    assert rust_snippets.unary_call_name("square", "i64", 2) == "__rxtnp_square2_i64"
+    assert "wrapping_mul" in rust_snippets.unary_typed("square", "i64", 2)

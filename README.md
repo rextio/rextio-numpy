@@ -8,33 +8,27 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: 0.1.1 released
+## Status: 0.1.2 development
 
-`rextio-numpy` **0.1.1** is released — tagged and uploaded to PyPI on
-2026-07-14. The prior published cut was **`rextio-numpy` 0.1.0**
-(2026-07-12 on PyPI).
+`rextio-numpy` **0.1.2** is the active development branch. The latest
+published cut is **`rextio-numpy` 0.1.1** (2026-07-14).
 
-Implements **plugin API 1.2** end to end: the annotation vocabulary, the
+Implements **plugin API 1.3** end to end: the annotation vocabulary, the
 deterministic `claim` pass (including keyword/literal axis metadata and
 structured `ClaimExpr` trees from core API 1.2), `lower()` emission to Rust via
 the `ndarray` crate, multi-op elementwise chain fusion via
-`operand_mode="leaves"`, and pinned crate injection (rust-numpy
+`operand_mode="leaves"`, receiver metadata for certified ndarray methods, and pinned crate injection (rust-numpy
 `numpy =0.29.0`; ndarray via its re-export).
 
-**Dependency:** requires **`rextio>=0.1.2,<0.2`**. NumPy is deliberately **not**
+**Dependency:** requires **`rextio>=0.1.3,<0.2`**. NumPy is deliberately **not**
 a runtime dependency of this package — only the user-facing
 `rextio_numpy.types` vocabulary imports NumPy in the **user** project.
 
-### Safe deployment order
+### Core compatibility
 
-Publish / deploy in this **strict sequential order only** (do **not** ship these
-simultaneously):
-
-1. **`rextio-lsp` 0.1.1** dual-map first
-2. **core `rextio` 0.1.2** second (plugin API 1.2 claim metadata)
-3. **`rextio-numpy` 0.1.1** third, only after core 0.1.2 resolves
-
-**`rextio-numpy` cannot be published before its core dependency resolves.**
+This branch requires **core `rextio>=0.1.3,<0.2`** for plugin API 1.3 receiver
+metadata. It does not implement or advertise the optional API-1.4 standalone
+artifact capability.
 
 ### Annotation vocabulary (`rextio_numpy.types`)
 
@@ -47,6 +41,24 @@ simultaneously):
 Plain runtime aliases of `numpy.ndarray` — no runtime validation. The
 analyzer resolves them to plugin type keys when the plugin is enabled.
 
+### Exact base-ndarray boundary
+
+The annotations are nominal, so static analysis cannot tell an exact
+`numpy.ndarray` from `numpy.matrix`, `numpy.memmap`, or a custom ndarray
+subclass. Every plugin-typed native parameter therefore applies NumPy's exact
+C-level ndarray check before copying data. If the native route is executed
+with a subclass, it deterministically raises:
+
+```text
+TypeError: rextio-numpy native boundary requires exact numpy.ndarray; ndarray subclasses are unsupported
+```
+
+This is a runtime native-boundary rejection, not an automatic static fallback.
+Exact base-ndarray views and strided arrays remain supported. Convert with
+`numpy.asarray` before the typed hot path when subclass behavior is irrelevant;
+when `matrix`, `__array_ufunc__`, `__array_priority__`, or other subclass/subok
+semantics matter, keep the enclosing function on Python fallback.
+
 ### Native surface (verified)
 
 - **Element-wise `+ - * /`** on same-dtype **float64 / float32 / int64**
@@ -55,8 +67,8 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   array–scalar, and scalar–array; operand order preserved for `-` and `/`.
   int64 true division (`/`) yields a **float64** array at the broadcast
   result rank (`RXTP-NUMPY-001`).
-- **`numpy.dot(a, b)`** on same-dtype **1-D float64 and int64** only
-  (module-call form). **float32** 1-D dots are **deliberately fallback**
+- **`numpy.dot(a, b)` / `a.dot(b)`** on same-dtype **1-D float64 and int64**
+  only. **float32** 1-D dots are **deliberately fallback**
   (sequential f32 accumulation diverges materially from NumPy pairwise
   summation; the plugin API has no enforceable runtime length gate).
   **2-D** operands and **`@` / matmul** stay unclaimed (`RXTP-NUMPY-002`).
@@ -68,10 +80,11 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   - **float32** sum/mean and **int64 mean** are fallback (material
     accumulation-order divergence; no runtime length gate).
   - Bare `numpy.max` / `numpy.min` (no `axis=`) stay fallback.
-  - `a.sum()` / `a.mean()` method forms fallback (`RXTP-NUMPY-003`).
-- **Literal-axis reductions** (module-call,
-  `numpy.sum|mean|max|min(a, axis=<int literal>)` only — exactly one
-  positional array and exactly one named `axis` keyword):
+  - Equivalent `a.sum()` / `a.mean()` method forms are native under Core's
+    API-1.3 receiver contract (`RXTP-NUMPY-003`).
+- **Literal-axis reductions** (`numpy.sum|mean|max|min(a, axis=<int literal>)`
+  or `a.sum|mean|max|min(axis=<int literal>)` — exactly one named `axis`
+  keyword; module calls additionally carry exactly one positional array):
   - `sum`: f64/i64 ranks 1–2; `mean`: f64 ranks 1–2
   - `max`/`min`: f64/i64 ranks 1–2; **f32 rank 2 only** (rank-1 f32 stays
     fallback to preserve `numpy.float32` scalar semantics)
@@ -95,6 +108,11 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   leaf views only, one output allocation/data pass, AST evaluation order
   preserved (i64 wrapping at every intermediate). Out-of-scope trees keep
   ordinary per-op elementwise (`RXTP-NUMPY-005`).
+- **Exact unary module calls** `numpy.negative(a)`, `numpy.absolute(a)`,
+  `numpy.abs(a)`, and `numpy.square(a)` on f64/f32/i64 rank-1/rank-2 arrays
+  (`RXTP-NUMPY-006`). No `out`, `where`, dtype override, or unary method form
+  is claimed. Floating signed-zero/NaN/infinity values follow NumPy; int64
+  negative/absolute/square use wraparound arithmetic, including `INT64_MIN`.
 
 Shape/length mismatches raise `ValueError` with NumPy's exact messages.
 int64 `+`, `-`, `*`, `sum`, and `dot` use **wraparound** arithmetic matching
@@ -130,19 +148,22 @@ contract; warning parity is **not** part of the acceptance surface.
 | Rule | Outcome | Code |
 |---|---|---|
 | Element-wise `+ - * /` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar) | native (verified) | RXTP-NUMPY-001 |
-| `numpy.dot(a, b)` on same-dtype 1-D f64/i64 (module-call; not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
-| Whole-array `numpy.sum` on f64/i64 ranks 1–2; `numpy.mean` on f64 ranks 1–2 (module-call, no kwargs) | native (verified) | RXTP-NUMPY-003 |
-| Literal-axis `numpy.sum/mean/max/min(a, axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
+| `numpy.dot(a, b)` / `a.dot(b)` on same-dtype 1-D f64/i64 (not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
+| Whole-array `numpy.sum` / `a.sum` on f64/i64 ranks 1–2; `numpy.mean` / `a.mean` on f64 ranks 1–2 (no kwargs) | native (verified) | RXTP-NUMPY-003 |
+| Literal-axis module or ndarray-method `sum/mean/max/min(axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
 | Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
+| Exact `numpy.negative/absolute/abs/square(a)` on f64/f32/i64 ranks 1–2 | native (verified) | RXTP-NUMPY-006 |
 | Operand types outside the claimed set (incl. f32 sum/mean/dots, rank-1 f32 max/min, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
-| Any other NumPy API (method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
+| Runtime ndarray subclasses / `matrix` / `__array_ufunc__` overrides at a native boundary | reject (runtime TypeError; not static fallback) | RXTP-NUMPY-013 |
+| Any other NumPy API (unsupported method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
 
-All rules are `experimental`. Codes RXTP-NUMPY-011/012/019 are
-declarative-only: they document fallback boundaries in the rule records but
-are never attached to diagnostics — uncovered sites surface as core's RXT030
-instead. Only RXTP-NUMPY-010 is actively emitted.
+All rules are `experimental`. Codes RXTP-NUMPY-011/012/013/019 are
+declarative-only: they document exclusion boundaries in the rule records but
+are never attached to claim diagnostics. RXTP-NUMPY-013 documents a runtime
+native-boundary rejection rather than fallback; other uncovered sites surface
+as core's RXT030. Only RXTP-NUMPY-010 is actively emitted by `claim()`.
 
 NumPy itself is deliberately **not** a dependency of the plugin — only the
 user-facing `rextio_numpy.types` vocabulary module imports it, in the user's
@@ -177,25 +198,25 @@ def dot(a: F64Arr1, b: F64Arr1) -> float:
 ```
 
 ```bash
-pip install rextio-numpy   # requires rextio >= 0.1.2
+pip install rextio-numpy   # requires rextio >= 0.1.3
 rextio capabilities --format json   # numpy rules appear under "rules"
 rextio build .                      # lowered kernels compile via cargo
 ```
 
-> **Note:** `pip install rextio-numpy` now installs **0.1.1**. It requires a
-> core that provides plugin API 1.2 (`rextio>=0.1.2`). To work against the
+> **Note:** PyPI currently installs **0.1.1**. The development 0.1.2 surface
+> requires a core that provides plugin API 1.3 (`rextio>=0.1.3`). To work against the
 > surface from a source checkout, see Development below.
 
 ## Development
 
-Core for this release requires **`rextio>=0.1.2,<0.2`**. For day-to-day work on
-this branch, install core from a build that exposes plugin API 1.2 (PyPI, or a
+Core for this release requires **`rextio>=0.1.3,<0.2`**. For day-to-day work on
+this branch, install core from a build that exposes plugin API 1.3 (PyPI, or a
 sibling checkout when co-developing) and this package editable without resolving
 a published `rextio-numpy` wheel over the tree:
 
 ```bash
 uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python "rextio>=0.1.2,<0.2"
+uv pip install --python .venv/bin/python "rextio>=0.1.3,<0.2"
 # or, when co-developing core: uv pip install --python .venv/bin/python -e path/to/rextio
 uv pip install --python .venv/bin/python --no-deps -e .
 uv pip install --python .venv/bin/python pytest ruff mypy
@@ -211,12 +232,16 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 ### Verified suite totals (this branch)
 
-On this tree, `pytest --collect-only` reports **661** collected tests total and
-**115** collected real-Cargo certification cases in
-`tests/test_certification_real_cargo.py`. Those 115 cases are **cargo-gated**
-and may also skip via dependency `importorskip` conditions (e.g. NumPy,
-Hypothesis). Re-collect after material test changes; do not treat these numbers
-as a product API.
+On this tree:
+
+- `.venv/bin/python -m pytest --collect-only -q` reports **743** collected tests total.
+- The focused collection command
+  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
+  reports **119** real-Cargo certification cases.
+
+Those 119 cases are **cargo-gated** and may also skip via dependency
+`importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material
+test changes; do not treat these numbers as a product API.
 
 ## License
 

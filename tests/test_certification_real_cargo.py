@@ -105,6 +105,38 @@ def average(a: F64Arr1) -> float:
     return np.mean(a)
 
 
+def method_dot(a: F64Arr1, b: F64Arr1) -> float:
+    return a.dot(b)
+
+
+def method_total(a: F64Arr1) -> float:
+    return a.sum()
+
+
+def method_average_axis(a: F64Arr2) -> F64Arr1:
+    return a.mean(axis=1)
+
+
+def method_max_axis(a: F32Arr2) -> F32Arr1:
+    return a.max(axis=0)
+
+
+def unary_negative_f64(a: F64Arr1) -> F64Arr1:
+    return np.negative(a)
+
+
+def unary_absolute_f32(a: F32Arr2) -> F32Arr2:
+    return np.absolute(a)
+
+
+def unary_abs_i64(a: I64Arr1) -> I64Arr1:
+    return np.abs(a)
+
+
+def unary_square_i64(a: I64Arr2) -> I64Arr2:
+    return np.square(a)
+
+
 def accumulate(a: F64Arr1, b: F64Arr1, n: int) -> F64Arr1:
     c = a + b
     for i in range(n):
@@ -563,6 +595,80 @@ def test_dot_sum_mean_close(project: CertifiedProject) -> None:
     assert float(dot(ARRAY, OTHER)) == pytest.approx(float(np.dot(ARRAY, OTHER)), rel=1e-12)
     assert float(total(ARRAY)) == pytest.approx(float(np.sum(ARRAY)), rel=1e-12)
     assert float(average(ARRAY)) == pytest.approx(float(np.mean(ARRAY)), rel=1e-12)
+
+
+def test_method_parity_is_natively_served(project: CertifiedProject) -> None:
+    """API-1.3 receiver paths use the same certified helpers as module calls."""
+    dot = _require_native_scalar(project, "method_dot", scalar_close)
+    total = _require_native_scalar(project, "method_total", scalar_close)
+    mean_axis = _require_native(project, "method_average_axis")
+    max_axis = _require_native(project, "method_max_axis")
+    a = np.array([1.0, -2.5, 3.25])
+    b = np.array([0.5, 4.0, -1.0])
+    matrix = np.array([[1.0, -2.0], [3.0, 4.0]], dtype=np.float64)
+    matrix32 = matrix.astype(np.float32)
+    assert float(dot(a, b)) == pytest.approx(float(a.dot(b)), rel=SCALAR_REL_TOL)
+    assert float(total(a)) == pytest.approx(float(a.sum()), rel=SCALAR_REL_TOL)
+    np.testing.assert_allclose(mean_axis(matrix), matrix.mean(axis=1))
+    np.testing.assert_array_equal(max_axis(matrix32), matrix32.max(axis=0))
+
+
+def test_unary_module_calls_are_natively_served(project: CertifiedProject) -> None:
+    negative = _require_native(project, "unary_negative_f64")
+    absolute = _require_native(project, "unary_absolute_f32")
+    abs_i64 = _require_native(project, "unary_abs_i64")
+    square_i64 = _require_native(project, "unary_square_i64")
+    f64 = np.array([-0.0, np.inf, -np.inf, np.nan], dtype=np.float64)
+    f32 = np.array([[-0.0, -3.5], [np.inf, np.nan]], dtype=np.float32)
+    i64 = np.array([np.iinfo(np.int64).min, -3, 0, 4], dtype=np.int64)
+    i64_2d = np.array([[np.iinfo(np.int64).max, 2], [-3, 4]], dtype=np.int64)
+    negative_result = negative(f64)
+    absolute_result = absolute(f32)
+    assert array_equals(negative_result, np.negative(f64))
+    assert array_equals(absolute_result, np.absolute(f32))
+    assert bool(np.signbit(negative_result[0])) == bool(np.signbit(np.negative(f64)[0]))
+    assert bool(np.signbit(absolute_result[0, 0])) == bool(np.signbit(np.absolute(f32)[0, 0]))
+    np.testing.assert_array_equal(abs_i64(i64), np.abs(i64))
+    np.testing.assert_array_equal(square_i64(i64_2d), np.square(i64_2d))
+
+
+@pytest.mark.filterwarnings("ignore:the matrix subclass.*:PendingDeprecationWarning")
+def test_ndarray_subclasses_are_rejected_before_method_semantics(project: CertifiedProject) -> None:
+    """Matrix axis semantics must never be silently normalized to base ndarray."""
+    check = checker(project, "method_average_axis", equals=array_equals)
+    matrix = np.matrix([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+    native, _ = check._run("native", (matrix,))
+    fallback, _ = check._run("fallback", (matrix,))
+    assert native[0] == "raised"
+    assert isinstance(native[1], TypeError)
+    assert str(native[1]) == (
+        "rextio-numpy native boundary requires exact numpy.ndarray; "
+        "ndarray subclasses are unsupported"
+    )
+    assert fallback[0] == "returned"
+    assert type(fallback[1]) is np.matrix
+    assert fallback[1].shape == (2, 1)
+
+
+def test_array_ufunc_override_is_rejected_before_unary_helper(project: CertifiedProject) -> None:
+    """A custom __array_ufunc__ result remains fallback-only, never erased natively."""
+
+    class OverrideArray(np.ndarray):
+        def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+            del ufunc, method, inputs, kwargs
+            return "override-result"
+
+    values = np.array([1.0, -2.0], dtype=np.float64).view(OverrideArray)
+    check = checker(project, "unary_negative_f64", equals=array_equals)
+    native, _ = check._run("native", (values,))
+    fallback, _ = check._run("fallback", (values,))
+    assert native[0] == "raised"
+    assert isinstance(native[1], TypeError)
+    assert str(native[1]) == (
+        "rextio-numpy native boundary requires exact numpy.ndarray; "
+        "ndarray subclasses are unsupported"
+    )
+    assert fallback == ("returned", "override-result")
 
 
 def test_dot_length_mismatch_raises_equivalently(project: CertifiedProject) -> None:

@@ -11,7 +11,8 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         scope=RuleScope(
             kind="call",
             pattern=(
-                "covered numpy.dot/sum/mean/max/min call or elementwise +/-/*// binop "
+                "covered numpy.dot/sum/mean/max/min/unary module (including certified ndarray method) "
+                "call or elementwise +/-/*// binop "
                 "whose resolved operand types are outside the float64/float32/int64 "
                 "rank-1/2 surface (including excluded reduction dtype cells)"
             ),
@@ -83,13 +84,43 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         stability="experimental",
     ),
     RuleRecord(
+        id="rextio-numpy/ndarray-subclass-boundary",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="type",
+            pattern=(
+                "numpy.ndarray subclass (including numpy.matrix or a custom "
+                "__array_ufunc__ override) passed to a plugin-typed native boundary"
+            ),
+        ),
+        constraint=(
+            "The annotation vocabulary is nominal and static analysis cannot distinguish "
+            "an exact base numpy.ndarray from a runtime subclass. Claims therefore remain "
+            "unchanged. Every materialized plugin-array parameter performs NumPy's exact "
+            "C-level ndarray type check before copying; a subclass deterministically raises "
+            "TypeError('rextio-numpy native boundary requires exact numpy.ndarray; ndarray "
+            "subclasses are unsupported') when the native route executes. This is a runtime "
+            "native-boundary rejection, not an automatic claim-time fallback. Exact base "
+            "ndarray views/strided arrays remain admitted."
+        ),
+        outcome="reject",
+        diagnostic_code="RXTP-NUMPY-013",
+        guidance=(
+            "Convert to an exact base array with numpy.asarray before entering the typed hot "
+            "path when subclass behavior is unnecessary. If matrix/subclass dispatch, "
+            "__array_ufunc__, or subok behavior is required, keep the enclosing function on "
+            "the Python fallback."
+        ),
+        stability="experimental",
+    ),
+    RuleRecord(
         id="rextio-numpy/unsupported-api",
         provider="rextio-numpy",
         scope=RuleScope(
             kind="call",
             pattern=(
-                "any numpy API outside the covered symbols (fancy indexing, method-form "
-                "reductions, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
+                "any numpy API outside the covered symbols (fancy indexing, unsupported "
+                "method forms, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
                 "matmul/@, ufunc kwargs, random, linalg, amax/amin, ...)"
             ),
         ),

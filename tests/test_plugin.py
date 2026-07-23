@@ -37,7 +37,7 @@ def load_registry(enabled: tuple[str, ...] = ("rextio-numpy",)):
 def test_plugin_object_satisfies_protocol_v2() -> None:
     instance = RextioNumpyPlugin()
     assert instance.plugin_id == "rextio-numpy"
-    assert instance.api_version == "1.2"
+    assert instance.api_version == "1.3"
     assert isinstance(instance.covers(), CoverageDecl)
     records = instance.describe(RextioConfig())
     assert records and all(isinstance(record, RuleRecord) for record in records)
@@ -50,7 +50,7 @@ def test_core_loader_accepts_the_plugin() -> None:
     assert active.id == "rextio-numpy"
     assert active.rules_provided is True
     assert active.lowering_provided is True
-    assert active.api_version == "1.2"
+    assert active.api_version == "1.3"
     assert active.packages == ("numpy",)
     assert __version__ in active.name
 
@@ -97,7 +97,8 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
     assert f64_r1.rust_type == "numpy::ndarray::Array1<f64>"
     conversion = f64_r1.conversion
     assert conversion.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
-    assert conversion.param_expr == "{param}.as_array().to_owned()"
+    assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conversion.param_expr
+    assert "ndarray subclasses are unsupported" in conversion.param_expr
     assert conversion.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
     assert conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
 
@@ -116,7 +117,11 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
         assert pt.rust_type == f"numpy::ndarray::{array_ty}"
         assert pt.conversion.param_rust == f"numpy::{param_ty}<'py, {elem}>"
         assert pt.conversion.return_rust == f"pyo3::Bound<'py, numpy::{return_ty}<{elem}>>"
-        assert pt.conversion.param_expr == "{param}.as_array().to_owned()"
+        assert (
+            f"is_exact_instance_of::<numpy::{return_ty}<{elem}>>"
+            in pt.conversion.param_expr
+        )
+        assert "ndarray subclasses are unsupported" in pt.conversion.param_expr
         assert pt.conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
 
 
@@ -157,8 +162,9 @@ def test_rule_records_shape() -> None:
         "rextio-numpy/elementwise-float64",
         "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/dot-float64",
-        "rextio-numpy/reduction-sum-mean",
-        "rextio-numpy/reduction-axis",
+            "rextio-numpy/reduction-sum-mean",
+            "rextio-numpy/reduction-axis",
+            "rextio-numpy/unary-module",
     }
     assert all(record.verified is True for record in records if record.outcome == "native")
     assert all(record.verified is None for record in records if record.outcome != "native")
