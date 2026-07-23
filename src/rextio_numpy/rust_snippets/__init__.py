@@ -42,6 +42,15 @@ from rextio_numpy.rust_snippets.elementwise import (
     fmt_shape_helper,
     shared_broadcast_helpers,
 )
+from rextio_numpy.rust_snippets.comparison import (
+    COMPARE_SYMBOLS,
+    comparison_aa_typed,
+    comparison_as_typed,
+    comparison_call_name_aa,
+    comparison_call_name_as,
+    comparison_call_name_sa,
+    comparison_sa_typed,
+)
 from rextio_numpy.rust_snippets.fusion import (
     build_tree_plan,
     fusion_call_name,
@@ -63,13 +72,30 @@ from rextio_numpy.rust_snippets.reductions import (
     sum_typed,
 )
 from rextio_numpy.rust_snippets.unary import unary_call_name, unary_typed
+from rextio_numpy.rust_snippets.where import (
+    broadcast_shape3_helper,
+    where_aa_typed,
+    where_as_typed,
+    where_call_name_aa,
+    where_call_name_as,
+    where_call_name_sa,
+    where_sa_typed,
+)
 
 __all__ = [
     "OP_SYMBOLS",
+    "COMPARE_SYMBOLS",
     "axis_call_name",
     "axis_typed",
     "broadcast_shape_helper",
+    "broadcast_shape3_helper",
     "build_tree_plan",
+    "comparison_aa_typed",
+    "comparison_as_typed",
+    "comparison_call_name_aa",
+    "comparison_call_name_as",
+    "comparison_call_name_sa",
+    "comparison_sa_typed",
     "dot1",
     "dot_call_name",
     "dot_typed",
@@ -98,4 +124,10 @@ __all__ = [
     "sum_typed",
     "unary_call_name",
     "unary_typed",
+    "where_aa_typed",
+    "where_as_typed",
+    "where_call_name_aa",
+    "where_call_name_as",
+    "where_call_name_sa",
+    "where_sa_typed",
 ]

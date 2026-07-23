@@ -2,9 +2,9 @@
 
 ## 0.1.2 — unreleased
 
-Requires **`rextio>=0.1.3,<0.2`** and advertises plugin API **1.3** solely to
-consume Core receiver metadata; it does not advertise the API-1.4 artifact
-capability.
+Requires **`rextio>=0.1.6,<0.2`** and advertises plugin API **1.5** for
+non-chained comparison claim sites and resident-result propagation. It does not
+advertise the optional standalone-artifact capability.
 
 - Adds exact two-positional/no-keyword `numpy.add`, `numpy.subtract`,
   `numpy.multiply`, and `numpy.divide` call aliases over the existing
@@ -21,11 +21,24 @@ capability.
   NumPy-compatible `ValueError`; floating extrema remain fallback because
   signed-zero and NaN selection varies across supported platform/SIMD
   profiles.
-- Keeps array comparisons and `numpy.where(mask, x, y)` on fallback for this
-  plugin-only cut. Core does not currently offer `ast.Compare` as a plugin
-  claim site and types comparison expressions as scalar `bool`, so the plugin
-  cannot safely propagate a boolean-array result into `numpy.where` without a
-  future Core contract change.
+- Adds non-chained `==`, `!=`, `<`, `<=`, `>`, and `>=` over same-dtype
+  f64/f32/i64 rank-1/rank-2 arrays, including every rank pairing and matching
+  array↔scalar forms. Results are plugin-owned resident boolean arrays with no
+  annotation spellings and no Python boundary conversion, so source cannot
+  name or forge a condition type; returning one through an exported boundary
+  is rejected by Core with `RXT092`.
+- Adds exact three-positional-argument `numpy.where(condition, x, y)` for a
+  resident comparison condition and same-dtype numeric array branches, or one
+  array plus a matching scalar. Independent three-way broadcasting includes
+  zero axes and NumPy-compatible shape errors; condition-only, keyword,
+  two-scalar, and mixed-dtype forms remain fallback. Core-canonicalized import
+  aliases (`np.where`, `from numpy import where as choose`) remain supported;
+  runtime assignment/rebinding aliases stay fallback.
+- Certifies f32 weak Python scalars across huge finite values, NaN, infinities,
+  and signed zero for comparisons and both `where` scalar branch positions,
+  including selected-value bits. Integer scalar lanes inherit Core's signed-i64
+  boundary; out-of-range Python integers are documented boundary
+  type-contract violations and raise `OverflowError` before plugin lowering.
 - Adds certified ndarray method parity for `a.dot(b)`, whole-array
   `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
   the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly
@@ -59,10 +72,10 @@ capability.
   The guards are covered under `python -O` as well as normal execution; an
   omitted non-literal operand-literal tuple and Core's arity-matched nonliteral
   placeholders remain valid representations.
-- Required CI now runs the complete real-Cargo certification suite, without
-  test selection, for both Core 0.1.3 and 0.1.5; skipped certification cases
-  fail the job.
-- The current tree collects **847** tests in total and **119** tests in the
+- Required CI installs the live Core `0.1.6` integration branch, asserts plugin
+  API 1.5, and runs the complete real-Cargo certification suite without test
+  selection; skipped certification cases fail the job.
+- The current tree collects **950** tests in total and **150** tests in the
   real-Cargo certification module.
 
 ## 0.1.1 — 2026-07-14

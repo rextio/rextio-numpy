@@ -1,6 +1,6 @@
 """The rextio-numpy plugin object and entry-point factory.
 
-Implements plugin API 1.3 (``rextio.plugins.api.RextioLoweringPlugin``): the
+Implements plugin API 1.5 (``rextio.plugins.api.RextioLoweringPlugin``): the
 protocol-v2 describe/covers surface plus the lowering members — annotation
 vocabulary, the deterministic claim pass (including keyword/literal axis
 metadata), expression lowering, and pinned crate dependencies. The plugin
@@ -50,10 +50,10 @@ __all__ = ["F64_1D", "PLUGIN_ID", "RextioNumpyPlugin", "plugin"]
 
 
 class RextioNumpyPlugin:
-    """Plugin API 1.3: describes AND lowers eligible NumPy usage to Rust."""
+    """Plugin API 1.5: describes AND lowers eligible NumPy usage to Rust."""
 
     plugin_id = PLUGIN_ID
-    api_version = "1.3"
+    api_version = "1.5"
 
     def to_rextio_plugin(self) -> RextioPlugin:
         """Return the v1 metadata Rextio core registers this plugin under."""

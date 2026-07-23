@@ -498,6 +498,83 @@ def fuse_max_bound_i64(
     a8: I64Arr1,
 ) -> I64Arr1:
     return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8
+
+
+# --- API 1.5 resident comparison -> three-argument where surface ---
+
+def where_eq_f64_11(
+    left: F64Arr1,
+    right: F64Arr1,
+    yes: F64Arr1,
+    no: F64Arr1,
+) -> F64Arr1:
+    return np.where(left == right, yes, no)
+
+
+def where_ne_f64_12(
+    left: F64Arr1,
+    right: F64Arr2,
+    yes: F64Arr2,
+    no: F64Arr1,
+) -> F64Arr2:
+    return np.where(left != right, yes, no)
+
+
+def where_lt_f64_21(
+    left: F64Arr2,
+    right: F64Arr1,
+    yes: F64Arr1,
+    no: F64Arr2,
+) -> F64Arr2:
+    return np.where(left < right, yes, no)
+
+
+def where_le_f64_22(
+    left: F64Arr2,
+    right: F64Arr2,
+    yes: F64Arr2,
+    no: F64Arr2,
+) -> F64Arr2:
+    return np.where(left <= right, yes, no)
+
+
+def where_gt_f32_scalar(
+    values: F32Arr1,
+    threshold: float,
+    yes: F32Arr1,
+    no: F32Arr1,
+) -> F32Arr1:
+    return np.where(values > threshold, yes, no)
+
+
+def where_scalar_ge_f32(
+    threshold: float,
+    values: F32Arr2,
+    yes: F32Arr2,
+    no: F32Arr2,
+) -> F32Arr2:
+    return np.where(threshold >= values, yes, no)
+
+
+def where_f32_array_scalar(values: F32Arr1, no: float) -> F32Arr1:
+    return np.where(values >= 0.0, values, no)
+
+
+def where_f32_scalar_array(yes: float, values: F32Arr1) -> F32Arr1:
+    return np.where(values >= 0.0, yes, values)
+
+
+def where_f64_array_scalar(values: F64Arr1, no: float) -> F64Arr1:
+    return np.where(values >= 0.0, values, no)
+
+
+def where_eq_i64_scalar(
+    values: I64Arr1,
+    target: int,
+    yes: I64Arr1,
+    no: I64Arr1,
+) -> I64Arr1:
+    return np.where(values == target, yes, no)
 """
 
 
@@ -2041,3 +2118,288 @@ def test_wave2_fusion_max_bound_routes_and_generated_source(project: CertifiedPr
     assert echain_bodies, "no __rxtnp_echain_ helpers found in generated Rust"
     # Max-bound tree needs 9 leaf broadcasts on at least one helper.
     assert any(body.count("broadcast(dim)") >= 9 for body in echain_bodies)
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    (
+        (
+            "where_eq_f64_11",
+            (
+                np.array([1.0, 2.0, 3.0]),
+                np.array([2.0]),
+                np.array([10.0]),
+                np.array([20.0, 30.0, 40.0]),
+            ),
+        ),
+        (
+            "where_ne_f64_12",
+            (
+                np.array([1.0, 2.0, 3.0]),
+                np.array([[1.0], [3.0]]),
+                np.array([[10.0, 11.0, 12.0]]),
+                np.array([20.0, 21.0, 22.0]),
+            ),
+        ),
+        (
+            "where_lt_f64_21",
+            (
+                np.array([[1.0], [4.0]]),
+                np.array([2.0, 3.0, 4.0]),
+                np.array([10.0, 11.0, 12.0]),
+                np.array([[20.0], [21.0]]),
+            ),
+        ),
+        (
+            "where_le_f64_22",
+            (
+                np.array([[1.0], [4.0]]),
+                np.array([[2.0, 3.0, 4.0]]),
+                np.array([[10.0, 11.0, 12.0], [13.0, 14.0, 15.0]]),
+                np.array([[20.0, 21.0, 22.0]]),
+            ),
+        ),
+    ),
+)
+def test_compare_where_all_rank_pair_broadcasts(
+    project: CertifiedProject,
+    name: str,
+    args: tuple[np.ndarray, ...],
+) -> None:
+    """Rank 1/2 × rank 1/2 comparisons and three-way where broadcast natively."""
+    result = _require_native(project, name)(*args)
+    operations = {
+        "where_eq_f64_11": np.equal,
+        "where_ne_f64_12": np.not_equal,
+        "where_lt_f64_21": np.less,
+        "where_le_f64_22": np.less_equal,
+    }
+    expected = np.where(operations[name](args[0], args[1]), args[2], args[3])
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "operation"),
+    (
+        (
+            "where_eq_f64_11",
+            (
+                np.ones(2),
+                np.ones(3),
+                np.ones(3),
+                np.zeros(3),
+            ),
+            np.equal,
+        ),
+        (
+            "where_ne_f64_12",
+            (
+                np.ones(2),
+                np.ones((2, 3)),
+                np.ones((2, 3)),
+                np.zeros(3),
+            ),
+            np.not_equal,
+        ),
+        (
+            "where_lt_f64_21",
+            (
+                np.ones((2, 3)),
+                np.ones(2),
+                np.ones(3),
+                np.zeros((2, 3)),
+            ),
+            np.less,
+        ),
+        (
+            "where_le_f64_22",
+            (
+                np.ones((2, 3)),
+                np.ones((3, 2)),
+                np.ones((2, 3)),
+                np.zeros((2, 3)),
+            ),
+            np.less_equal,
+        ),
+    ),
+)
+def test_compare_where_all_rank_pair_mismatches(
+    project: CertifiedProject,
+    name: str,
+    args: tuple[np.ndarray, ...],
+    operation: Callable[..., object],
+) -> None:
+    """Every admitted static rank pair retains NumPy's incompatible-shape error."""
+    with pytest.raises(ValueError) as expected:
+        operation(args[0], args[1])
+    with pytest.raises(ValueError) as actual:
+        _require_native(project, name)(*args)
+    assert str(actual.value) == str(expected.value)
+
+
+def test_where_independent_three_way_shape_error(project: CertifiedProject) -> None:
+    """Compatible comparison operands do not bypass branch broadcast validation."""
+    left = np.array([1.0, 2.0])
+    right = np.array([1.0, 0.0])
+    yes = np.ones(3)
+    no = np.zeros(3)
+    with pytest.raises(ValueError) as expected:
+        np.where(left == right, yes, no)
+    with pytest.raises(ValueError) as actual:
+        _require_native(project, "where_eq_f64_11")(left, right, yes, no)
+    assert str(actual.value) == str(expected.value)
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    (
+        (
+            "where_eq_f64_11",
+            (
+                np.empty((0,), dtype=np.float64),
+                np.ones((1,), dtype=np.float64),
+                np.empty((0,), dtype=np.float64),
+                np.ones((1,), dtype=np.float64),
+            ),
+        ),
+        (
+            "where_le_f64_22",
+            (
+                np.empty((0, 3), dtype=np.float64),
+                np.ones((1, 3), dtype=np.float64),
+                np.empty((0, 1), dtype=np.float64),
+                np.ones((1, 3), dtype=np.float64),
+            ),
+        ),
+    ),
+)
+def test_compare_where_zero_sized_broadcasts(
+    project: CertifiedProject,
+    name: str,
+    args: tuple[np.ndarray, ...],
+) -> None:
+    """Length-one axes broadcast to zero axes exactly as NumPy does."""
+    operations = {
+        "where_eq_f64_11": np.equal,
+        "where_le_f64_22": np.less_equal,
+    }
+    expected = np.where(operations[name](args[0], args[1]), args[2], args[3])
+    result = _require_native(project, name)(*args)
+    assert result.shape == expected.shape
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("threshold", (1e40, -1e40, float("nan"), float("inf"), -0.0))
+def test_f32_weak_scalar_compare_and_where_special_values(
+    project: CertifiedProject,
+    threshold: float,
+) -> None:
+    """Rust's f64→f32 narrowing matches NumPy 2.4 weak-scalar comparisons."""
+    values = np.array(
+        [np.nan, -np.inf, -0.0, 0.0, 1.0, np.inf],
+        dtype=np.float32,
+    )
+    yes = np.array(
+        [0.0, -0.0, np.nan, np.inf, -np.inf, np.float32(7.0)],
+        dtype=np.float32,
+    )
+    no = np.array(
+        [-0.0, 0.0, np.float32(3.0), -np.inf, np.inf, np.nan],
+        dtype=np.float32,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        expected_gt = np.where(values > threshold, yes, no)
+        expected_ge = np.where(threshold >= values.reshape(2, 3), yes.reshape(2, 3), no.reshape(2, 3))
+        actual_gt = _require_native(project, "where_gt_f32_scalar")(
+            values,
+            threshold,
+            yes,
+            no,
+        )
+        actual_ge = _require_native(project, "where_scalar_ge_f32")(
+            threshold,
+            values.reshape(2, 3),
+            yes.reshape(2, 3),
+            no.reshape(2, 3),
+        )
+    np.testing.assert_array_equal(actual_gt.view(np.uint32), expected_gt.view(np.uint32))
+    np.testing.assert_array_equal(actual_ge.view(np.uint32), expected_ge.view(np.uint32))
+
+
+@pytest.mark.parametrize("scalar", (1e40, -1e40, float("nan"), float("inf"), -0.0))
+def test_f32_where_branch_weak_scalars_preserve_selected_bits(
+    project: CertifiedProject,
+    scalar: float,
+) -> None:
+    """Both scalar branch positions use NumPy 2.4's f64-to-f32 narrowing."""
+    values = np.array([-1.0, -0.0, 0.0, 1.0], dtype=np.float32)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        expected_as = np.where(values >= 0.0, values, scalar)
+        expected_sa = np.where(values >= 0.0, scalar, values)
+        actual_as = _require_native(project, "where_f32_array_scalar")(values, scalar)
+        actual_sa = _require_native(project, "where_f32_scalar_array")(scalar, values)
+    np.testing.assert_array_equal(actual_as.view(np.uint32), expected_as.view(np.uint32))
+    np.testing.assert_array_equal(actual_sa.view(np.uint32), expected_sa.view(np.uint32))
+
+
+@pytest.mark.parametrize(
+    "scalar",
+    (
+        np.finfo(np.float64).max,
+        -np.finfo(np.float64).max,
+        float("nan"),
+        float("inf"),
+        -0.0,
+    ),
+)
+def test_f64_where_branch_scalars_preserve_selected_bits(
+    project: CertifiedProject,
+    scalar: float,
+) -> None:
+    values = np.array([-1.0, -0.0, 0.0, 1.0], dtype=np.float64)
+    expected = np.where(values >= 0.0, values, scalar)
+    result = _require_native(project, "where_f64_array_scalar")(values, scalar)
+    np.testing.assert_array_equal(result.view(np.uint64), expected.view(np.uint64))
+
+
+@pytest.mark.parametrize("target", (-(2**63), -1, 2**63 - 1))
+def test_i64_compare_where_scalar_and_inputs_unchanged(
+    project: CertifiedProject,
+    target: int,
+) -> None:
+    values = np.array([-(2**63), -1, 0, 2**63 - 1], dtype=np.int64)
+    yes = np.array([11, 12, 13, 14], dtype=np.int64)
+    no = np.array([-11, -12, -13, -14], dtype=np.int64)
+    before = tuple(array.copy() for array in (values, yes, no))
+    result = _require_native(project, "where_eq_i64_scalar")(values, target, yes, no)
+    np.testing.assert_array_equal(result, np.where(values == target, yes, no))
+    for array, snapshot in zip((values, yes, no), before, strict=True):
+        np.testing.assert_array_equal(array, snapshot)
+
+
+@pytest.mark.parametrize("target", (-(2**63) - 1, 2**63))
+def test_i64_scalar_outside_core_boundary_is_a_contract_violation(
+    project: CertifiedProject,
+    target: int,
+) -> None:
+    """Python ``int`` lowers to Core i64; values outside it never reach the helper."""
+    values = np.array([-(2**63), -1, 0, 2**63 - 1], dtype=np.int64)
+    yes = np.array([11, 12, 13, 14], dtype=np.int64)
+    no = np.array([-11, -12, -13, -14], dtype=np.int64)
+    check = checker(
+        project,
+        "where_eq_i64_scalar",
+        equals=array_equals,
+        args_equals=array_equals,
+    )
+    native, _ = check._run("native", (values, target, yes, no))
+    fallback, _ = check._run("fallback", (values, target, yes, no))
+    assert native[0] == "raised"
+    assert isinstance(native[1], OverflowError)
+    assert fallback[0] == "returned"
+    np.testing.assert_array_equal(
+        fallback[1],
+        np.where(values == target, yes, no),
+    )

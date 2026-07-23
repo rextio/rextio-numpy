@@ -13,22 +13,24 @@ following Rextio's core contract (CPython-equivalent semantics or fall back).
 `rextio-numpy` **0.1.2** is the active development branch. The latest
 published cut is **`rextio-numpy` 0.1.1** (2026-07-14).
 
-Implements **plugin API 1.3** end to end: the annotation vocabulary, the
+Implements **plugin API 1.5** end to end: the annotation vocabulary, the
 deterministic `claim` pass (including keyword/literal axis metadata and
 structured `ClaimExpr` trees from core API 1.2), `lower()` emission to Rust via
 the `ndarray` crate, multi-op elementwise chain fusion via
-`operand_mode="leaves"`, receiver metadata for certified ndarray methods, and pinned crate injection (rust-numpy
-`numpy =0.29.0`; ndarray via its re-export).
+`operand_mode="leaves"`, non-chained comparison claims with resident boolean
+results, three-argument `numpy.where`, receiver metadata for certified ndarray
+methods, and pinned crate injection (rust-numpy `numpy =0.29.0`; ndarray via
+its re-export).
 
-**Dependency:** requires **`rextio>=0.1.3,<0.2`**. NumPy is deliberately **not**
+**Dependency:** requires **`rextio>=0.1.6,<0.2`**. NumPy is deliberately **not**
 a runtime dependency of this package — only the user-facing
 `rextio_numpy.types` vocabulary imports NumPy in the **user** project.
 
 ### Core compatibility
 
-This branch requires **core `rextio>=0.1.3,<0.2`** for plugin API 1.3 receiver
-metadata. It does not implement or advertise the optional API-1.4 standalone
-artifact capability.
+This branch requires **core `rextio>=0.1.6,<0.2`** and plugin API 1.5 for
+comparison claim sites and resident-result propagation. It does not implement
+or advertise the optional standalone-artifact capability.
 
 ### Annotation vocabulary (`rextio_numpy.types`)
 
@@ -40,6 +42,13 @@ artifact capability.
 
 Plain runtime aliases of `numpy.ndarray` — no runtime validation. The
 analyzer resolves them to plugin type keys when the plugin is enabled.
+
+Comparison results use two additional plugin-owned resident types internally
+(`rextio-numpy/bool-1d` and `rextio-numpy/bool-2d`). They deliberately have no
+annotation spellings (`PluginType.annotations == ()`), no public
+`BoolArr1` / `BoolArr2` aliases, and no Python boundary conversion. Source code
+cannot name or forge them: a mask must be produced by a claimed comparison and
+consumed inside generated native code.
 
 ### Exact base-ndarray boundary
 
@@ -72,6 +81,22 @@ semantics matter, keep the enclosing function on Python fallback.
   reuse that same dtype/rank/broadcast matrix (`RXTP-NUMPY-007`). Optional
   ufunc arguments such as `out`, `where`, `dtype`, and `casting`, extra
   operands, and mixed/unsupported dtypes remain on Python fallback.
+- **Non-chained comparisons `== != < <= > >=`** over same-dtype
+  **float64 / float32 / int64** rank-1/rank-2 arrays, including every
+  rank-1↔rank-2 broadcast pairing and matching array↔Python-scalar forms.
+  The result is a resident rank-1/rank-2 boolean array that cannot cross a
+  Python parameter or return boundary; a direct exported return is rejected
+  by Core with `RXT092` (`RXTP-NUMPY-009`). Chained, identity, and membership
+  comparisons stay fallback.
+- **Exact three-positional-argument `numpy.where(condition, x, y)`** where
+  `condition` is one of those resident comparison results and the branches
+  are same-dtype numeric arrays, or one array plus its matching Python scalar.
+  At least one branch must be an array. Condition-only, keyword, two-scalar,
+  and mixed-dtype forms stay fallback. Core-canonicalized import aliases such
+  as `np.where` and `from numpy import where as choose` are supported; runtime
+  assignment/rebinding aliases stay fallback. Comparison and branch shapes
+  are validated independently under NumPy broadcasting, including zero axes
+  (`RXTP-NUMPY-014`).
 - **`numpy.dot(a, b)` / `a.dot(b)`** on same-dtype **1-D float64 and int64**
   only. **float32** 1-D dots are **deliberately fallback**
   (sequential f32 accumulation diverges materially from NumPy pairwise
@@ -88,8 +113,8 @@ semantics matter, keep the enclosing function on Python fallback.
     accumulation-order divergence; no runtime length gate).
   - Floating whole-array max/min stay fallback because NaN payload/sign and
     signed-zero tie behavior is platform/SIMD-dependent.
-  - Equivalent `a.sum()` / `a.mean()` method forms are native under Core's
-    API-1.3 receiver contract (`RXTP-NUMPY-003`).
+  - Equivalent `a.sum()` / `a.mean()` method forms are native under the
+    current receiver-metadata contract (`RXTP-NUMPY-003`).
   - Empty int64 max/min raises NumPy-compatible `ValueError`
     (`RXTP-NUMPY-008`).
 - **Literal-axis reductions** (`numpy.sum|mean|max|min(a, axis=<int literal>)`,
@@ -123,15 +148,6 @@ semantics matter, keep the enclosing function on Python fallback.
   is claimed. Floating signed-zero/NaN/infinity values follow NumPy; int64
   negative/absolute/square use wraparound arithmetic, including `INT64_MIN`.
 
-Array comparisons and `numpy.where(mask, x, y)` remain **NO-GO / fallback**
-for this plugin-only cut. Core currently offers plugins call and binary-
-arithmetic claim sites, but not `ast.Compare` sites, and its expression
-inference types every comparison as the scalar core `bool`. Consequently the
-plugin cannot truthfully produce and propagate a rank-1/rank-2 boolean-array
-type from `a > b` into `numpy.where` without a future Core contract change.
-This exclusion also avoids silently substituting scalar truth semantics for
-NumPy's element-wise mask semantics.
-
 Shape/length mismatches raise `ValueError` with NumPy's exact messages.
 int64 `+`, `-`, `*`, `sum`, and `dot` use **wraparound** arithmetic matching
 NumPy **release** builds. Floating reductions/dots are certified
@@ -139,6 +155,15 @@ within-tolerance (not universal bit-equivalence). Whole-array float64
 sum/mean may still differ from NumPy pairwise order within 1e-12; **literal-
 axis f64 sum/mean** intentionally match NumPy's pairwise/sequential layout
 rules.
+
+Python scalar annotations inherit Core's native scalar domains. In particular,
+`int` lowers to signed i64. Values in `[-2**63, 2**63-1]` are certified for
+the comparison/`where` scalar lanes; an arbitrary Python integer outside that
+range is a boundary type-contract violation and raises `OverflowError` before
+the plugin helper runs (the ordinary NumPy fallback may accept it). float32
+lanes apply NumPy 2.4 weak-scalar narrowing from Python float, including
+overflow to infinity, NaN, infinities, and signed zero; comparison and both
+scalar branch positions are bit-certified.
 
 ### Optimization-safe lower validation
 
@@ -155,9 +180,9 @@ arity-matched `ClaimLiteral(is_literal=False)` placeholders are accepted;
 populated slots require the route's exact count and lane-specific,
 type-compatible literal metadata.
 
-The required CI native-certification matrix runs the complete real-Cargo suite
-without test selection for both Core 0.1.3 and 0.1.5, and rejects skipped
-certification cases.
+Required CI installs the live Core `0.1.6` integration branch, asserts plugin
+API 1.5, runs the complete real-Cargo suite without test selection, and rejects
+skipped certification cases.
 
 ### Accepted release divergence: missing NumPy `RuntimeWarning`
 
@@ -173,6 +198,8 @@ contract; warning parity is **not** part of the acceptance surface.
 
 | Rule | Outcome | Code |
 |---|---|---|
+| Non-chained `== != < <= > >=` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar); resident bool result | native (verified) | RXTP-NUMPY-009 |
+| Exact three-positional `numpy.where(condition, x, y)` with resident comparison condition and bounded same-dtype branches | native (verified) | RXTP-NUMPY-014 |
 | Element-wise `+ - * /` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar) | native (verified) | RXTP-NUMPY-001 |
 | Exact two-positional/no-keyword `numpy.add/subtract/multiply/divide(a, b)` over the same matrix | native (verified) | RXTP-NUMPY-007 |
 | `numpy.dot(a, b)` / `a.dot(b)` on same-dtype 1-D f64/i64 (not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
@@ -185,7 +212,6 @@ contract; warning parity is **not** part of the acceptance surface.
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
 | Runtime ndarray subclasses / `matrix` / `__array_ufunc__` overrides at a native boundary | reject (runtime TypeError; not static fallback) | RXTP-NUMPY-013 |
-| Array comparisons and `numpy.where` (Core has no plugin comparison-result contract yet) | fallback | RXTP-NUMPY-019 |
 | Any other NumPy API (unsupported method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
 
 All rules are `experimental`. Codes RXTP-NUMPY-011/012/013/019 are
@@ -227,26 +253,25 @@ def dot(a: F64Arr1, b: F64Arr1) -> float:
 ```
 
 ```bash
-pip install rextio-numpy   # requires rextio >= 0.1.3
+pip install rextio-numpy   # development 0.1.2 requires rextio >= 0.1.6
 rextio capabilities --format json   # numpy rules appear under "rules"
 rextio build .                      # lowered kernels compile via cargo
 ```
 
 > **Note:** PyPI currently installs **0.1.1**. The development 0.1.2 surface
-> requires a core that provides plugin API 1.3 (`rextio>=0.1.3`). To work against the
+> requires a core that provides plugin API 1.5 (`rextio>=0.1.6`). To work against the
 > surface from a source checkout, see Development below.
 
 ## Development
 
-Core for this release requires **`rextio>=0.1.3,<0.2`**. For day-to-day work on
-this branch, install core from a build that exposes plugin API 1.3 (PyPI, or a
-sibling checkout when co-developing) and this package editable without resolving
-a published `rextio-numpy` wheel over the tree:
+Core for this release requires **`rextio>=0.1.6,<0.2`**. Until that Core line is
+published, install the sibling/source checkout that exposes plugin API 1.5 and
+install this package editable without resolving a published `rextio-numpy`
+wheel over the tree:
 
 ```bash
 uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python "rextio>=0.1.3,<0.2"
-# or, when co-developing core: uv pip install --python .venv/bin/python -e path/to/rextio
+uv pip install --python .venv/bin/python -e path/to/rextio
 uv pip install --python .venv/bin/python --no-deps -e .
 uv pip install --python .venv/bin/python pytest ruff mypy
 .venv/bin/python -m pytest
@@ -263,12 +288,12 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 On this tree:
 
-- `.venv/bin/python -m pytest --collect-only -q` reports **847** collected tests total.
+- `.venv/bin/python -m pytest --collect-only -q` reports **950** collected tests total.
 - The focused collection command
   `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **119** real-Cargo certification cases.
+  reports **150** real-Cargo certification cases.
 
-Those 119 cases are **cargo-gated** and may also skip via dependency
+Those 150 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material
 test changes; do not treat these numbers as a product API.
 

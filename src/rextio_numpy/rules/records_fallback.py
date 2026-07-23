@@ -13,6 +13,7 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             pattern=(
                 "covered numpy.dot/sum/mean/max/min/unary module (including certified ndarray method) "
                 "call, exact numpy.add/subtract/multiply/divide call, or elementwise +/-/*// binop "
+                "or API-1.5 comparison/numpy.where conditional "
                 "whose resolved operand types are outside the float64/float32/int64 "
                 "rank-1/2 surface (including excluded reduction dtype cells)"
             ),
@@ -21,7 +22,10 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "A covered numpy operation whose operand types are known but outside the "
             "supported set is rejected here so the plugin's guidance is delivered. "
             "Elementwise covers same-dtype float64/float32/int64 arrays of rank 1 or 2 "
-            "plus matching float/int scalars. Whole-array and literal-axis sum cover "
+            "plus matching float/int scalars. Comparison results are resident bool "
+            "rank-1/rank-2 arrays; three-argument where requires such a condition "
+            "plus same-dtype numeric branches with at least one array. Whole-array "
+            "and literal-axis sum cover "
             "float64/int64 ranks 1–2; mean covers float64 ranks 1–2 only (float32 "
             "sum/mean and int64 mean are excluded). Whole-array and literal-axis "
             "max/min cover int64 ranks 1–2 only; float extrema stay fallback because "
@@ -126,24 +130,26 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
                 "any numpy API outside the covered symbols (fancy indexing, unsupported "
                 "method forms, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
                 "matmul/@, unsupported ufuncs or optional ufunc arguments, random, "
-                "linalg, amax/amin, array comparisons feeding numpy.where, ...)"
+                "linalg, amax/amin, chained/identity/membership comparisons, "
+                "condition-only where, numpy.select, ...)"
             ),
         ),
         constraint=(
             "APIs outside the covered surface have no verified Rust lowering and keep the "
             "surrounding candidate on the Python fallback — Rextio never guesses. Literal "
             "single-axis sum/mean/max/min are covered under RXTP-NUMPY-004; other axis "
-            "forms remain fallback. Array comparisons and numpy.where are excluded because "
-            "the current Core plugin contract does not offer ast.Compare claim sites or "
-            "propagate a plugin boolean-array result from a comparison."
+            "forms remain fallback. Core/plugin API 1.5 admits only non-chained "
+            "==/!=/</<=/>/>= comparisons and exact three-argument numpy.where "
+            "within the separately documented numeric/resident-bool matrix."
         ),
         outcome="fallback",
         diagnostic_code="RXTP-NUMPY-019",
         guidance=(
             "Isolate covered array math into its own typed function and leave the rest of "
             "the NumPy usage on the fallback (or under Numba, which stays a valid choice for "
-            "kernels this plugin does not cover). Keep comparison/mask selection outside "
-            "the native function until Core exposes an array-comparison result contract."
+            "kernels this plugin does not cover). Keep chained, identity, membership, "
+            "condition-only, keyword, and dtype-coercing conditional forms outside "
+            "the native function."
         ),
         stability="experimental",
     ),
