@@ -149,9 +149,9 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "duplicate/extra keywords, no numpy.amax/amin. Core evaluates a method "
             "receiver exactly once before call operands. "
             "Dtype/rank matrix: sum on float64/int64 ranks 1–2; mean on float64 "
-            "ranks 1–2; max/min on float64/int64 ranks 1–2 and float32 rank 2 only "
-            "(rank-1 float32 max/min stay fallback so a core float scalar cannot "
-            "erase numpy.float32 scalar semantics). float32 sum/mean and int64 mean "
+            "ranks 1–2; max/min on int64 ranks 1–2 only; float extrema stay fallback "
+            "because NumPy NaN payload/sign and signed-zero tie behavior varies by "
+            "supported platform/SIMD profile. float32 sum/mean and int64 mean "
             "remain RXTP-NUMPY-010. Rank-1 admitted reductions return a core scalar; "
             "rank-2 single-axis reductions return the matching rank-1 plugin array. "
             "int64 sum wraps at every addition. Literal-axis float64 sum/mean use a "
@@ -181,9 +181,9 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         guidance=(
             "Write numpy.sum/mean/max/min(a, axis=<int literal>) or "
             "a.sum/mean/max/min(axis=<int literal>) with a static "
-            "integer axis on float64/int64 ranks 1–2 (or float32 rank-2 max/min). "
-            "Cast float32 sum/mean and int64 mean to float64 at the boundary if a "
-            "native reduction is required. Keep amax/amin, tuple "
+            "integer axis on float64/int64 ranks 1–2 for sum, float64 ranks 1–2 "
+            "for mean, or int64 ranks 1–2 for max/min. Float extrema, float32 "
+            "sum/mean, and int64 mean stay on the Python fallback. Keep amax/amin, tuple "
             "axes, and keepdims/out kwargs on the Python fallback."
         ),
         stability="experimental",

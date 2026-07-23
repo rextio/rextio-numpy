@@ -96,8 +96,6 @@ semantics matter, keep the enclosing function on Python fallback.
     rank-2 single-axis → matching rank-1 plugin array
   - **f64 axis sum/mean**: NumPy-compatible pairwise (fast-stride) /
     sequential (slow-stride) dispatch from runtime strides — C and F layouts
-  - Float extrema: first NaN in logical order is preserved (sign/payload);
-    `max(+0,-0)=+0`, `min(+0,-0)=-0`
   - Empty max/min reduced dimension → `ValueError` with NumPy-compatible text
   - Empty mean value semantics match; native leg omits NumPy's
     `RuntimeWarning` (documented divergence) (`RXTP-NUMPY-004`)

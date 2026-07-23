@@ -7,9 +7,10 @@ lowering surface — float64/float32/int64 ranks 1–2 element-wise arithmetic
 (array-array with NumPy broadcasting, array-scalar, scalar-array), multi-op
 elementwise chain fusion (2–8 pure array-name binops via ClaimExpr leaves
 mode), 1-D float64/int64 ``numpy.dot``, whole-array float64/int64 ``sum`` and
-whole-array float64 ``mean``, plus literal-axis ``sum``/``mean``/``max``/``min``
-(``axis=<int literal>``) via the Rust ``ndarray`` crate (float32 sum/mean/dot,
-rank-1 float32 max/min, and int64 mean stay fallback) — plus the explicit
+whole-array float64 ``mean``, plus literal-axis ``sum`` (float64/int64),
+``mean`` (float64), and ``max``/``min`` (int64 only) with
+``axis=<int literal>`` via the Rust ``ndarray`` crate (float extrema, float32
+sum/mean/dot, and int64 mean stay fallback) — plus the explicit
 exclusions around it.
 
 All records are ``experimental`` (plugin API 1.3, requires ``rextio>=0.1.3``

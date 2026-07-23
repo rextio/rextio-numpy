@@ -37,8 +37,8 @@ _AXIS_RULE = "rextio-numpy/reduction-axis"
 # f32 accumulation diverges materially from NumPy pairwise summation.
 # int64 mean is unclaimed: sequential i64→f64 cast-and-sum diverges from NumPy
 # pairwise mean on large integers near the float64 mantissa boundary.
-# float32 max/min rank-1 stays unclaimed: a core float scalar would lose
-# numpy.float32 scalar semantics; rank-2 axis max/min return F32Arr1.
+# Float max/min stay unclaimed: NumPy NaN payload/sign and signed-zero tie
+# behavior differs across supported platform/SIMD profiles.
 _SUM_DTYPES = frozenset({"f64", "i64"})
 _MEAN_DTYPES = frozenset({"f64"})
 

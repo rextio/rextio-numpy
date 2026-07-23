@@ -89,6 +89,9 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert axis.diagnostic_code == "RXTP-NUMPY-004"
     assert "axis=" in axis.scope.pattern
     assert "max" in axis.scope.pattern and "min" in axis.scope.pattern
+    assert "max/min on int64 ranks 1–2 only" in axis.constraint
+    assert "float extrema stay fallback" in axis.constraint
+    assert "Float extrema" in axis.guidance
     assert "RuntimeWarning" in axis.constraint
     assert "no identity" in axis.constraint
     assert axis.verified is True
@@ -109,6 +112,15 @@ def test_fallback_ndim_is_rank_gt_2() -> None:
     ndim = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-ndim")
     assert ndim.diagnostic_code == "RXTP-NUMPY-011"
     assert "more than 2" in ndim.scope.pattern
+
+
+def test_fallback_operand_rule_keeps_float_extrema_outside_native_surface() -> None:
+    record = next(
+        r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-operand-types"
+    )
+    assert "max/min cover int64 ranks 1–2 only" in record.constraint
+    assert "float extrema stay fallback" in record.constraint
+    assert "int64 for max/min" in record.guidance
 
 
 def test_ndarray_subclass_rule_is_runtime_rejection_not_static_fallback() -> None:
@@ -140,9 +152,9 @@ def test_rust_snippets_package_public_api() -> None:
     assert "wrapping_add" in rust_snippets.elementwise_aa_typed("add", "i64", 1, 1)
     assert "broadcast" in rust_snippets.broadcast_shape_helper()
     assert rust_snippets.axis_call_name("sum", "f64", 2, 1) == "__rxtnp_sum2_f64_axis1"
-    helpers = rust_snippets.axis_typed("max", "f64", 2, 0)
+    helpers = rust_snippets.axis_typed("max", "i64", 2, 0)
     joined = "\n".join(helpers)
-    assert "__rxtnp_max2_f64_axis0" in joined
+    assert "__rxtnp_max2_i64_axis0" in joined
     assert "maximum which has no identity" in joined
     assert rust_snippets.op_from_target("numpy.min") == "min"
     assert rust_snippets.unary_call_name("square", "i64", 2) == "__rxtnp_square2_i64"

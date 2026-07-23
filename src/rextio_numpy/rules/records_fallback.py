@@ -23,9 +23,10 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "Elementwise covers same-dtype float64/float32/int64 arrays of rank 1 or 2 "
             "plus matching float/int scalars. Whole-array and literal-axis sum cover "
             "float64/int64 ranks 1–2; mean covers float64 ranks 1–2 only (float32 "
-            "sum/mean and int64 mean are excluded). Literal-axis max/min cover "
-            "float64/int64 ranks 1–2 and float32 rank 2 only (rank-1 float32 max/min "
-            "excluded). 1-D dot covers same-dtype float64/int64 only (float32 dots "
+            "sum/mean and int64 mean are excluded). Literal-axis max/min cover int64 "
+            "ranks 1–2 only; float extrema stay fallback because NumPy NaN payload/sign "
+            "and signed-zero tie behavior varies by supported platform/SIMD profile. "
+            "1-D dot covers same-dtype float64/int64 only (float32 dots "
             "are excluded). Unresolved operands and wrong-arity/unsupported call "
             "shapes (including bare max/min, non-literal axis, tuple axis, extra "
             "kwargs) are NotCovered instead, so core's own diagnostic fires. Emitted "
@@ -36,10 +37,10 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         diagnostic_code="RXTP-NUMPY-010",
         guidance=(
             "Cast operands to a supported dtype and rank at the boundary of the hot "
-            "path (float64/float32/int64 for elementwise; float64 for sum/mean and "
-            "float64/int64 for sum/dot/max/min — float32 sum/mean/dots, rank-1 float32 "
-            "max/min, and int64 mean stay on the fallback, so cast those to float64 if "
-            "native lowering is required), keep array dtypes uniform, or keep the "
+            "path (float64/float32/int64 for elementwise; float64/int64 for sum; "
+            "float64 for mean; float64/int64 for dot; and int64 for max/min). Float "
+            "extrema, float32 sum/mean/dots, and int64 mean stay on the fallback; keep "
+            "array dtypes uniform, or keep the "
             "function on the Python fallback."
         ),
         stability="experimental",
