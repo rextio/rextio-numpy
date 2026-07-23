@@ -7,9 +7,15 @@ import sys
 
 import pytest
 
-from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext
+from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext, ReceiverMeta
 
-from rextio_numpy.claim.reductions import _AXIS_RULE, _WHOLE_ARRAY_RULE, _axis_result_type, _whole_array_result_type
+from rextio_numpy.claim.reductions import (
+    _AXIS_RULE,
+    _WHOLE_ARRAY_RULE,
+    _WHOLE_EXTREMA_RULE,
+    _axis_result_type,
+    _whole_array_result_type,
+)
 from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D, array_meta
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.reductions import try_lower
@@ -22,11 +28,13 @@ def site(
     operand_types: tuple[str | None, ...] = (K,),
     *,
     keywords: tuple[KeywordArg, ...] = (),
+    operand_literals: tuple[ClaimLiteral, ...] = (),
 ) -> ClaimSite:
-    meta = array_meta(operand_types[0]) if len(operand_types) == 1 else None
+    meta = array_meta(operand_types[0]) if operand_types else None
+    is_axis = bool(keywords) or len(operand_types) == 2
     if meta is None:
         result_type = "float"
-    elif keywords:
+    elif is_axis:
         result_type = _axis_result_type(target, meta[0], meta[1])
     else:
         result_type = _whole_array_result_type(target, meta[0])
@@ -38,7 +46,16 @@ def site(
         line=0,
         column=0,
         keywords=keywords,
-        rule_id=_AXIS_RULE if keywords else _WHOLE_ARRAY_RULE,
+        operand_literals=operand_literals,
+        rule_id=(
+            _AXIS_RULE
+            if is_axis
+            else (
+                _WHOLE_EXTREMA_RULE
+                if target in {"numpy.max", "numpy.min"}
+                else _WHOLE_ARRAY_RULE
+            )
+        ),
         result_type=result_type,
     )
 
@@ -57,6 +74,27 @@ def axis_kw(value: int) -> tuple[KeywordArg, ...]:
             name="axis",
             arg_type="int",
             literal=ClaimLiteral(is_literal=True, value=value),
+        ),
+    )
+
+
+def positional_site(
+    target: str,
+    operand_type: str,
+    axis: object,
+    *,
+    axis_type: str = "int",
+    is_literal: bool = True,
+) -> ClaimSite:
+    return site(
+        target,
+        (operand_type, axis_type),
+        operand_literals=(
+            ClaimLiteral(),
+            ClaimLiteral(
+                is_literal=is_literal,
+                value=axis if is_literal else None,
+            ),
         ),
     )
 
@@ -81,6 +119,35 @@ def test_try_lower_i64_sum_wraps() -> None:
     assert lowered.rust == "__rxtnp_sum1_i64(&a)?"
     assert "wrapping_add" in lowered.helpers[0]
     assert "PyResult<i64>" in lowered.helpers[0]
+
+
+@pytest.mark.parametrize(
+    ("target", "operand_type", "expected"),
+    [
+        ("numpy.max", I64_1D, "__rxtnp_max1_i64(&a)?"),
+        ("numpy.min", I64_2D, "__rxtnp_min2_i64(&a)?"),
+    ],
+)
+def test_try_lower_whole_i64_extrema(
+    target: str,
+    operand_type: str,
+    expected: str,
+) -> None:
+    lowered = try_lower(site(target, (operand_type,)), ctx("a"))
+    assert lowered is not None
+    assert lowered.rust == expected
+    assert "PyResult<i64>" in lowered.helpers[0]
+    assert "which has no identity" in lowered.helpers[0]
+
+
+@pytest.mark.parametrize("target", ["numpy.max", "numpy.min"])
+@pytest.mark.parametrize("operand_type", [F64_1D, F64_2D, F32_1D, F32_2D])
+def test_try_lower_forged_float_whole_extrema_fail_closed(
+    target: str,
+    operand_type: str,
+) -> None:
+    with pytest.raises(ValueError, match="outside certified dtype/rank matrix"):
+        try_lower(site(target, (operand_type,)), ctx("a"))
 
 
 def test_try_lower_i64_mean_forged_claim_fails_closed() -> None:
@@ -137,6 +204,55 @@ def test_try_lower_axis_rank1_sum_encodes_normalized_axis() -> None:
     # Axis f64 sum uses NumPy pairwise, not ndarray sequential sum.
     assert "__rxtnp_numpy_pairwise_sum_f64" in text
     assert "PW_BLOCKSIZE" in text
+
+
+@pytest.mark.parametrize(
+    ("target", "operand_type", "axis", "expected"),
+    [
+        ("numpy.sum", F64_1D, -1, "__rxtnp_sum1_f64_axis0(&values)?"),
+        ("numpy.mean", F64_2D, 1, "__rxtnp_mean2_f64_axis1(&values)?"),
+        ("numpy.max", I64_1D, 0, "__rxtnp_max1_i64_axis0(&values)?"),
+        ("numpy.min", I64_2D, -2, "__rxtnp_min2_i64_axis0(&values)?"),
+    ],
+)
+def test_try_lower_positional_axis_uses_static_literal_not_rendered_value(
+    target: str,
+    operand_type: str,
+    axis: int,
+    expected: str,
+) -> None:
+    lowered = try_lower(
+        positional_site(target, operand_type, axis),
+        ctx("values", str(axis)),
+    )
+    assert lowered is not None
+    assert lowered.rust == expected
+
+
+def test_try_lower_method_positional_axis() -> None:
+    claimed = ClaimSite(
+        kind="call",
+        target="numpy.ndarray.sum",
+        operand_types=("int",),
+        file_path="",
+        line=0,
+        column=0,
+        receiver=ReceiverMeta(arg_type=I64_2D, expr_kind="name", is_safe=True),
+        operand_literals=(ClaimLiteral(is_literal=True, value=1),),
+        rule_id=_AXIS_RULE,
+        result_type=I64_1D,
+    )
+    lowered = try_lower(
+        claimed,
+        LoweringContext(
+            operands=("1",),
+            receiver="values",
+            target_language="rust",
+            fresh_name=lambda prefix: f"{prefix}_0",
+        ),
+    )
+    assert lowered is not None
+    assert lowered.rust == "__rxtnp_sum2_i64_axis1(&values)?"
 
 
 def test_try_lower_axis_rank2_sum_axis0_and_axis1() -> None:
@@ -261,15 +377,45 @@ def test_fail_closed_non_int_axis_literal() -> None:
 
 
 def test_fail_closed_extra_operand_type() -> None:
-    with pytest.raises(ValueError, match="exactly one operand type"):
-        try_lower(site("numpy.sum", (F64_1D, F64_1D)), ctx("a"))
+    with pytest.raises(ValueError, match="positional axis operand type"):
+        try_lower(site("numpy.sum", (F64_1D, F64_1D)), ctx("a", "b"))
 
 
 def test_fail_closed_wrong_ctx_arity() -> None:
-    with pytest.raises(ValueError, match="exactly one ctx.operands entry"):
+    with pytest.raises(ValueError, match="one rendered ctx operand"):
         try_lower(site("numpy.sum", (F64_1D,)), ctx("a", "b"))
-    with pytest.raises(ValueError, match="exactly one ctx.operands entry"):
+    with pytest.raises(ValueError, match="one rendered ctx operand"):
         try_lower(site("numpy.sum", (F64_2D,), keywords=axis_kw(0)), ctx())
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        site("numpy.sum", (F64_1D, "int")),
+        positional_site("numpy.sum", F64_1D, 0, is_literal=False),
+        positional_site("numpy.sum", F64_1D, True),
+        positional_site("numpy.sum", F64_1D, 0, axis_type="float"),
+    ],
+)
+def test_fail_closed_positional_axis_metadata(candidate: ClaimSite) -> None:
+    with pytest.raises(ValueError, match="operand_literals|is_literal|int axis|operand type"):
+        try_lower(candidate, ctx("a", "axis"))
+
+
+def test_fail_closed_named_axis_arg_type_mismatch() -> None:
+    candidate = site(
+        "numpy.sum",
+        (F64_1D,),
+        keywords=(
+            KeywordArg(
+                name="axis",
+                arg_type="bool",
+                literal=ClaimLiteral(is_literal=True, value=0),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="arg_type='int'"):
+        try_lower(candidate, ctx("a"))
 
 
 def test_fail_closed_axis_out_of_range() -> None:

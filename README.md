@@ -67,6 +67,11 @@ semantics matter, keep the enclosing function on Python fallback.
   array–scalar, and scalar–array; operand order preserved for `-` and `/`.
   int64 true division (`/`) yields a **float64** array at the broadcast
   result rank (`RXTP-NUMPY-001`).
+- **Exact binary ufunc calls** `numpy.add`, `numpy.subtract`,
+  `numpy.multiply`, and `numpy.divide` with exactly two positional operands
+  reuse that same dtype/rank/broadcast matrix (`RXTP-NUMPY-007`). Optional
+  ufunc arguments such as `out`, `where`, `dtype`, and `casting`, extra
+  operands, and mixed/unsupported dtypes remain on Python fallback.
 - **`numpy.dot(a, b)` / `a.dot(b)`** on same-dtype **1-D float64 and int64**
   only. **float32** 1-D dots are **deliberately fallback**
   (sequential f32 accumulation diverges materially from NumPy pairwise
@@ -77,21 +82,26 @@ semantics matter, keep the enclosing function on Python fallback.
 - **Whole-array reductions** (module-call form, **no** keywords):
   - `numpy.sum` on **float64 and int64**, ranks **1–2**
   - `numpy.mean` on **float64**, ranks **1–2**
+  - `numpy.max` / `numpy.min` on **int64**, ranks **1–2**, including
+    equivalent `a.max()` / `a.min()` method forms
   - **float32** sum/mean and **int64 mean** are fallback (material
     accumulation-order divergence; no runtime length gate).
-  - Bare `numpy.max` / `numpy.min` (no `axis=`) stay fallback.
+  - Floating whole-array max/min stay fallback because NaN payload/sign and
+    signed-zero tie behavior is platform/SIMD-dependent.
   - Equivalent `a.sum()` / `a.mean()` method forms are native under Core's
     API-1.3 receiver contract (`RXTP-NUMPY-003`).
-- **Literal-axis reductions** (`numpy.sum|mean|max|min(a, axis=<int literal>)`
-  or `a.sum|mean|max|min(axis=<int literal>)` — exactly one named `axis`
-  keyword; module calls additionally carry exactly one positional array):
+  - Empty int64 max/min raises NumPy-compatible `ValueError`
+    (`RXTP-NUMPY-008`).
+- **Literal-axis reductions** (`numpy.sum|mean|max|min(a, axis=<int literal>)`,
+  `numpy.sum|mean|max|min(a, <int literal>)`, or the equivalent ndarray
+  method — exactly one named or positional axis):
   - `sum`: f64/i64 ranks 1–2; `mean`: f64 ranks 1–2
   - `max`/`min`: **int64 ranks 1–2 only**. Float extrema remain fallback:
     NumPy's NaN payload/sign and signed-zero tie behavior varies by supported
     platform/SIMD profile and has no single stable native equivalent.
-  - Negative axes are normalized at claim time; out-of-range, positional,
-    `None`, tuple, dynamic, `axis=+N` (when core does not extract `UAdd`),
-    and extra-kw forms stay fallback
+  - Negative axes are normalized at claim time; out-of-range, `None`, tuple,
+    dynamic, `axis=+N` (when core does not extract `UAdd`), additional
+    positional arguments, and extra-kw forms stay fallback
   - Rank-1 → core builtin `float`/`int` (not NumPy scalar subclasses);
     rank-2 single-axis → matching rank-1 plugin array
   - **f64 axis sum/mean**: NumPy-compatible pairwise (fast-stride) /
@@ -113,6 +123,15 @@ semantics matter, keep the enclosing function on Python fallback.
   is claimed. Floating signed-zero/NaN/infinity values follow NumPy; int64
   negative/absolute/square use wraparound arithmetic, including `INT64_MIN`.
 
+Array comparisons and `numpy.where(mask, x, y)` remain **NO-GO / fallback**
+for this plugin-only cut. Core currently offers plugins call and binary-
+arithmetic claim sites, but not `ast.Compare` sites, and its expression
+inference types every comparison as the scalar core `bool`. Consequently the
+plugin cannot truthfully produce and propagate a rank-1/rank-2 boolean-array
+type from `a > b` into `numpy.where` without a future Core contract change.
+This exclusion also avoids silently substituting scalar truth semantics for
+NumPy's element-wise mask semantics.
+
 Shape/length mismatches raise `ValueError` with NumPy's exact messages.
 int64 `+`, `-`, `*`, `sum`, and `dot` use **wraparound** arithmetic matching
 NumPy **release** builds. Floating reductions/dots are certified
@@ -123,9 +142,10 @@ rules.
 
 ### Optimization-safe lower validation
 
-Every native lowerer — elementwise binops, dot, reductions, unary calls, and
-fusion — independently revalidates its claim/context contract before emitting
-Rust. The explicit `ValueError` guards remain active under `python -O` /
+Every native lowerer — elementwise binops and exact ufunc-call aliases, dot,
+reductions, unary calls, and fusion — independently revalidates its
+claim/context contract before emitting Rust. The explicit `ValueError` guards
+remain active under `python -O` /
 `PYTHONOPTIMIZE=1`: they verify the route rule and reconstructed result type,
 operand mode and placement, operand arity/types, and the route's permitted
 literals, keywords, callables, expression, and receiver metadata. Forged or
@@ -154,15 +174,18 @@ contract; warning parity is **not** part of the acceptance surface.
 | Rule | Outcome | Code |
 |---|---|---|
 | Element-wise `+ - * /` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar) | native (verified) | RXTP-NUMPY-001 |
+| Exact two-positional/no-keyword `numpy.add/subtract/multiply/divide(a, b)` over the same matrix | native (verified) | RXTP-NUMPY-007 |
 | `numpy.dot(a, b)` / `a.dot(b)` on same-dtype 1-D f64/i64 (not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
 | Whole-array `numpy.sum` / `a.sum` on f64/i64 ranks 1–2; `numpy.mean` / `a.mean` on f64 ranks 1–2 (no kwargs) | native (verified) | RXTP-NUMPY-003 |
-| Literal-axis module or ndarray-method `sum/mean/max/min(axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
+| Whole-array `numpy.max/min(a)` / `a.max/min()` on i64 ranks 1–2 (no arguments/options) | native (verified) | RXTP-NUMPY-008 |
+| Literal-axis module or ndarray-method `sum/mean/max/min` with one named or positional integer axis (see native surface) | native (verified) | RXTP-NUMPY-004 |
 | Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
 | Exact `numpy.negative/absolute/abs/square(a)` on f64/f32/i64 ranks 1–2 | native (verified) | RXTP-NUMPY-006 |
 | Operand types outside the claimed set (incl. float extrema, f32 sum/mean/dots, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
 | Runtime ndarray subclasses / `matrix` / `__array_ufunc__` overrides at a native boundary | reject (runtime TypeError; not static fallback) | RXTP-NUMPY-013 |
+| Array comparisons and `numpy.where` (Core has no plugin comparison-result contract yet) | fallback | RXTP-NUMPY-019 |
 | Any other NumPy API (unsupported method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
 
 All rules are `experimental`. Codes RXTP-NUMPY-011/012/013/019 are
@@ -240,10 +263,10 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 On this tree:
 
-- `.venv/bin/python -m pytest --collect-only -q` reports **743** collected tests total.
+- `.venv/bin/python -m pytest --collect-only -q` reports **847** collected tests total.
 - The focused collection command
   `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **115** real-Cargo certification cases.
+  reports **119** real-Cargo certification cases.
 
 Those 119 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material

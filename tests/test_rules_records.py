@@ -25,6 +25,10 @@ def test_public_coverage_import() -> None:
         "numpy.ndarray.mean",
         "numpy.ndarray.max",
         "numpy.ndarray.min",
+        "numpy.add",
+        "numpy.subtract",
+        "numpy.multiply",
+        "numpy.divide",
         "numpy.negative",
         "numpy.absolute",
         "numpy.abs",
@@ -60,8 +64,10 @@ def test_native_records_broadened_but_ids_stable() -> None:
     by_id = {r.id: r for r in NATIVE_RECORDS}
     assert set(by_id) == {
         "rextio-numpy/elementwise-float64",
+        "rextio-numpy/elementwise-ufunc-call",
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
+        "rextio-numpy/reduction-whole-i64-extrema",
         "rextio-numpy/reduction-axis",
         "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/unary-module",
@@ -71,6 +77,10 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "rank 1 or 2" in elem.scope.pattern
     assert "int64" in elem.constraint
     assert "broadcast" in elem.constraint.lower()
+    ufunc = by_id["rextio-numpy/elementwise-ufunc-call"]
+    assert ufunc.diagnostic_code == "RXTP-NUMPY-007"
+    assert "numpy.add" in ufunc.scope.pattern
+    assert "out" in ufunc.constraint and "where" in ufunc.constraint
     dot = by_id["rextio-numpy/dot-float64"]
     assert dot.diagnostic_code == "RXTP-NUMPY-002"
     assert "2-D" in dot.scope.pattern or "2-D" in dot.constraint
@@ -85,6 +95,11 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "rejected" in red.constraint.lower() or "not claimed" in red.scope.pattern
     # Native rule must not advertise verified int64 mean.
     assert "int64 mean is float64" not in red.constraint
+    extrema = by_id["rextio-numpy/reduction-whole-i64-extrema"]
+    assert extrema.diagnostic_code == "RXTP-NUMPY-008"
+    assert "int64 rank-1/rank-2" in extrema.scope.pattern
+    assert "which has no identity" in extrema.constraint
+    assert "Float extrema remain" in extrema.constraint
     axis = by_id["rextio-numpy/reduction-axis"]
     assert axis.diagnostic_code == "RXTP-NUMPY-004"
     assert "axis=" in axis.scope.pattern
@@ -132,6 +147,14 @@ def test_ndarray_subclass_rule_is_runtime_rejection_not_static_fallback() -> Non
     assert "runtime" in record.constraint
     assert "not an automatic claim-time fallback" in record.constraint
     assert "exact numpy.ndarray" in record.constraint
+
+
+def test_unsupported_api_records_array_conditional_core_blocker() -> None:
+    record = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-api")
+    assert "array comparisons feeding numpy.where" in record.scope.pattern
+    assert "ast.Compare claim sites" in record.constraint
+    assert "boolean-array result" in record.constraint
+    assert "comparison/mask selection" in record.guidance
 
 
 def test_rust_snippets_package_public_api() -> None:

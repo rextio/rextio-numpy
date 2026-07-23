@@ -70,6 +70,18 @@ def test_claim_whole_array_methods(method: str, receiver: str, result: str) -> N
     assert claim(site, CONFIG) == try_claim_reduction(site)
 
 
+@pytest.mark.parametrize("method", ["max", "min"])
+@pytest.mark.parametrize("receiver", [I64_1D, I64_2D])
+def test_claim_whole_array_i64_extrema_methods(
+    method: str,
+    receiver: str,
+) -> None:
+    site = method_site(method, receiver)
+    expected = Claimed("rextio-numpy/reduction-whole-i64-extrema", "int")
+    assert try_claim_reduction(site) == expected
+    assert claim(site, CONFIG) == expected
+
+
 @pytest.mark.parametrize(
     ("method", "receiver", "axis", "result"),
     [

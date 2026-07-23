@@ -40,6 +40,42 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         verified=True,
     ),
     RuleRecord(
+        id="rextio-numpy/elementwise-ufunc-call",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern=(
+                "exact numpy.add/subtract/multiply/divide(a, b) calls with two "
+                "positional operands and no keywords, over the same dtype/rank/"
+                "broadcast matrix as element-wise +, -, *, /"
+            ),
+        ),
+        constraint=(
+            "Exact two-positional-operand NumPy ufunc calls reuse the certified "
+            "operator lowering without broadening it: same-dtype float64/float32/"
+            "int64 arrays of rank 1 or 2 under rank-1/rank-2 broadcasting, or one "
+            "such array and the matching Python scalar. Subtract and divide preserve "
+            "operand order; int64 divide yields float64 at the broadcast result rank; "
+            "int64 add/subtract/multiply wrap as NumPy release builds do. Calls with "
+            "out, where, dtype, casting, order, subok, signature, extobj, or any "
+            "other keyword/extra argument are rejected and retain Python fallback. "
+            "Mixed array dtypes, mismatched scalar types, unresolved operands, and "
+            "other ranks remain outside the native surface. As for the operator "
+            "route, native floating operations omit NumPy RuntimeWarnings while "
+            "preserving certified values, dtypes, shapes, exceptions, and inputs."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-007",
+        guidance=(
+            "Use numpy.add/subtract/multiply/divide with exactly two positional "
+            "operands from the documented same-dtype rank-1/rank-2 array/scalar "
+            "matrix and no optional ufunc arguments; otherwise keep the call on "
+            "Python fallback."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
         id="rextio-numpy/dot-float64",
         provider="rextio-numpy",
         scope=RuleScope(
@@ -86,8 +122,8 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             pattern=(
                 "numpy.sum(a)/a.sum() over a whole float64/int64 array of rank 1 or 2, "
                 "or numpy.mean(a)/a.mean() over a whole float64 array of rank 1 or 2 "
-                "(no keywords; float32 whole-array reductions, int64 mean, bare max/min, "
-                "and non-literal axis forms are not claimed under this rule)"
+                "(no keywords; float32 whole-array reductions, int64 mean, whole-array "
+                "max/min, and non-literal axis forms are not claimed under this rule)"
             ),
         ),
         constraint=(
@@ -102,7 +138,9 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "tile([2**53, 1, -2**53], n) → NumPy ~0.11 vs sequential 0.0), and the "
             "plugin API has no enforceable runtime length gate or fallback hook. "
             "Literal single-axis reductions live under rextio-numpy/reduction-axis "
-            "(RXTP-NUMPY-004). The equivalent a.sum()/a.mean() method forms are "
+            "(RXTP-NUMPY-004), and whole-array int64 max/min under "
+            "rextio-numpy/reduction-whole-i64-extrema (RXTP-NUMPY-008). The "
+            "equivalent a.sum()/a.mean() method forms are "
             "admitted through plugin API 1.3 receiver metadata, evaluated exactly "
             "once by core before any positional operands. "
             "Result dtypes follow NumPy 2.4 practical semantics: int64 sum is int64 "
@@ -129,23 +167,56 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         verified=True,
     ),
     RuleRecord(
+        id="rextio-numpy/reduction-whole-i64-extrema",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern=(
+                "numpy.max(a), numpy.min(a), a.max(), or a.min() over a whole "
+                "int64 rank-1/rank-2 ndarray with no arguments or keywords"
+            ),
+        ),
+        constraint=(
+            "Whole-array max/min lower only for exact int64 rank-1/rank-2 plugin "
+            "arrays. The helper traverses every element without mutation and returns "
+            "a builtin int; empty inputs raise ValueError with NumPy-compatible "
+            "'maximum/minimum which has no identity' text. Float extrema remain "
+            "ordinary Python fallback because NaN payload/sign and signed-zero tie "
+            "behavior varies across supported NumPy platform/SIMD profiles. No axis, "
+            "out, where, initial, keepdims, dtype, or other option is accepted by "
+            "this rule; literal-axis int64 extrema remain separately covered by "
+            "RXTP-NUMPY-004."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-008",
+        guidance=(
+            "Use numpy.max/min(a) or a.max/min() with no arguments on an exact "
+            "int64 rank-1/rank-2 array. Keep float extrema and every optional form "
+            "on Python fallback."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
         id="rextio-numpy/reduction-axis",
         provider="rextio-numpy",
         scope=RuleScope(
             kind="call",
             pattern=(
                 "numpy.sum/mean/max/min(a, axis=<int literal>) or "
-                "a.sum/mean/max/min(axis=<int literal>) with exactly one named axis "
-                "keyword (ranks 1–2; see constraint for dtype matrix)"
+                "numpy.sum/mean/max/min(a, <int literal>), with equivalent ndarray "
+                "method forms and exactly one named or positional axis "
+                "(ranks 1–2; see constraint for dtype matrix)"
             ),
         ),
         constraint=(
             "Single-axis reductions with a static signed integer axis literal "
             "(normalized against rank at claim time; out-of-range axes are not "
-            "claimed). Accepted forms: module calls with exactly one positional array "
-            "argument, or ndarray method calls with that array as the API-1.3 receiver, "
-            "and in both forms exactly the keyword axis=<int>; no dtype/out/keepdims/initial/where, "
-            "no positional axis, no axis=None, no tuple axis, no dynamic axis, no "
+            "claimed). Accepted forms: module calls with one positional array plus "
+            "either named axis=<int> or one positional integer axis, and ndarray method "
+            "calls with the array as the API-1.3 receiver plus the same named/positional "
+            "axis alternatives; no dtype/out/keepdims/initial/where, "
+            "no axis=None, no tuple axis, no dynamic axis, no "
             "duplicate/extra keywords, no numpy.amax/amin. Core evaluates a method "
             "receiver exactly once before call operands. "
             "Dtype/rank matrix: sum on float64/int64 ranks 1–2; mean on float64 "
@@ -179,8 +250,9 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         outcome="native",
         diagnostic_code="RXTP-NUMPY-004",
         guidance=(
-            "Write numpy.sum/mean/max/min(a, axis=<int literal>) or "
-            "a.sum/mean/max/min(axis=<int literal>) with a static "
+            "Write numpy.sum/mean/max/min(a, axis=<int literal>), "
+            "numpy.sum/mean/max/min(a, <int literal>), or the equivalent ndarray "
+            "method form with a static "
             "integer axis on float64/int64 ranks 1–2 for sum, float64 ranks 1–2 "
             "for mean, or int64 ranks 1–2 for max/min. Float extrema, float32 "
             "sum/mean, and int64 mean stay on the Python fallback. Keep amax/amin, tuple "

@@ -5,7 +5,15 @@ from __future__ import annotations
 import pytest
 
 from rextio.config.schema import RextioConfig
-from rextio.plugins.api import Claimed, ClaimLiteral, ClaimSite, KeywordArg, NotCovered, Rejected
+from rextio.plugins.api import (
+    Claimed,
+    ClaimLiteral,
+    ClaimSite,
+    KeywordArg,
+    NotCovered,
+    ReceiverMeta,
+    Rejected,
+)
 
 from rextio_numpy.claim import claim
 from rextio_numpy.claim.reductions import normalize_axis, try_claim
@@ -24,6 +32,8 @@ def site(
     operand_types: tuple[str | None, ...],
     *,
     keywords: tuple[KeywordArg, ...] = (),
+    operand_literals: tuple[ClaimLiteral, ...] = (),
+    receiver: ReceiverMeta | None = None,
 ) -> ClaimSite:
     return ClaimSite(
         kind="call",
@@ -33,6 +43,8 @@ def site(
         line=0,
         column=0,
         keywords=keywords,
+        operand_literals=operand_literals,
+        receiver=receiver,
     )
 
 
@@ -44,6 +56,26 @@ def axis_kw(
             name="axis",
             arg_type="int" if isinstance(value, int) else "None",
             literal=ClaimLiteral(is_literal=is_literal, value=value if is_literal else None),
+        ),
+    )
+
+
+def positional_axis(
+    target: str,
+    key: str,
+    value: object,
+    *,
+    is_literal: bool = True,
+) -> ClaimSite:
+    return site(
+        target,
+        (key, "int"),
+        operand_literals=(
+            ClaimLiteral(),
+            ClaimLiteral(
+                is_literal=is_literal,
+                value=value if is_literal else None,
+            ),
         ),
     )
 
@@ -82,10 +114,19 @@ def test_try_claim_f32_reductions_rejected(target: str, key: str) -> None:
 
 
 @pytest.mark.parametrize("target", ["numpy.max", "numpy.min"])
-@pytest.mark.parametrize("key", _F64_ARRAY_KEYS + _I64_ARRAY_KEYS + _F32_ARRAY_KEYS)
-def test_try_claim_bare_max_min_not_covered(target: str, key: str) -> None:
-    """Bare max/min without axis stay on the honest fallback path."""
+@pytest.mark.parametrize("key", _F64_ARRAY_KEYS + _F32_ARRAY_KEYS)
+def test_try_claim_float_bare_max_min_not_covered(target: str, key: str) -> None:
+    """Floating whole-array extrema stay on the honest fallback path."""
     assert try_claim(site(target, (key,))) == NotCovered()
+
+
+@pytest.mark.parametrize("target", ["numpy.max", "numpy.min"])
+@pytest.mark.parametrize("key", _I64_ARRAY_KEYS)
+def test_try_claim_i64_whole_array_extrema(target: str, key: str) -> None:
+    assert try_claim(site(target, (key,))) == Claimed(
+        rule_id="rextio-numpy/reduction-whole-i64-extrema",
+        result_type="int",
+    )
 
 
 def test_try_claim_ignores_non_reduction() -> None:
@@ -93,10 +134,8 @@ def test_try_claim_ignores_non_reduction() -> None:
 
 
 def test_try_claim_wrong_arity_not_covered() -> None:
-    assert try_claim(site("numpy.sum", (K, K))) == NotCovered()
-    assert try_claim(site("numpy.mean", (K, "int"))) == NotCovered()
-    # Positional axis is wrong arity for the one-array surface.
-    assert try_claim(site("numpy.sum", (K, "int"))) == NotCovered()
+    assert try_claim(site("numpy.sum", (K, K, K))) == NotCovered()
+    assert try_claim(site("numpy.mean", (K, "int", "int"))) == NotCovered()
 
 
 def test_try_claim_bad_operand_rejected() -> None:
@@ -137,6 +176,42 @@ def test_try_claim_axis_literal_admitted(
 ) -> None:
     result = try_claim(site(target, (key,), keywords=axis_kw(axis)))
     assert result == Claimed(rule_id="rextio-numpy/reduction-axis", result_type=result_type)
+
+
+@pytest.mark.parametrize(
+    ("target", "key", "axis", "result_type"),
+    [
+        ("numpy.sum", F64_1D, 0, "float"),
+        ("numpy.mean", F64_2D, -1, F64_1D),
+        ("numpy.sum", I64_2D, 0, I64_1D),
+        ("numpy.max", I64_1D, -1, "int"),
+        ("numpy.min", I64_2D, 1, I64_1D),
+    ],
+)
+def test_try_claim_positional_axis_literal_admitted(
+    target: str,
+    key: str,
+    axis: int,
+    result_type: str,
+) -> None:
+    assert try_claim(positional_axis(target, key, axis)) == Claimed(
+        rule_id="rextio-numpy/reduction-axis",
+        result_type=result_type,
+    )
+
+
+def test_try_claim_method_positional_axis_literal_admitted() -> None:
+    receiver = ReceiverMeta(arg_type=I64_2D, expr_kind="name", is_safe=True)
+    candidate = site(
+        "numpy.ndarray.max",
+        ("int",),
+        receiver=receiver,
+        operand_literals=(ClaimLiteral(is_literal=True, value=1),),
+    )
+    assert try_claim(candidate) == Claimed(
+        rule_id="rextio-numpy/reduction-axis",
+        result_type=I64_1D,
+    )
 
 
 @pytest.mark.parametrize(
@@ -192,6 +267,44 @@ def test_try_claim_axis_unsupported_keyword_forms_not_covered(
 ) -> None:
     assert try_claim(site("numpy.sum", (K,), keywords=keywords)) == NotCovered()
     assert try_claim(site("numpy.max", (F64_2D,), keywords=keywords)) == NotCovered()
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        site("numpy.sum", (F64_1D, "int")),
+        positional_axis("numpy.sum", F64_1D, 0, is_literal=False),
+        positional_axis("numpy.sum", F64_1D, None),
+        positional_axis("numpy.sum", F64_2D, (0, 1)),
+        site(
+            "numpy.sum",
+            (F64_1D, "float"),
+            operand_literals=(
+                ClaimLiteral(),
+                ClaimLiteral(is_literal=True, value=0),
+            ),
+        ),
+    ],
+)
+def test_try_claim_positional_axis_requires_aligned_int_literal(
+    candidate: ClaimSite,
+) -> None:
+    assert try_claim(candidate) == NotCovered()
+
+
+def test_try_claim_named_axis_requires_int_arg_type() -> None:
+    candidate = site(
+        "numpy.sum",
+        (F64_1D,),
+        keywords=(
+            KeywordArg(
+                name="axis",
+                arg_type="bool",
+                literal=ClaimLiteral(is_literal=True, value=0),
+            ),
+        ),
+    )
+    assert try_claim(candidate) == NotCovered()
 
 
 @pytest.mark.parametrize("target", ["numpy.sum", "numpy.mean"])

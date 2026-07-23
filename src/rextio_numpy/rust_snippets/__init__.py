@@ -52,6 +52,8 @@ from rextio_numpy.rust_snippets.linear import dot1, dot_call_name, dot_typed
 from rextio_numpy.rust_snippets.reductions import (
     axis_call_name,
     axis_typed,
+    extrema_call_name,
+    extrema_typed,
     mean1,
     mean_call_name,
     mean_typed,
@@ -80,6 +82,8 @@ __all__ = [
     "elementwise_call_name_sa",
     "elementwise_sa",
     "elementwise_sa_typed",
+    "extrema_call_name",
+    "extrema_typed",
     "fmt_shape_helper",
     "fusion_call_name",
     "fusion_helper",

@@ -12,7 +12,7 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             kind="call",
             pattern=(
                 "covered numpy.dot/sum/mean/max/min/unary module (including certified ndarray method) "
-                "call or elementwise +/-/*// binop "
+                "call, exact numpy.add/subtract/multiply/divide call, or elementwise +/-/*// binop "
                 "whose resolved operand types are outside the float64/float32/int64 "
                 "rank-1/2 surface (including excluded reduction dtype cells)"
             ),
@@ -23,13 +23,16 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "Elementwise covers same-dtype float64/float32/int64 arrays of rank 1 or 2 "
             "plus matching float/int scalars. Whole-array and literal-axis sum cover "
             "float64/int64 ranks 1–2; mean covers float64 ranks 1–2 only (float32 "
-            "sum/mean and int64 mean are excluded). Literal-axis max/min cover int64 "
-            "ranks 1–2 only; float extrema stay fallback because NumPy NaN payload/sign "
+            "sum/mean and int64 mean are excluded). Whole-array and literal-axis "
+            "max/min cover int64 ranks 1–2 only; float extrema stay fallback because "
+            "NumPy NaN payload/sign "
             "and signed-zero tie behavior varies by supported platform/SIMD profile. "
             "1-D dot covers same-dtype float64/int64 only (float32 dots "
             "are excluded). Unresolved operands and wrong-arity/unsupported call "
-            "shapes (including bare max/min, non-literal axis, tuple axis, extra "
-            "kwargs) are NotCovered instead, so core's own diagnostic fires. Emitted "
+            "shapes (including float bare max/min, non-literal axis, tuple axis, extra "
+            "kwargs) are NotCovered instead, except exact arithmetic ufunc calls with "
+            "optional/extra arguments, which fail closed through this fallback "
+            "diagnostic. Emitted "
             "from both call and binop sites — the code is the operand-type rejection, "
             "not a dtype-annotation rule."
         ),
@@ -122,21 +125,25 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             pattern=(
                 "any numpy API outside the covered symbols (fancy indexing, unsupported "
                 "method forms, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
-                "matmul/@, ufunc kwargs, random, linalg, amax/amin, ...)"
+                "matmul/@, unsupported ufuncs or optional ufunc arguments, random, "
+                "linalg, amax/amin, array comparisons feeding numpy.where, ...)"
             ),
         ),
         constraint=(
             "APIs outside the covered surface have no verified Rust lowering and keep the "
             "surrounding candidate on the Python fallback — Rextio never guesses. Literal "
             "single-axis sum/mean/max/min are covered under RXTP-NUMPY-004; other axis "
-            "forms remain fallback."
+            "forms remain fallback. Array comparisons and numpy.where are excluded because "
+            "the current Core plugin contract does not offer ast.Compare claim sites or "
+            "propagate a plugin boolean-array result from a comparison."
         ),
         outcome="fallback",
         diagnostic_code="RXTP-NUMPY-019",
         guidance=(
             "Isolate covered array math into its own typed function and leave the rest of "
             "the NumPy usage on the fallback (or under Numba, which stays a valid choice for "
-            "kernels this plugin does not cover)."
+            "kernels this plugin does not cover). Keep comparison/mask selection outside "
+            "the native function until Core exposes an array-comparison result contract."
         ),
         stability="experimental",
     ),

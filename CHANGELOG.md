@@ -6,6 +6,26 @@ Requires **`rextio>=0.1.3,<0.2`** and advertises plugin API **1.3** solely to
 consume Core receiver metadata; it does not advertise the API-1.4 artifact
 capability.
 
+- Adds exact two-positional/no-keyword `numpy.add`, `numpy.subtract`,
+  `numpy.multiply`, and `numpy.divide` call aliases over the existing
+  operator dtype/rank/broadcast matrix. Optional ufunc arguments (`out`,
+  `where`, `dtype`, `casting`, and all other extras), mixed dtypes, and
+  unsupported ranks remain fail-closed fallback.
+- Adds one positional signed-integer literal axis to the existing
+  `sum`/`mean`/`min`/`max` module and ndarray-method reduction matrix.
+  Dynamic, tuple, `None`, out-of-range, and additional option forms remain
+  fallback; lower time independently revalidates the positional type, literal,
+  arity, result type, and rendered-operand alignment.
+- Adds no-argument whole-array `numpy.max` / `numpy.min` and `a.max()` /
+  `a.min()` for int64 rank-1/rank-2 arrays. Empty arrays raise
+  NumPy-compatible `ValueError`; floating extrema remain fallback because
+  signed-zero and NaN selection varies across supported platform/SIMD
+  profiles.
+- Keeps array comparisons and `numpy.where(mask, x, y)` on fallback for this
+  plugin-only cut. Core does not currently offer `ast.Compare` as a plugin
+  claim site and types comparison expressions as scalar `bool`, so the plugin
+  cannot safely propagate a boolean-array result into `numpy.where` without a
+  future Core contract change.
 - Adds certified ndarray method parity for `a.dot(b)`, whole-array
   `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
   the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly
@@ -14,7 +34,8 @@ capability.
   `numpy.abs`, and `numpy.square` for f64/f32/i64 rank-1/rank-2 arrays;
   float signed-zero/NaN/infinity behavior and wrapping int64 edge cases are
   covered.
-- Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, float32
+- Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, floating
+  extrema, float32
   dot/sum/mean, int64 mean, unary method forms, and ufunc overrides (`out`,
   `where`, dtype, etc.) on the Python fallback.
 - Hardens every plugin-array native boundary with an exact base
@@ -41,6 +62,8 @@ capability.
 - Required CI now runs the complete real-Cargo certification suite, without
   test selection, for both Core 0.1.3 and 0.1.5; skipped certification cases
   fail the job.
+- The current tree collects **847** tests in total and **119** tests in the
+  real-Cargo certification module.
 
 ## 0.1.1 — 2026-07-14
 
