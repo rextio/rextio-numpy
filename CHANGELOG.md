@@ -24,6 +24,10 @@ capability.
   fallback. Exact base-ndarray views remain supported.
 - Revalidates the certified dot and reduction dtype/rank matrices at lower
   time, including dot RHS equality, so forged/corrupted claims fail closed.
+- Withdraws floating literal-axis `max`/`min` from native lowering. NumPy's
+  NaN payload/sign and signed-zero tie behavior varies across supported
+  platform/SIMD profiles; these routes now retain Python fallback. Int64
+  literal-axis extrema remain native.
 
 ### Lower-time contract and CI hardening
 

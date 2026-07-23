@@ -86,8 +86,9 @@ semantics matter, keep the enclosing function on Python fallback.
   or `a.sum|mean|max|min(axis=<int literal>)` — exactly one named `axis`
   keyword; module calls additionally carry exactly one positional array):
   - `sum`: f64/i64 ranks 1–2; `mean`: f64 ranks 1–2
-  - `max`/`min`: f64/i64 ranks 1–2; **f32 rank 2 only** (rank-1 f32 stays
-    fallback to preserve `numpy.float32` scalar semantics)
+  - `max`/`min`: **int64 ranks 1–2 only**. Float extrema remain fallback:
+    NumPy's NaN payload/sign and signed-zero tie behavior varies by supported
+    platform/SIMD profile and has no single stable native equivalent.
   - Negative axes are normalized at claim time; out-of-range, positional,
     `None`, tuple, dynamic, `axis=+N` (when core does not extract `UAdd`),
     and extra-kw forms stay fallback
@@ -244,7 +245,7 @@ On this tree:
 - `.venv/bin/python -m pytest --collect-only -q` reports **743** collected tests total.
 - The focused collection command
   `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **119** real-Cargo certification cases.
+  reports **115** real-Cargo certification cases.
 
 Those 119 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material

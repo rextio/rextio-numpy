@@ -228,13 +228,9 @@ def test_claim_literal_axis_surface() -> None:
     assert PLUGIN.claim(
         site("call", "numpy.sum", (F64_2D,), keywords=axis_kw(0)), CONFIG
     ) == Claimed(rule_id="rextio-numpy/reduction-axis", result_type=F64_1D)
-    assert PLUGIN.claim(
-        site("call", "numpy.max", (F32_2D,), keywords=axis_kw(1)), CONFIG
-    ) == Claimed(rule_id="rextio-numpy/reduction-axis", result_type=F32_1D)
+    assert PLUGIN.claim(site("call", "numpy.max", (F32_2D,), keywords=axis_kw(1)), CONFIG) == NotCovered()
     assert PLUGIN.claim(site("call", "numpy.min", (K,)), CONFIG) == NotCovered()
-    rejected = PLUGIN.claim(site("call", "numpy.max", (F32_1D,), keywords=axis_kw(0)), CONFIG)
-    assert isinstance(rejected, Rejected)
-    assert rejected.diagnostic.code == "RXTP-NUMPY-010"
+    assert PLUGIN.claim(site("call", "numpy.max", (F32_1D,), keywords=axis_kw(0)), CONFIG) == NotCovered()
 
 
 # ---------------------------------------------------------------- lower ----
@@ -349,9 +345,4 @@ def test_lower_literal_axis_encodes_normalized_axis() -> None:
     assert "Axis(1)" in "\n".join(lowered.helpers)
     assert "__rxtnp_numpy_pairwise_sum_f64" in "\n".join(lowered.helpers)
 
-    maxed = PLUGIN.lower(
-        claimed(site("call", "numpy.max", (F64_1D,), keywords=axis_kw(0))),
-        ctx("v"),
-    )
-    assert maxed.rust == "__rxtnp_max1_f64_axis0(&v)?"
-    assert "maximum which has no identity" in "\n".join(maxed.helpers)
+    assert PLUGIN.claim(site("call", "numpy.max", (F64_1D,), keywords=axis_kw(0)), CONFIG) == NotCovered()

@@ -178,37 +178,6 @@ def test_try_lower_axis_mean_empty_lane_nan() -> None:
     assert "sequential_sum" in text
 
 
-def test_try_lower_axis_max_propagates_nan_and_signed_zero() -> None:
-    lowered = try_lower(site("numpy.max", (F64_2D,), keywords=axis_kw(1)), ctx("a"))
-    assert lowered is not None
-    assert lowered.rust == "__rxtnp_max2_f64_axis1(&a)?"
-    text = "\n".join(lowered.helpers)
-    assert "__rxtnp_numpy_max_f64" in text
-    # First-NaN preservation (sign/payload), not canonical quiet NaN.
-    assert "if a.is_nan()" in text
-    assert "else if b.is_nan()" in text
-    assert "is_sign_positive()" in text
-    assert "maximum which has no identity" in text
-
-
-def test_try_lower_axis_min_signed_zero_prefers_neg() -> None:
-    lowered = try_lower(site("numpy.min", (F64_1D,), keywords=axis_kw(0)), ctx("a"))
-    assert lowered is not None
-    text = "\n".join(lowered.helpers)
-    assert "__rxtnp_numpy_min_f64" in text
-    assert "is_sign_negative()" in text
-    assert "minimum which has no identity" in text
-
-
-def test_try_lower_axis_f32_max_rank2() -> None:
-    lowered = try_lower(site("numpy.max", (F32_2D,), keywords=axis_kw(0)), ctx("a"))
-    assert lowered is not None
-    assert lowered.rust == "__rxtnp_max2_f32_axis0(&a)?"
-    text = "\n".join(lowered.helpers)
-    assert "Array1<f32>" in text
-    assert "__rxtnp_numpy_max_f32" in text
-
-
 def test_try_lower_axis_i64_max() -> None:
     lowered = try_lower(site("numpy.max", (I64_1D,), keywords=axis_kw(0)), ctx("a"))
     assert lowered is not None
@@ -217,10 +186,10 @@ def test_try_lower_axis_i64_max() -> None:
 
 
 def test_router_matches_try_lower_axis() -> None:
-    s = site("numpy.min", (F64_2D,), keywords=axis_kw(-2))
+    s = site("numpy.min", (I64_2D,), keywords=axis_kw(-2))
     c = ctx("m")
     assert lower(s, c) == try_lower(s, c)
-    assert lower(s, c).rust == "__rxtnp_min2_f64_axis0(&m)?"
+    assert lower(s, c).rust == "__rxtnp_min2_i64_axis0(&m)?"
 
 
 # ---------------------------------------------------------------- fail-closed

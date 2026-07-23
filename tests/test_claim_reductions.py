@@ -118,8 +118,6 @@ def test_try_claim_unresolved_not_covered() -> None:
         ("numpy.sum", F64_1D, 0, "float"),
         ("numpy.sum", F64_1D, -1, "float"),
         ("numpy.mean", F64_1D, 0, "float"),
-        ("numpy.max", F64_1D, 0, "float"),
-        ("numpy.min", F64_1D, -1, "float"),
         ("numpy.sum", I64_1D, 0, "int"),
         ("numpy.max", I64_1D, 0, "int"),
         ("numpy.min", I64_1D, -1, "int"),
@@ -129,13 +127,9 @@ def test_try_claim_unresolved_not_covered() -> None:
         ("numpy.sum", F64_2D, -2, F64_1D),
         ("numpy.mean", F64_2D, 0, F64_1D),
         ("numpy.mean", F64_2D, -1, F64_1D),
-        ("numpy.max", F64_2D, 1, F64_1D),
-        ("numpy.min", F64_2D, -2, F64_1D),
         ("numpy.sum", I64_2D, 0, I64_1D),
         ("numpy.max", I64_2D, 1, I64_1D),
         ("numpy.min", I64_2D, -1, I64_1D),
-        ("numpy.max", F32_2D, 0, F32_1D),
-        ("numpy.min", F32_2D, -1, F32_1D),
     ],
 )
 def test_try_claim_axis_literal_admitted(
@@ -216,10 +210,9 @@ def test_try_claim_axis_i64_mean_rejected(key: str) -> None:
 
 
 @pytest.mark.parametrize("target", ["numpy.max", "numpy.min"])
-def test_try_claim_axis_f32_rank1_max_min_rejected(target: str) -> None:
-    result = try_claim(site(target, (F32_1D,), keywords=axis_kw(0)))
-    assert isinstance(result, Rejected)
-    assert result.diagnostic.code == "RXTP-NUMPY-010"
+@pytest.mark.parametrize("key", _F64_ARRAY_KEYS + _F32_ARRAY_KEYS)
+def test_try_claim_axis_float_max_min_not_covered(target: str, key: str) -> None:
+    assert try_claim(site(target, (key,), keywords=axis_kw(0))) == NotCovered()
 
 
 def test_try_claim_amax_amin_not_this_lane() -> None:
