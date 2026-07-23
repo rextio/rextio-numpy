@@ -114,10 +114,19 @@ def test_try_claim_f32_reductions_rejected(target: str, key: str) -> None:
 
 
 @pytest.mark.parametrize("target", ["numpy.max", "numpy.min"])
-@pytest.mark.parametrize("key", _F64_ARRAY_KEYS + _I64_ARRAY_KEYS + _F32_ARRAY_KEYS)
-def test_try_claim_bare_max_min_not_covered(target: str, key: str) -> None:
-    """Bare max/min without axis stay on the honest fallback path."""
+@pytest.mark.parametrize("key", _F64_ARRAY_KEYS + _F32_ARRAY_KEYS)
+def test_try_claim_float_bare_max_min_not_covered(target: str, key: str) -> None:
+    """Floating whole-array extrema stay on the honest fallback path."""
     assert try_claim(site(target, (key,))) == NotCovered()
+
+
+@pytest.mark.parametrize("target", ["numpy.max", "numpy.min"])
+@pytest.mark.parametrize("key", _I64_ARRAY_KEYS)
+def test_try_claim_i64_whole_array_extrema(target: str, key: str) -> None:
+    assert try_claim(site(target, (key,))) == Claimed(
+        rule_id="rextio-numpy/reduction-whole-i64-extrema",
+        result_type="int",
+    )
 
 
 def test_try_claim_ignores_non_reduction() -> None:

@@ -82,11 +82,16 @@ semantics matter, keep the enclosing function on Python fallback.
 - **Whole-array reductions** (module-call form, **no** keywords):
   - `numpy.sum` on **float64 and int64**, ranks **1–2**
   - `numpy.mean` on **float64**, ranks **1–2**
+  - `numpy.max` / `numpy.min` on **int64**, ranks **1–2**, including
+    equivalent `a.max()` / `a.min()` method forms
   - **float32** sum/mean and **int64 mean** are fallback (material
     accumulation-order divergence; no runtime length gate).
-  - Bare `numpy.max` / `numpy.min` (no `axis=`) stay fallback.
+  - Floating whole-array max/min stay fallback because NaN payload/sign and
+    signed-zero tie behavior is platform/SIMD-dependent.
   - Equivalent `a.sum()` / `a.mean()` method forms are native under Core's
     API-1.3 receiver contract (`RXTP-NUMPY-003`).
+  - Empty int64 max/min raises NumPy-compatible `ValueError`
+    (`RXTP-NUMPY-008`).
 - **Literal-axis reductions** (`numpy.sum|mean|max|min(a, axis=<int literal>)`,
   `numpy.sum|mean|max|min(a, <int literal>)`, or the equivalent ndarray
   method — exactly one named or positional axis):
@@ -163,6 +168,7 @@ contract; warning parity is **not** part of the acceptance surface.
 | Exact two-positional/no-keyword `numpy.add/subtract/multiply/divide(a, b)` over the same matrix | native (verified) | RXTP-NUMPY-007 |
 | `numpy.dot(a, b)` / `a.dot(b)` on same-dtype 1-D f64/i64 (not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
 | Whole-array `numpy.sum` / `a.sum` on f64/i64 ranks 1–2; `numpy.mean` / `a.mean` on f64 ranks 1–2 (no kwargs) | native (verified) | RXTP-NUMPY-003 |
+| Whole-array `numpy.max/min(a)` / `a.max/min()` on i64 ranks 1–2 (no arguments/options) | native (verified) | RXTP-NUMPY-008 |
 | Literal-axis module or ndarray-method `sum/mean/max/min` with one named or positional integer axis (see native surface) | native (verified) | RXTP-NUMPY-004 |
 | Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
 | Exact `numpy.negative/absolute/abs/square(a)` on f64/f32/i64 ranks 1–2 | native (verified) | RXTP-NUMPY-006 |

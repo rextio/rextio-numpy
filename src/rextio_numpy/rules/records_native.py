@@ -122,8 +122,8 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             pattern=(
                 "numpy.sum(a)/a.sum() over a whole float64/int64 array of rank 1 or 2, "
                 "or numpy.mean(a)/a.mean() over a whole float64 array of rank 1 or 2 "
-                "(no keywords; float32 whole-array reductions, int64 mean, bare max/min, "
-                "and non-literal axis forms are not claimed under this rule)"
+                "(no keywords; float32 whole-array reductions, int64 mean, whole-array "
+                "max/min, and non-literal axis forms are not claimed under this rule)"
             ),
         ),
         constraint=(
@@ -138,7 +138,9 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "tile([2**53, 1, -2**53], n) → NumPy ~0.11 vs sequential 0.0), and the "
             "plugin API has no enforceable runtime length gate or fallback hook. "
             "Literal single-axis reductions live under rextio-numpy/reduction-axis "
-            "(RXTP-NUMPY-004). The equivalent a.sum()/a.mean() method forms are "
+            "(RXTP-NUMPY-004), and whole-array int64 max/min under "
+            "rextio-numpy/reduction-whole-i64-extrema (RXTP-NUMPY-008). The "
+            "equivalent a.sum()/a.mean() method forms are "
             "admitted through plugin API 1.3 receiver metadata, evaluated exactly "
             "once by core before any positional operands. "
             "Result dtypes follow NumPy 2.4 practical semantics: int64 sum is int64 "
@@ -160,6 +162,37 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "required, or keep float32 reductions and int64 mean on the Python "
             "fallback. For single-axis reductions use numpy.sum/mean/max/min(a, "
             "axis=<int literal>) — see rextio-numpy/reduction-axis."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
+        id="rextio-numpy/reduction-whole-i64-extrema",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern=(
+                "numpy.max(a), numpy.min(a), a.max(), or a.min() over a whole "
+                "int64 rank-1/rank-2 ndarray with no arguments or keywords"
+            ),
+        ),
+        constraint=(
+            "Whole-array max/min lower only for exact int64 rank-1/rank-2 plugin "
+            "arrays. The helper traverses every element without mutation and returns "
+            "a builtin int; empty inputs raise ValueError with NumPy-compatible "
+            "'maximum/minimum which has no identity' text. Float extrema remain "
+            "ordinary Python fallback because NaN payload/sign and signed-zero tie "
+            "behavior varies across supported NumPy platform/SIMD profiles. No axis, "
+            "out, where, initial, keepdims, dtype, or other option is accepted by "
+            "this rule; literal-axis int64 extrema remain separately covered by "
+            "RXTP-NUMPY-004."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-008",
+        guidance=(
+            "Use numpy.max/min(a) or a.max/min() with no arguments on an exact "
+            "int64 rank-1/rank-2 array. Keep float extrema and every optional form "
+            "on Python fallback."
         ),
         stability="experimental",
         verified=True,

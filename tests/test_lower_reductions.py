@@ -9,7 +9,13 @@ import pytest
 
 from rextio.plugins.api import ClaimLiteral, ClaimSite, KeywordArg, LoweringContext, ReceiverMeta
 
-from rextio_numpy.claim.reductions import _AXIS_RULE, _WHOLE_ARRAY_RULE, _axis_result_type, _whole_array_result_type
+from rextio_numpy.claim.reductions import (
+    _AXIS_RULE,
+    _WHOLE_ARRAY_RULE,
+    _WHOLE_EXTREMA_RULE,
+    _axis_result_type,
+    _whole_array_result_type,
+)
 from rextio_numpy.diagnostics import F32_1D, F32_2D, F64_1D, F64_2D, I64_1D, I64_2D, array_meta
 from rextio_numpy.lower import lower
 from rextio_numpy.lower.reductions import try_lower
@@ -41,7 +47,15 @@ def site(
         column=0,
         keywords=keywords,
         operand_literals=operand_literals,
-        rule_id=_AXIS_RULE if is_axis else _WHOLE_ARRAY_RULE,
+        rule_id=(
+            _AXIS_RULE
+            if is_axis
+            else (
+                _WHOLE_EXTREMA_RULE
+                if target in {"numpy.max", "numpy.min"}
+                else _WHOLE_ARRAY_RULE
+            )
+        ),
         result_type=result_type,
     )
 
@@ -105,6 +119,35 @@ def test_try_lower_i64_sum_wraps() -> None:
     assert lowered.rust == "__rxtnp_sum1_i64(&a)?"
     assert "wrapping_add" in lowered.helpers[0]
     assert "PyResult<i64>" in lowered.helpers[0]
+
+
+@pytest.mark.parametrize(
+    ("target", "operand_type", "expected"),
+    [
+        ("numpy.max", I64_1D, "__rxtnp_max1_i64(&a)?"),
+        ("numpy.min", I64_2D, "__rxtnp_min2_i64(&a)?"),
+    ],
+)
+def test_try_lower_whole_i64_extrema(
+    target: str,
+    operand_type: str,
+    expected: str,
+) -> None:
+    lowered = try_lower(site(target, (operand_type,)), ctx("a"))
+    assert lowered is not None
+    assert lowered.rust == expected
+    assert "PyResult<i64>" in lowered.helpers[0]
+    assert "which has no identity" in lowered.helpers[0]
+
+
+@pytest.mark.parametrize("target", ["numpy.max", "numpy.min"])
+@pytest.mark.parametrize("operand_type", [F64_1D, F64_2D, F32_1D, F32_2D])
+def test_try_lower_forged_float_whole_extrema_fail_closed(
+    target: str,
+    operand_type: str,
+) -> None:
+    with pytest.raises(ValueError, match="outside certified dtype/rank matrix"):
+        try_lower(site(target, (operand_type,)), ctx("a"))
 
 
 def test_try_lower_i64_mean_forged_claim_fails_closed() -> None:

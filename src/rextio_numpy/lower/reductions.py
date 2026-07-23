@@ -7,6 +7,7 @@ from rextio.plugins.api import ClaimSite, LoweredExpr, LoweringContext
 from rextio_numpy import rust_snippets
 from rextio_numpy.claim.reductions import (
     _AXIS_RULE,
+    _WHOLE_EXTREMA_RULE,
     _WHOLE_ARRAY_RULE,
     _axis_result_type,
     _dtype_allowed,
@@ -23,7 +24,7 @@ from rextio_numpy.lower.contracts import (
 )
 from rextio_numpy.rust_snippets.reductions import axis_call_name, axis_typed, op_from_target
 
-_WHOLE_ARRAY_TARGETS = ("numpy.sum", "numpy.mean")
+_WHOLE_ARRAY_TARGETS = ("numpy.sum", "numpy.mean", "numpy.max", "numpy.min")
 _AXIS_TARGETS = ("numpy.sum", "numpy.mean", "numpy.max", "numpy.min")
 
 
@@ -100,7 +101,7 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     dtype, rank = meta
 
     if is_whole:
-        # Whole-array sum/mean (bare max/min are never claimed).
+        # Whole-array sum/mean and bounded int64 extrema.
         if target not in _WHOLE_ARRAY_TARGETS:
             raise ValueError(
                 f"rextio-numpy whole-array reduction lower does not certify {target!r}"
@@ -110,14 +111,23 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
                 "rextio-numpy reduction lower operand is outside certified dtype/rank matrix: "
                 f"target={target!r}, dtype={dtype!r}, rank={rank}, axis=False"
         )
-        require_rule_id(claimed, _WHOLE_ARRAY_RULE, "reductions")
+        expected_rule = (
+            _WHOLE_EXTREMA_RULE
+            if target in {"numpy.max", "numpy.min"}
+            else _WHOLE_ARRAY_RULE
+        )
+        require_rule_id(claimed, expected_rule, "reductions")
         require_result_type(claimed, _whole_array_result_type(target, dtype), "reductions")
         if target == "numpy.sum":
             name = rust_snippets.sum_call_name(dtype, rank)
             helper = rust_snippets.sum_typed(dtype, rank)
-        else:
+        elif target == "numpy.mean":
             name = rust_snippets.mean_call_name(dtype, rank)
             helper = rust_snippets.mean_typed(dtype, rank)
+        else:
+            op = op_from_target(target)
+            name = rust_snippets.extrema_call_name(op, dtype, rank)
+            helper = rust_snippets.extrema_typed(op, dtype, rank)
         return LoweredExpr(
             rust=f"{name}(&{operand_expr})?",
             helpers=(helper,),

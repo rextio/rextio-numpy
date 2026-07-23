@@ -290,6 +290,18 @@ def total_i64_2d(a: I64Arr2) -> int:
     return np.sum(a)
 
 
+def whole_max_i64_1d(a: I64Arr1) -> int:
+    return np.max(a)
+
+
+def whole_min_i64_2d(a: I64Arr2) -> int:
+    return np.min(a)
+
+
+def method_whole_max_i64_2d(a: I64Arr2) -> int:
+    return a.max()
+
+
 def average_i64_2d(a: I64Arr2) -> float:
     return np.mean(a)
 
@@ -1174,6 +1186,34 @@ def test_wave1_reductions_and_dot(
         assert float(result) == pytest.approx(
             float(expected), rel=SCALAR_REL_TOL, abs=SCALAR_ABS_TOL
         )
+
+
+def test_whole_array_i64_extrema_and_empty_errors(
+    project: CertifiedProject,
+) -> None:
+    maximum = _require_native_scalar(project, "whole_max_i64_1d", scalar_int_equal)
+    minimum = _require_native_scalar(project, "whole_min_i64_2d", scalar_int_equal)
+    method_max = _require_native_scalar(
+        project,
+        "method_whole_max_i64_2d",
+        scalar_int_equal,
+    )
+
+    vector = np.array([3, -7, 4, np.iinfo(np.int64).max], dtype=np.int64)
+    matrix = np.array([[3, -7, 4], [12, 0, -5]], dtype=np.int64)
+    assert int(maximum(vector)) == int(np.max(vector))
+    assert int(minimum(matrix)) == int(np.min(matrix))
+    assert int(method_max(matrix)) == int(matrix.max())
+
+    for check, empty, operation in (
+        (maximum, np.array([], dtype=np.int64), np.max),
+        (minimum, np.empty((0, 2), dtype=np.int64), np.min),
+    ):
+        with pytest.raises(ValueError) as numpy_error:
+            operation(empty)
+        with pytest.raises(ValueError) as native_error:
+            check(empty)
+        assert str(native_error.value) == str(numpy_error.value)
 
 
 @pytest.mark.parametrize(

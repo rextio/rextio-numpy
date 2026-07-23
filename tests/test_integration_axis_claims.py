@@ -66,7 +66,7 @@ def test_analyzer_offers_axis_literal_and_plugin_claims(tmp_path: Path) -> None:
         tmp_path,
         """
 import numpy as np
-from rextio_numpy.types import F64Arr1, F64Arr2
+from rextio_numpy.types import F64Arr1, F64Arr2, I64Arr2
 
 def row_sums(a: F64Arr2) -> F64Arr1:
     return np.sum(a, axis=1)
@@ -79,6 +79,12 @@ def neg_axis_mean(a: F64Arr2) -> F64Arr1:
 
 def whole_sum(a: F64Arr1) -> float:
     return np.sum(a)
+
+def whole_i64_max(a: I64Arr2) -> int:
+    return np.max(a)
+
+def method_whole_i64_min(a: I64Arr2) -> int:
+    return a.min()
 """,
     )
     registry = _registry()
@@ -113,6 +119,22 @@ def whole_sum(a: F64Arr1) -> float:
     whole_claim = next(c for c in whole.plugin_claims if c.target == "numpy.sum")
     assert whole_claim.keywords == ()
     assert whole_claim.rule_id == "rextio-numpy/reduction-sum-mean"
+
+    for qualname, target in (
+        ("myapp.kernels.whole_i64_max", "numpy.max"),
+        ("myapp.kernels.method_whole_i64_min", "a.min"),
+    ):
+        function = _function(analysis, qualname)
+        extrema_claim = next(
+            claim
+            for claim in function.plugin_claims
+            if claim.rule_id == "rextio-numpy/reduction-whole-i64-extrema"
+        )
+        assert extrema_claim.result_type == "int"
+        if target == "numpy.max":
+            assert extrema_claim.target == target
+        else:
+            assert extrema_claim.target.rpartition(".")[2] == "min"
 
     # lower() consumes the claimed site with keywords intact.
     plugin_obj = RextioNumpyPlugin()

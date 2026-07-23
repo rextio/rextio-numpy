@@ -67,6 +67,7 @@ def test_native_records_broadened_but_ids_stable() -> None:
         "rextio-numpy/elementwise-ufunc-call",
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
+        "rextio-numpy/reduction-whole-i64-extrema",
         "rextio-numpy/reduction-axis",
         "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/unary-module",
@@ -94,6 +95,11 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "rejected" in red.constraint.lower() or "not claimed" in red.scope.pattern
     # Native rule must not advertise verified int64 mean.
     assert "int64 mean is float64" not in red.constraint
+    extrema = by_id["rextio-numpy/reduction-whole-i64-extrema"]
+    assert extrema.diagnostic_code == "RXTP-NUMPY-008"
+    assert "int64 rank-1/rank-2" in extrema.scope.pattern
+    assert "which has no identity" in extrema.constraint
+    assert "Float extrema remain" in extrema.constraint
     axis = by_id["rextio-numpy/reduction-axis"]
     assert axis.diagnostic_code == "RXTP-NUMPY-004"
     assert "axis=" in axis.scope.pattern

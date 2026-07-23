@@ -16,6 +16,11 @@ capability.
   Dynamic, tuple, `None`, out-of-range, and additional option forms remain
   fallback; lower time independently revalidates the positional type, literal,
   arity, result type, and rendered-operand alignment.
+- Adds no-argument whole-array `numpy.max` / `numpy.min` and `a.max()` /
+  `a.min()` for int64 rank-1/rank-2 arrays. Empty arrays raise
+  NumPy-compatible `ValueError`; floating extrema remain fallback because
+  signed-zero and NaN selection varies across supported platform/SIMD
+  profiles.
 - Adds certified ndarray method parity for `a.dot(b)`, whole-array
   `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
   the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly
@@ -24,7 +29,8 @@ capability.
   `numpy.abs`, and `numpy.square` for f64/f32/i64 rank-1/rank-2 arrays;
   float signed-zero/NaN/infinity behavior and wrapping int64 edge cases are
   covered.
-- Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, float32
+- Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, floating
+  extrema, float32
   dot/sum/mean, int64 mean, unary method forms, and ufunc overrides (`out`,
   `where`, dtype, etc.) on the Python fallback.
 - Hardens every plugin-array native boundary with an exact base

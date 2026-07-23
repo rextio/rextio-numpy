@@ -164,6 +164,7 @@ def test_rule_records_shape() -> None:
         "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/dot-float64",
             "rextio-numpy/reduction-sum-mean",
+            "rextio-numpy/reduction-whole-i64-extrema",
             "rextio-numpy/reduction-axis",
             "rextio-numpy/unary-module",
     }
