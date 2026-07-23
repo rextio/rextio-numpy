@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from rextio.plugins.api import ClaimSite, LoweringContext
+from rextio.plugins.api import ClaimLiteral, ClaimSite, LoweringContext
 
 from rextio_numpy.claim.binops import _ELEMENTWISE_RULE, _result_array_type
 from rextio_numpy.diagnostics import F32_1D, F64_1D, F64_2D, I64_1D, I64_2D, array_meta
@@ -98,6 +98,39 @@ def test_try_lower_i64_scalar_order() -> None:
     assert "wrapping_sub" in as_lowered.helpers[0]
     assert as_lowered.rust == "__rxtnp_sub2_as_i64(&a, s)?"
     assert sa_lowered.rust == "__rxtnp_sub2_sa_i64(s, &a)?"
+
+
+def test_try_lower_i64_scalar_literal_uses_the_existing_scalar_route() -> None:
+    literal_site = ClaimSite(
+        kind="binop",
+        target="*",
+        operand_types=(I64_1D, "int"),
+        file_path="",
+        line=0,
+        column=0,
+        rule_id=_ELEMENTWISE_RULE,
+        result_type=I64_1D,
+        operand_literals=(ClaimLiteral(), ClaimLiteral(is_literal=True, value=2)),
+    )
+    lowered = try_lower(literal_site, ctx("a", "2"))
+    assert lowered is not None
+    assert lowered.rust == "__rxtnp_mul1_as_i64(&a, 2)?"
+
+
+def test_try_lower_rejects_literal_incompatible_with_claimed_scalar_type() -> None:
+    forged = ClaimSite(
+        kind="binop",
+        target="*",
+        operand_types=(I64_1D, "int"),
+        file_path="",
+        line=0,
+        column=0,
+        rule_id=_ELEMENTWISE_RULE,
+        result_type=I64_1D,
+        operand_literals=(ClaimLiteral(), ClaimLiteral(is_literal=True, value=True)),
+    )
+    with pytest.raises(ValueError, match="literal compatible"):
+        try_lower(forged, ctx("a", "true"))
 
 
 def test_try_lower_f32_scalar_casts() -> None:
@@ -211,3 +244,42 @@ else:
     )
     assert completed.returncode == 0, f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     assert completed.stdout.strip() == "rejected"
+
+
+def test_literal_contract_remains_fail_closed_under_python_optimize() -> None:
+    script = r"""
+from rextio.plugins.api import ClaimLiteral, ClaimSite, LoweringContext
+from rextio_numpy.diagnostics import I64_1D
+from rextio_numpy.lower.binops import try_lower
+
+site = ClaimSite(
+    kind="binop",
+    target="*",
+    operand_types=(I64_1D, "int"),
+    file_path="",
+    line=0,
+    column=0,
+    rule_id="rextio-numpy/elementwise-float64",
+    result_type=I64_1D,
+    operand_literals=(ClaimLiteral(), ClaimLiteral(is_literal=True, value=True)),
+)
+ctx = LoweringContext(
+    operands=("a", "true"),
+    target_language="rust",
+    fresh_name=lambda prefix: prefix,
+)
+try:
+    try_lower(site, ctx)
+except ValueError as exc:
+    if "literal compatible" not in str(exc):
+        raise SystemExit(2) from exc
+else:
+    raise SystemExit(3)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-O", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"

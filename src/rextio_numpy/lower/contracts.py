@@ -59,6 +59,7 @@ def require_no_hidden_site_metadata(
     *,
     allow_expression: bool = False,
     expected_operand_literals: int | None = None,
+    allowed_literal_positions: frozenset[int] = frozenset(),
 ) -> None:
     """Reject fields that no certified direct NumPy rule consumes."""
     if (
@@ -70,14 +71,18 @@ def require_no_hidden_site_metadata(
             f"rextio-numpy {lane} lower requires either empty operand_literals "
             f"or {expected_operand_literals} slots; got {len(claimed.operand_literals)}"
         )
-    if any(
-        literal.is_literal or literal.value is not None
-        for literal in claimed.operand_literals
-    ):
-        raise ValueError(
-            f"rextio-numpy {lane} lower requires non-literal operand_literals; "
-            f"got {claimed.operand_literals!r}"
-        )
+    for index, literal in enumerate(claimed.operand_literals):
+        if literal.is_literal:
+            if index not in allowed_literal_positions:
+                raise ValueError(
+                    f"rextio-numpy {lane} lower does not accept a literal at "
+                    f"operand_literals[{index}]; got {literal!r}"
+                )
+        elif literal.value is not None:
+            raise ValueError(
+                f"rextio-numpy {lane} lower requires non-literal operand_literals "
+                f"to have value=None; got {literal!r}"
+            )
     if claimed.callables:
         raise ValueError(
             f"rextio-numpy {lane} lower requires empty callables; got {claimed.callables!r}"

@@ -27,6 +27,7 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         "binops",
         allow_expression=True,
         expected_operand_literals=2,
+        allowed_literal_positions=frozenset({0, 1}),
     )
     require_site_expression_matches_claim(claimed, "binops")
     if claimed.receiver is not None:
@@ -40,6 +41,7 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             f"got {len(claimed.operand_types)}"
         )
     left, right = claimed.operand_types
+    _require_literal_metadata(claimed)
     if len(ctx.operands) != 2:
         raise ValueError(
             f"rextio-numpy binops lower requires exactly two ctx.operands; got {len(ctx.operands)}"
@@ -122,3 +124,23 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         rust=f"{name}({first}, &{second})?",
         helpers=(helper,),
     )
+
+
+def _require_literal_metadata(claimed: ClaimSite) -> None:
+    """Validate literal values against the exact scalar type Core claimed."""
+    if not claimed.operand_literals:
+        return
+    for index, (operand_type, literal) in enumerate(
+        zip(claimed.operand_types, claimed.operand_literals, strict=True)
+    ):
+        if not literal.is_literal:
+            continue
+        value = literal.value
+        if operand_type == "int" and isinstance(value, int) and not isinstance(value, bool):
+            continue
+        if operand_type == "float" and isinstance(value, float):
+            continue
+        raise ValueError(
+            "rextio-numpy binops lower requires a literal compatible with "
+            f"operand type {operand_type!r} at operand_literals[{index}]; got {literal!r}"
+        )

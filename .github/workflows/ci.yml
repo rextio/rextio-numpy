@@ -21,7 +21,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install "rextio==${{ matrix.rextio }}" pytest ruff mypy numpy hypothesis build
       - run: python -m pip install --no-deps -e .
-      - run: python -m pytest tests/test_claim_and_lower.py tests/test_claim_linear.py tests/test_claim_reductions.py tests/test_claim_methods.py tests/test_claim_unary.py tests/test_lower_linear.py tests/test_lower_reductions.py tests/test_lower_methods.py tests/test_lower_unary.py tests/test_plugin.py tests/test_rules_records.py
+      - run: python -m pytest tests/test_claim_and_lower.py tests/test_claim_linear.py tests/test_claim_reductions.py tests/test_claim_methods.py tests/test_claim_unary.py tests/test_lower_binops.py tests/test_lower_contract_hardening.py tests/test_lower_linear.py tests/test_lower_reductions.py tests/test_lower_methods.py tests/test_lower_unary.py tests/test_plugin.py tests/test_rules_records.py
       - run: ruff check src tests
       - run: mypy src
       - run: python -m build

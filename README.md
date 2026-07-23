@@ -133,7 +133,8 @@ literals, keywords, callables, expression, and receiver metadata. Forged or
 inconsistent metadata therefore fails closed instead of emitting a helper.
 For non-literal operands, both Core's omitted `operand_literals` form and its
 arity-matched `ClaimLiteral(is_literal=False)` placeholders are accepted;
-populated slots with a mismatched count or literal value are rejected.
+populated slots require the route's exact count and lane-specific,
+type-compatible literal metadata.
 
 The required CI native-certification matrix runs the complete real-Cargo suite
 without test selection for both Core 0.1.3 and 0.1.5, and rejects skipped
