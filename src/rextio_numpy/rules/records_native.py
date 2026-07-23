@@ -190,6 +190,36 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         verified=True,
     ),
     RuleRecord(
+        id="rextio-numpy/unary-module",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern=(
+                "exact module calls numpy.negative(a), numpy.absolute(a), numpy.abs(a), "
+                "or numpy.square(a) on float64/float32/int64 arrays of rank 1 or 2"
+            ),
+        ),
+        constraint=(
+            "The exact one-positional-array module-call forms lower elementwise for "
+            "the existing float64/float32/int64 rank-1/rank-2 matrix. No out, where, "
+            "dtype, casting, order, subok, signature, or other keyword/positional "
+            "overrides are claimed, and ndarray method unary forms remain fallback. "
+            "Floating operations preserve NumPy value semantics for signed zero, NaN, "
+            "and infinity. int64 negative, absolute (including INT64_MIN), and square "
+            "use wrapping arithmetic matching NumPy release builds. Inputs are not "
+            "mutated; native paths omit NumPy RuntimeWarnings where NumPy may emit them."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-006",
+        guidance=(
+            "Use numpy.negative/absolute/abs/square with exactly one typed float64, "
+            "float32, or int64 rank-1/rank-2 ndarray and no optional arguments; keep "
+            "other ufunc forms on the Python fallback."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
         id="rextio-numpy/elementwise-chain-fusion",
         provider="rextio-numpy",
         scope=RuleScope(

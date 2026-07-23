@@ -25,6 +25,10 @@ def test_public_coverage_import() -> None:
         "numpy.ndarray.mean",
         "numpy.ndarray.max",
         "numpy.ndarray.min",
+        "numpy.negative",
+        "numpy.absolute",
+        "numpy.abs",
+        "numpy.square",
     )
 
 
@@ -60,6 +64,7 @@ def test_native_records_broadened_but_ids_stable() -> None:
         "rextio-numpy/reduction-sum-mean",
         "rextio-numpy/reduction-axis",
         "rextio-numpy/elementwise-chain-fusion",
+        "rextio-numpy/unary-module",
     }
     elem = by_id["rextio-numpy/elementwise-float64"]
     assert elem.diagnostic_code == "RXTP-NUMPY-001"
@@ -93,6 +98,11 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "operand_mode" in fusion.scope.pattern or "leaves" in fusion.scope.pattern
     assert "wrapping" in fusion.constraint.lower()
     assert fusion.verified is True
+    unary = by_id["rextio-numpy/unary-module"]
+    assert unary.diagnostic_code == "RXTP-NUMPY-006"
+    assert "numpy.negative" in unary.scope.pattern
+    assert "wrapping" in unary.constraint
+    assert "out" in unary.constraint
 
 
 def test_fallback_ndim_is_rank_gt_2() -> None:
@@ -124,3 +134,5 @@ def test_rust_snippets_package_public_api() -> None:
     assert "__rxtnp_max2_f64_axis0" in joined
     assert "maximum which has no identity" in joined
     assert rust_snippets.op_from_target("numpy.min") == "min"
+    assert rust_snippets.unary_call_name("square", "i64", 2) == "__rxtnp_square2_i64"
+    assert "wrapping_mul" in rust_snippets.unary_typed("square", "i64", 2)

@@ -24,16 +24,11 @@ the `ndarray` crate, multi-op elementwise chain fusion via
 a runtime dependency of this package — only the user-facing
 `rextio_numpy.types` vocabulary imports NumPy in the **user** project.
 
-### Safe deployment order
+### Core compatibility
 
-Publish / deploy in this **strict sequential order only** (do **not** ship these
-simultaneously):
-
-1. **`rextio-lsp` 0.1.1** dual-map first
-2. **core `rextio` 0.1.2** second (plugin API 1.2 claim metadata)
-3. **`rextio-numpy` 0.1.1** third, only after core 0.1.2 resolves
-
-**`rextio-numpy` cannot be published before its core dependency resolves.**
+This branch requires **core `rextio>=0.1.3,<0.2`** for plugin API 1.3 receiver
+metadata. It does not implement or advertise the optional API-1.4 standalone
+artifact capability.
 
 ### Annotation vocabulary (`rextio_numpy.types`)
 
@@ -95,6 +90,11 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   leaf views only, one output allocation/data pass, AST evaluation order
   preserved (i64 wrapping at every intermediate). Out-of-scope trees keep
   ordinary per-op elementwise (`RXTP-NUMPY-005`).
+- **Exact unary module calls** `numpy.negative(a)`, `numpy.absolute(a)`,
+  `numpy.abs(a)`, and `numpy.square(a)` on f64/f32/i64 rank-1/rank-2 arrays
+  (`RXTP-NUMPY-006`). No `out`, `where`, dtype override, or unary method form
+  is claimed. Floating signed-zero/NaN/infinity values follow NumPy; int64
+  negative/absolute/square use wraparound arithmetic, including `INT64_MIN`.
 
 Shape/length mismatches raise `ValueError` with NumPy's exact messages.
 int64 `+`, `-`, `*`, `sum`, and `dot` use **wraparound** arithmetic matching
@@ -134,6 +134,7 @@ contract; warning parity is **not** part of the acceptance surface.
 | Whole-array `numpy.sum` / `a.sum` on f64/i64 ranks 1–2; `numpy.mean` / `a.mean` on f64 ranks 1–2 (no kwargs) | native (verified) | RXTP-NUMPY-003 |
 | Literal-axis module or ndarray-method `sum/mean/max/min(axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
 | Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
+| Exact `numpy.negative/absolute/abs/square(a)` on f64/f32/i64 ranks 1–2 | native (verified) | RXTP-NUMPY-006 |
 | Operand types outside the claimed set (incl. f32 sum/mean/dots, rank-1 f32 max/min, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
@@ -177,25 +178,25 @@ def dot(a: F64Arr1, b: F64Arr1) -> float:
 ```
 
 ```bash
-pip install rextio-numpy   # requires rextio >= 0.1.2
+pip install rextio-numpy   # requires rextio >= 0.1.3
 rextio capabilities --format json   # numpy rules appear under "rules"
 rextio build .                      # lowered kernels compile via cargo
 ```
 
-> **Note:** `pip install rextio-numpy` now installs **0.1.1**. It requires a
-> core that provides plugin API 1.2 (`rextio>=0.1.2`). To work against the
+> **Note:** PyPI currently installs **0.1.1**. The development 0.1.2 surface
+> requires a core that provides plugin API 1.3 (`rextio>=0.1.3`). To work against the
 > surface from a source checkout, see Development below.
 
 ## Development
 
-Core for this release requires **`rextio>=0.1.2,<0.2`**. For day-to-day work on
-this branch, install core from a build that exposes plugin API 1.2 (PyPI, or a
+Core for this release requires **`rextio>=0.1.3,<0.2`**. For day-to-day work on
+this branch, install core from a build that exposes plugin API 1.3 (PyPI, or a
 sibling checkout when co-developing) and this package editable without resolving
 a published `rextio-numpy` wheel over the tree:
 
 ```bash
 uv venv --python 3.11 .venv
-uv pip install --python .venv/bin/python "rextio>=0.1.2,<0.2"
+uv pip install --python .venv/bin/python "rextio>=0.1.3,<0.2"
 # or, when co-developing core: uv pip install --python .venv/bin/python -e path/to/rextio
 uv pip install --python .venv/bin/python --no-deps -e .
 uv pip install --python .venv/bin/python pytest ruff mypy

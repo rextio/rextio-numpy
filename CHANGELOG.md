@@ -10,8 +10,13 @@ capability.
   `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
   the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly
   once before ordinary operands.
+- Adds exact unary module calls `numpy.negative`, `numpy.absolute`/
+  `numpy.abs`, and `numpy.square` for f64/f32/i64 rank-1/rank-2 arrays;
+  float signed-zero/NaN/infinity behavior and wrapping int64 edge cases are
+  covered.
 - Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, float32
-  dot/sum/mean, and int64 mean on the Python fallback.
+  dot/sum/mean, int64 mean, unary method forms, and ufunc overrides (`out`,
+  `where`, dtype, etc.) on the Python fallback.
 
 ## 0.1.1 — 2026-07-14
 

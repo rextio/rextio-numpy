@@ -5,7 +5,7 @@ from __future__ import annotations
 from rextio.config.schema import RextioConfig
 from rextio.plugins.api import ClaimResult, ClaimSite, NotCovered
 
-from rextio_numpy.claim import binops, fusion, linear, reductions
+from rextio_numpy.claim import binops, fusion, linear, reductions, unary
 
 __all__ = ["claim"]
 
@@ -29,6 +29,7 @@ def claim(site: ClaimSite, config: RextioConfig) -> ClaimResult:
     for handler in (
         linear.try_claim,
         reductions.try_claim,
+        unary.try_claim,
         fusion.try_claim,
         binops.try_claim,
     ):

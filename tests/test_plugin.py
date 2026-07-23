@@ -37,7 +37,7 @@ def load_registry(enabled: tuple[str, ...] = ("rextio-numpy",)):
 def test_plugin_object_satisfies_protocol_v2() -> None:
     instance = RextioNumpyPlugin()
     assert instance.plugin_id == "rextio-numpy"
-    assert instance.api_version == "1.2"
+    assert instance.api_version == "1.3"
     assert isinstance(instance.covers(), CoverageDecl)
     records = instance.describe(RextioConfig())
     assert records and all(isinstance(record, RuleRecord) for record in records)
@@ -50,7 +50,7 @@ def test_core_loader_accepts_the_plugin() -> None:
     assert active.id == "rextio-numpy"
     assert active.rules_provided is True
     assert active.lowering_provided is True
-    assert active.api_version == "1.2"
+    assert active.api_version == "1.3"
     assert active.packages == ("numpy",)
     assert __version__ in active.name
 
@@ -157,8 +157,9 @@ def test_rule_records_shape() -> None:
         "rextio-numpy/elementwise-float64",
         "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/dot-float64",
-        "rextio-numpy/reduction-sum-mean",
-        "rextio-numpy/reduction-axis",
+            "rextio-numpy/reduction-sum-mean",
+            "rextio-numpy/reduction-axis",
+            "rextio-numpy/unary-module",
     }
     assert all(record.verified is True for record in records if record.outcome == "native")
     assert all(record.verified is None for record in records if record.outcome != "native")

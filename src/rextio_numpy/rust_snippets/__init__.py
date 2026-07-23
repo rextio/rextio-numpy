@@ -60,6 +60,7 @@ from rextio_numpy.rust_snippets.reductions import (
     sum_call_name,
     sum_typed,
 )
+from rextio_numpy.rust_snippets.unary import unary_call_name, unary_typed
 
 __all__ = [
     "OP_SYMBOLS",
@@ -91,4 +92,6 @@ __all__ = [
     "sum1",
     "sum_call_name",
     "sum_typed",
+    "unary_call_name",
+    "unary_typed",
 ]

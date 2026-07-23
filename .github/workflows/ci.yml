@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "0.1.2"]
+  pull_request:
+    branches: [main, "0.1.2"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rextio: ["0.1.3", "0.1.5"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install "rextio==${{ matrix.rextio }}" pytest ruff mypy numpy hypothesis build
+      - run: python -m pip install --no-deps -e .
+      - run: python -m pytest tests/test_claim_and_lower.py tests/test_claim_linear.py tests/test_claim_reductions.py tests/test_claim_methods.py tests/test_claim_unary.py tests/test_lower_linear.py tests/test_lower_reductions.py tests/test_lower_methods.py tests/test_lower_unary.py tests/test_plugin.py tests/test_rules_records.py
+      - run: ruff check src tests
+      - run: mypy src
+      - run: python -m build

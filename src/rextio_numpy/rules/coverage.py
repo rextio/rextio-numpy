@@ -24,5 +24,9 @@ COVERAGE = CoverageDecl(
         "numpy.ndarray.mean",
         "numpy.ndarray.max",
         "numpy.ndarray.min",
+        "numpy.negative",
+        "numpy.absolute",
+        "numpy.abs",
+        "numpy.square",
     ),
 )

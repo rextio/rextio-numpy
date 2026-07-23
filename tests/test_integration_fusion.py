@@ -94,7 +94,7 @@ def multi_op_chain(a: F64Arr1, b: F64Arr1) -> F64Arr1:
 """,
     )
     registry = _registry()
-    assert registry.active[0].api_version == "1.2"
+    assert registry.active[0].api_version == "1.3"
     analysis = analyze_project(
         root,
         active_plugins=registry.active,

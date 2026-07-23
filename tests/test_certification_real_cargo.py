@@ -121,6 +121,22 @@ def method_max_axis(a: F32Arr2) -> F32Arr1:
     return a.max(axis=0)
 
 
+def unary_negative_f64(a: F64Arr1) -> F64Arr1:
+    return np.negative(a)
+
+
+def unary_absolute_f32(a: F32Arr2) -> F32Arr2:
+    return np.absolute(a)
+
+
+def unary_abs_i64(a: I64Arr1) -> I64Arr1:
+    return np.abs(a)
+
+
+def unary_square_i64(a: I64Arr2) -> I64Arr2:
+    return np.square(a)
+
+
 def accumulate(a: F64Arr1, b: F64Arr1, n: int) -> F64Arr1:
     c = a + b
     for i in range(n):
@@ -595,6 +611,25 @@ def test_method_parity_is_natively_served(project: CertifiedProject) -> None:
     assert float(total(a)) == pytest.approx(float(a.sum()), rel=SCALAR_REL_TOL)
     np.testing.assert_allclose(mean_axis(matrix), matrix.mean(axis=1))
     np.testing.assert_array_equal(max_axis(matrix32), matrix32.max(axis=0))
+
+
+def test_unary_module_calls_are_natively_served(project: CertifiedProject) -> None:
+    negative = _require_native(project, "unary_negative_f64")
+    absolute = _require_native(project, "unary_absolute_f32")
+    abs_i64 = _require_native(project, "unary_abs_i64")
+    square_i64 = _require_native(project, "unary_square_i64")
+    f64 = np.array([-0.0, np.inf, -np.inf, np.nan], dtype=np.float64)
+    f32 = np.array([[-0.0, -3.5], [np.inf, np.nan]], dtype=np.float32)
+    i64 = np.array([np.iinfo(np.int64).min, -3, 0, 4], dtype=np.int64)
+    i64_2d = np.array([[np.iinfo(np.int64).max, 2], [-3, 4]], dtype=np.int64)
+    negative_result = negative(f64)
+    absolute_result = absolute(f32)
+    assert array_equals(negative_result, np.negative(f64))
+    assert array_equals(absolute_result, np.absolute(f32))
+    assert bool(np.signbit(negative_result[0])) == bool(np.signbit(np.negative(f64)[0]))
+    assert bool(np.signbit(absolute_result[0, 0])) == bool(np.signbit(np.absolute(f32)[0, 0]))
+    np.testing.assert_array_equal(abs_i64(i64), np.abs(i64))
+    np.testing.assert_array_equal(square_i64(i64_2d), np.square(i64_2d))
 
 
 def test_dot_length_mismatch_raises_equivalently(project: CertifiedProject) -> None:
