@@ -75,12 +75,14 @@ one per lowerer (`tests/test_lower_binops.py`,
 
 ### Verified suite totals (this branch)
 
-Repository evidence via `pytest --collect-only` on this tree:
+Repository evidence on this tree:
 
-- **661** collected tests total
-- **115** collected real-Cargo certification cases in
-  `tests/test_certification_real_cargo.py` (cargo-gated; may also skip via
-  dependency `importorskip` conditions such as NumPy/Hypothesis)
+- **743** collected tests total from
+  `.venv/bin/python -m pytest --collect-only -q`
+- **119** collected real-Cargo certification cases from
+  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
+  (cargo-gated; may also skip via dependency `importorskip` conditions such as
+  NumPy/Hypothesis)
 
 ### Rank-2 matmul decision
 

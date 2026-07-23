@@ -232,12 +232,16 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 ### Verified suite totals (this branch)
 
-On this tree, `pytest --collect-only` reports **661** collected tests total and
-**115** collected real-Cargo certification cases in
-`tests/test_certification_real_cargo.py`. Those 115 cases are **cargo-gated**
-and may also skip via dependency `importorskip` conditions (e.g. NumPy,
-Hypothesis). Re-collect after material test changes; do not treat these numbers
-as a product API.
+On this tree:
+
+- `.venv/bin/python -m pytest --collect-only -q` reports **743** collected tests total.
+- The focused collection command
+  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
+  reports **119** real-Cargo certification cases.
+
+Those 119 cases are **cargo-gated** and may also skip via dependency
+`importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material
+test changes; do not treat these numbers as a product API.
 
 ## License
 
