@@ -29,6 +29,7 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
                 f"got {len(ctx.operands)}"
             )
         left = claimed.receiver.arg_type
+        right = claimed.operand_types[0]
         left_expr = ctx.receiver
         right_expr = ctx.operands[0]
     else:
@@ -43,13 +44,22 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
                 f"got {len(ctx.operands)}"
             )
         left = claimed.operand_types[0]
+        right = claimed.operand_types[1]
         left_expr, right_expr = ctx.operands
     if left is None:
         raise ValueError("rextio-numpy dot lower requires non-None left operand type")
     meta = array_meta(left)
     if meta is None:
         raise ValueError(f"rextio-numpy dot lower requires array left operand type, got {left!r}")
-    dtype, _rank = meta
+    if right is None:
+        raise ValueError("rextio-numpy dot lower requires non-None right operand type")
+    right_meta = array_meta(right)
+    dtype, rank = meta
+    if right_meta != meta or dtype not in {"f64", "i64"} or rank != 1:
+        raise ValueError(
+            "rextio-numpy dot lower requires certified same-dtype rank-1 f64/i64 "
+            f"operands; got left={left!r}, right={right!r}"
+        )
     name = rust_snippets.dot_call_name(dtype)
     helper = rust_snippets.dot_typed(dtype)
     return LoweredExpr(

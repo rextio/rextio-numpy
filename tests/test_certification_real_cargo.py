@@ -632,6 +632,45 @@ def test_unary_module_calls_are_natively_served(project: CertifiedProject) -> No
     np.testing.assert_array_equal(square_i64(i64_2d), np.square(i64_2d))
 
 
+@pytest.mark.filterwarnings("ignore:the matrix subclass.*:PendingDeprecationWarning")
+def test_ndarray_subclasses_are_rejected_before_method_semantics(project: CertifiedProject) -> None:
+    """Matrix axis semantics must never be silently normalized to base ndarray."""
+    check = checker(project, "method_average_axis", equals=array_equals)
+    matrix = np.matrix([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+    native, _ = check._run("native", (matrix,))
+    fallback, _ = check._run("fallback", (matrix,))
+    assert native[0] == "raised"
+    assert isinstance(native[1], TypeError)
+    assert str(native[1]) == (
+        "rextio-numpy native boundary requires exact numpy.ndarray; "
+        "ndarray subclasses are unsupported"
+    )
+    assert fallback[0] == "returned"
+    assert type(fallback[1]) is np.matrix
+    assert fallback[1].shape == (2, 1)
+
+
+def test_array_ufunc_override_is_rejected_before_unary_helper(project: CertifiedProject) -> None:
+    """A custom __array_ufunc__ result remains fallback-only, never erased natively."""
+
+    class OverrideArray(np.ndarray):
+        def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+            del ufunc, method, inputs, kwargs
+            return "override-result"
+
+    values = np.array([1.0, -2.0], dtype=np.float64).view(OverrideArray)
+    check = checker(project, "unary_negative_f64", equals=array_equals)
+    native, _ = check._run("native", (values,))
+    fallback, _ = check._run("fallback", (values,))
+    assert native[0] == "raised"
+    assert isinstance(native[1], TypeError)
+    assert str(native[1]) == (
+        "rextio-numpy native boundary requires exact numpy.ndarray; "
+        "ndarray subclasses are unsupported"
+    )
+    assert fallback == ("returned", "override-result")
+
+
 def test_dot_length_mismatch_raises_equivalently(project: CertifiedProject) -> None:
     dot = checker(project, "dot", equals=scalar_close, args_equals=array_equals)
     a = np.array([1.0, 2.0, 3.0])

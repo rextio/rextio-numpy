@@ -97,7 +97,8 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
     assert f64_r1.rust_type == "numpy::ndarray::Array1<f64>"
     conversion = f64_r1.conversion
     assert conversion.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
-    assert conversion.param_expr == "{param}.as_array().to_owned()"
+    assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conversion.param_expr
+    assert "ndarray subclasses are unsupported" in conversion.param_expr
     assert conversion.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
     assert conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
 
@@ -116,7 +117,11 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
         assert pt.rust_type == f"numpy::ndarray::{array_ty}"
         assert pt.conversion.param_rust == f"numpy::{param_ty}<'py, {elem}>"
         assert pt.conversion.return_rust == f"pyo3::Bound<'py, numpy::{return_ty}<{elem}>>"
-        assert pt.conversion.param_expr == "{param}.as_array().to_owned()"
+        assert (
+            f"is_exact_instance_of::<numpy::{return_ty}<{elem}>>"
+            in pt.conversion.param_expr
+        )
+        assert "ndarray subclasses are unsupported" in pt.conversion.param_expr
         assert pt.conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
 
 

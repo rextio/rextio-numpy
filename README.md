@@ -41,6 +41,24 @@ artifact capability.
 Plain runtime aliases of `numpy.ndarray` — no runtime validation. The
 analyzer resolves them to plugin type keys when the plugin is enabled.
 
+### Exact base-ndarray boundary
+
+The annotations are nominal, so static analysis cannot tell an exact
+`numpy.ndarray` from `numpy.matrix`, `numpy.memmap`, or a custom ndarray
+subclass. Every plugin-typed native parameter therefore applies NumPy's exact
+C-level ndarray check before copying data. If the native route is executed
+with a subclass, it deterministically raises:
+
+```text
+TypeError: rextio-numpy native boundary requires exact numpy.ndarray; ndarray subclasses are unsupported
+```
+
+This is a runtime native-boundary rejection, not an automatic static fallback.
+Exact base-ndarray views and strided arrays remain supported. Convert with
+`numpy.asarray` before the typed hot path when subclass behavior is irrelevant;
+when `matrix`, `__array_ufunc__`, `__array_priority__`, or other subclass/subok
+semantics matter, keep the enclosing function on Python fallback.
+
 ### Native surface (verified)
 
 - **Element-wise `+ - * /`** on same-dtype **float64 / float32 / int64**
@@ -138,12 +156,14 @@ contract; warning parity is **not** part of the acceptance surface.
 | Operand types outside the claimed set (incl. f32 sum/mean/dots, rank-1 f32 max/min, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
+| Runtime ndarray subclasses / `matrix` / `__array_ufunc__` overrides at a native boundary | reject (runtime TypeError; not static fallback) | RXTP-NUMPY-013 |
 | Any other NumPy API (unsupported method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
 
-All rules are `experimental`. Codes RXTP-NUMPY-011/012/019 are
-declarative-only: they document fallback boundaries in the rule records but
-are never attached to diagnostics — uncovered sites surface as core's RXT030
-instead. Only RXTP-NUMPY-010 is actively emitted.
+All rules are `experimental`. Codes RXTP-NUMPY-011/012/013/019 are
+declarative-only: they document exclusion boundaries in the rule records but
+are never attached to claim diagnostics. RXTP-NUMPY-013 documents a runtime
+native-boundary rejection rather than fallback; other uncovered sites surface
+as core's RXT030. Only RXTP-NUMPY-010 is actively emitted by `claim()`.
 
 NumPy itself is deliberately **not** a dependency of the plugin — only the
 user-facing `rextio_numpy.types` vocabulary module imports it, in the user's

@@ -5,7 +5,7 @@ from __future__ import annotations
 from rextio.plugins.api import ClaimSite, LoweredExpr, LoweringContext
 
 from rextio_numpy import rust_snippets
-from rextio_numpy.claim.reductions import normalize_axis
+from rextio_numpy.claim.reductions import _dtype_allowed, normalize_axis
 from rextio_numpy.diagnostics import array_meta
 from rextio_numpy.rust_snippets.reductions import axis_call_name, axis_typed, op_from_target
 
@@ -62,7 +62,14 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     if not claimed.keywords:
         # Whole-array sum/mean (bare max/min are never claimed).
         if target not in _WHOLE_ARRAY_TARGETS:
-            return None
+            raise ValueError(
+                f"rextio-numpy whole-array reduction lower does not certify {target!r}"
+            )
+        if not _dtype_allowed(target, dtype, rank, axis=False):
+            raise ValueError(
+                "rextio-numpy reduction lower operand is outside certified dtype/rank matrix: "
+                f"target={target!r}, dtype={dtype!r}, rank={rank}, axis=False"
+            )
         if len(ctx.operands) != expected_ctx_arity:
             requirement = (
                 "exactly zero ctx.operands entries"
@@ -107,6 +114,11 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     if axis is None:
         raise ValueError(
             f"rextio-numpy reductions lower: axis {raw!r} out of range for rank {rank}"
+        )
+    if not _dtype_allowed(target, dtype, rank, axis=True):
+        raise ValueError(
+            "rextio-numpy reduction lower operand is outside certified dtype/rank matrix: "
+            f"target={target!r}, dtype={dtype!r}, rank={rank}, axis=True"
         )
     if len(ctx.operands) != expected_ctx_arity:
         requirement = (

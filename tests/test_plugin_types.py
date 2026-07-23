@@ -47,7 +47,8 @@ def test_f64_1d_matches_wave0_boundary() -> None:
     conv = pt.conversion
     assert isinstance(conv, BoundaryConversion)
     assert conv.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
-    assert conv.param_expr == "{param}.as_array().to_owned()"
+    assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conv.param_expr
+    assert "requires exact numpy.ndarray" in conv.param_expr
     assert conv.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
     assert conv.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
 
@@ -67,5 +68,9 @@ def test_all_rank_dtype_conversions() -> None:
         assert pt.annotations == (f"rextio_numpy.types.{ann}",)
         assert pt.conversion.param_rust == f"numpy::PyReadonlyArray{rank}<'py, {elem}>"
         assert pt.conversion.return_rust == (f"pyo3::Bound<'py, numpy::PyArray{rank}<{elem}>>")
-        assert pt.conversion.param_expr == "{param}.as_array().to_owned()"
+        assert (
+            f"is_exact_instance_of::<numpy::PyArray{rank}<{elem}>>"
+            in pt.conversion.param_expr
+        )
+        assert "ndarray subclasses are unsupported" in pt.conversion.param_expr
         assert pt.conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"

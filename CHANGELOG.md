@@ -17,6 +17,13 @@ capability.
 - Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, float32
   dot/sum/mean, int64 mean, unary method forms, and ufunc overrides (`out`,
   `where`, dtype, etc.) on the Python fallback.
+- Hardens every plugin-array native boundary with an exact base
+  `numpy.ndarray` check. Nominal annotations cannot identify runtime subclasses,
+  so `matrix`, `memmap`, and custom `__array_ufunc__` subclasses now raise a
+  deterministic native-boundary `TypeError`; this is not an automatic static
+  fallback. Exact base-ndarray views remain supported.
+- Revalidates the certified dot and reduction dtype/rank matrices at lower
+  time, including dot RHS equality, so forged/corrupted claims fail closed.
 
 ## 0.1.1 — 2026-07-14
 

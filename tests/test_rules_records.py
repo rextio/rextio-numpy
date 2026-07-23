@@ -52,7 +52,7 @@ def test_numpy_rule_records_order_and_ids() -> None:
 def test_native_and_fallback_split() -> None:
     assert {r.outcome for r in NATIVE_RECORDS} == {"native"}
     assert all(r.verified is True for r in NATIVE_RECORDS)
-    assert {r.outcome for r in FALLBACK_RECORDS} == {"fallback"}
+    assert {r.outcome for r in FALLBACK_RECORDS} == {"fallback", "reject"}
     assert all(r.verified is None for r in FALLBACK_RECORDS)
 
 
@@ -109,6 +109,17 @@ def test_fallback_ndim_is_rank_gt_2() -> None:
     ndim = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-ndim")
     assert ndim.diagnostic_code == "RXTP-NUMPY-011"
     assert "more than 2" in ndim.scope.pattern
+
+
+def test_ndarray_subclass_rule_is_runtime_rejection_not_static_fallback() -> None:
+    record = next(
+        r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/ndarray-subclass-boundary"
+    )
+    assert record.outcome == "reject"
+    assert record.diagnostic_code == "RXTP-NUMPY-013"
+    assert "runtime" in record.constraint
+    assert "not an automatic claim-time fallback" in record.constraint
+    assert "exact numpy.ndarray" in record.constraint
 
 
 def test_rust_snippets_package_public_api() -> None:
