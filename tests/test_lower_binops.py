@@ -100,7 +100,8 @@ def test_try_lower_i64_scalar_order() -> None:
     assert sa_lowered.rust == "__rxtnp_sub2_sa_i64(s, &a)?"
 
 
-def test_try_lower_i64_scalar_literal_uses_the_existing_scalar_route() -> None:
+@pytest.mark.parametrize("value", [2, -(2**63), 2**63 - 1])
+def test_try_lower_i64_scalar_literal_uses_the_existing_scalar_route(value: int) -> None:
     literal_site = ClaimSite(
         kind="binop",
         target="*",
@@ -110,11 +111,11 @@ def test_try_lower_i64_scalar_literal_uses_the_existing_scalar_route() -> None:
         column=0,
         rule_id=_ELEMENTWISE_RULE,
         result_type=I64_1D,
-        operand_literals=(ClaimLiteral(), ClaimLiteral(is_literal=True, value=2)),
+        operand_literals=(ClaimLiteral(), ClaimLiteral(is_literal=True, value=value)),
     )
-    lowered = try_lower(literal_site, ctx("a", "2"))
+    lowered = try_lower(literal_site, ctx("a", str(value)))
     assert lowered is not None
-    assert lowered.rust == "__rxtnp_mul1_as_i64(&a, 2)?"
+    assert lowered.rust == f"__rxtnp_mul1_as_i64(&a, {value})?"
 
 
 def test_try_lower_rejects_literal_incompatible_with_claimed_scalar_type() -> None:
@@ -131,6 +132,23 @@ def test_try_lower_rejects_literal_incompatible_with_claimed_scalar_type() -> No
     )
     with pytest.raises(ValueError, match="literal compatible"):
         try_lower(forged, ctx("a", "true"))
+
+
+@pytest.mark.parametrize("value", [-(2**63) - 1, 2**63])
+def test_try_lower_rejects_out_of_range_i64_literal(value: int) -> None:
+    forged = ClaimSite(
+        kind="binop",
+        target="*",
+        operand_types=(I64_1D, "int"),
+        file_path="",
+        line=0,
+        column=0,
+        rule_id=_ELEMENTWISE_RULE,
+        result_type=I64_1D,
+        operand_literals=(ClaimLiteral(), ClaimLiteral(is_literal=True, value=value)),
+    )
+    with pytest.raises(ValueError, match="i64 literal"):
+        try_lower(forged, ctx("a", str(value)))
 
 
 def test_try_lower_f32_scalar_casts() -> None:
@@ -261,17 +279,17 @@ site = ClaimSite(
     column=0,
     rule_id="rextio-numpy/elementwise-float64",
     result_type=I64_1D,
-    operand_literals=(ClaimLiteral(), ClaimLiteral(is_literal=True, value=True)),
+    operand_literals=(ClaimLiteral(), ClaimLiteral(is_literal=True, value=2**63)),
 )
 ctx = LoweringContext(
-    operands=("a", "true"),
+    operands=("a", str(2**63)),
     target_language="rust",
     fresh_name=lambda prefix: prefix,
 )
 try:
     try_lower(site, ctx)
 except ValueError as exc:
-    if "literal compatible" not in str(exc):
+    if "i64 literal" not in str(exc):
         raise SystemExit(2) from exc
 else:
     raise SystemExit(3)

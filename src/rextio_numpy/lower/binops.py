@@ -137,7 +137,12 @@ def _require_literal_metadata(claimed: ClaimSite) -> None:
             continue
         value = literal.value
         if operand_type == "int" and isinstance(value, int) and not isinstance(value, bool):
-            continue
+            if -(2**63) <= value <= 2**63 - 1:
+                continue
+            raise ValueError(
+                "rextio-numpy binops lower requires an i64 literal in "
+                f"[-2**63, 2**63 - 1] at operand_literals[{index}]; got {value!r}"
+            )
         if operand_type == "float" and isinstance(value, float):
             continue
         raise ValueError(
