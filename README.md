@@ -124,14 +124,20 @@ rules.
 
 ### Optimization-safe lower validation
 
-Only the **covered binop and reduction lower-time invariants** that previously
-relied on `assert` were replaced with explicit **`ValueError`** guards. Those
-guards remain active under `python -O` / `PYTHONOPTIMIZE=1` and fail closed for
-the **covered** malformed `ClaimSite` / `LoweringContext` metadata. This does
-**not** claim that all malformed metadata is rejected or that incorrect helpers
-can never be emitted. Two real optimized-interpreter subprocess regressions —
-one per lowerer (`tests/test_lower_binops.py`,
-`tests/test_lower_reductions.py`) — protect that covered fail-closed path.
+Every native lowerer — elementwise binops, dot, reductions, unary calls, and
+fusion — independently revalidates its claim/context contract before emitting
+Rust. The explicit `ValueError` guards remain active under `python -O` /
+`PYTHONOPTIMIZE=1`: they verify the route rule and reconstructed result type,
+operand mode and placement, operand arity/types, and the route's permitted
+literals, keywords, callables, expression, and receiver metadata. Forged or
+inconsistent metadata therefore fails closed instead of emitting a helper.
+For non-literal operands, both Core's omitted `operand_literals` form and its
+arity-matched `ClaimLiteral(is_literal=False)` placeholders are accepted;
+populated slots with a mismatched count or literal value are rejected.
+
+The required CI native-certification matrix runs the complete real-Cargo suite
+without test selection for both Core 0.1.3 and 0.1.5, and rejects skipped
+certification cases.
 
 ### Accepted release divergence: missing NumPy `RuntimeWarning`
 
