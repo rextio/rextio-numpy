@@ -1,8 +1,9 @@
 """Feature-owned plugin type registry for the rextio-numpy array surface.
 
 Holds the complete ``PluginType`` / ``BoundaryConversion`` definitions for
-float64, float32, and int64 at ranks 1 and 2 plus two resident boolean result
-types. ``plugin.py`` exposes this registry via ``type_vocabulary()``.
+float64, float32, and int64 at ranks 1 and 2 plus two unnameable resident
+boolean result-only types. ``plugin.py`` exposes this registry via
+``type_vocabulary()``.
 """
 
 from __future__ import annotations
@@ -74,17 +75,17 @@ def _array_type(
     )
 
 
-def _resident_bool_type(*, key: str, rank: int, annotation: str) -> PluginType:
-    """Build an internal-only boolean array type with no Python boundary."""
+def _resident_bool_type(*, key: str, rank: int) -> PluginType:
+    """Build an unnameable result-only boolean array type."""
     return PluginType(
         key=key,
-        annotations=(f"rextio_numpy.types.{annotation}",),
+        annotations=(),
         rust_type=f"numpy::ndarray::Array{rank}<bool>",
         conversion=None,
     )
 
 
-# Stable registry: six materialized numeric types, then two resident bool types.
+# Stable registry: six materialized numeric types, then two result-only bool types.
 PLUGIN_TYPES: tuple[PluginType, ...] = (
     _array_type(key=F64_1D, annotation="F64Arr1", rank=1, elem="f64"),
     _array_type(key=F64_2D, annotation="F64Arr2", rank=2, elem="f64"),
@@ -92,15 +93,15 @@ PLUGIN_TYPES: tuple[PluginType, ...] = (
     _array_type(key=F32_2D, annotation="F32Arr2", rank=2, elem="f32"),
     _array_type(key=I64_1D, annotation="I64Arr1", rank=1, elem="i64"),
     _array_type(key=I64_2D, annotation="I64Arr2", rank=2, elem="i64"),
-    _resident_bool_type(key=BOOL_1D, rank=1, annotation="_resident.BoolArr1"),
-    _resident_bool_type(key=BOOL_2D, rank=2, annotation="_resident.BoolArr2"),
+    _resident_bool_type(key=BOOL_1D, rank=1),
+    _resident_bool_type(key=BOOL_2D, rank=2),
 )
 
 _PLUGIN_TYPES_BY_KEY: dict[str, PluginType] = {t.key: t for t in PLUGIN_TYPES}
 
 
 def plugin_types() -> tuple[PluginType, ...]:
-    """Return six boundary numeric types plus two resident boolean types."""
+    """Return six boundary types plus two unnameable resident result types."""
     return PLUGIN_TYPES
 
 

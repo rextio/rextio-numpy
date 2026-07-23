@@ -45,8 +45,10 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
 
 Comparison results use two additional plugin-owned resident types internally
 (`rextio-numpy/bool-1d` and `rextio-numpy/bool-2d`). They deliberately have no
-public `BoolArr1` / `BoolArr2` aliases and no Python boundary conversion: a
-mask must be produced and consumed inside generated native code.
+annotation spellings (`PluginType.annotations == ()`), no public
+`BoolArr1` / `BoolArr2` aliases, and no Python boundary conversion. Source code
+cannot name or forge them: a mask must be produced by a claimed comparison and
+consumed inside generated native code.
 
 ### Exact base-ndarray boundary
 
@@ -83,14 +85,17 @@ semantics matter, keep the enclosing function on Python fallback.
   **float64 / float32 / int64** rank-1/rank-2 arrays, including every
   rank-1↔rank-2 broadcast pairing and matching array↔Python-scalar forms.
   The result is a resident rank-1/rank-2 boolean array that cannot cross a
-  Python parameter or return boundary (`RXTP-NUMPY-009`). Chained, identity,
-  and membership comparisons stay fallback.
+  Python parameter or return boundary; a direct exported return is rejected
+  by Core with `RXT092` (`RXTP-NUMPY-009`). Chained, identity, and membership
+  comparisons stay fallback.
 - **Exact three-positional-argument `numpy.where(condition, x, y)`** where
   `condition` is one of those resident comparison results and the branches
   are same-dtype numeric arrays, or one array plus its matching Python scalar.
   At least one branch must be an array. Condition-only, keyword, two-scalar,
-  mixed-dtype, and alias forms stay fallback. Comparison and branch shapes are
-  validated independently under NumPy broadcasting, including zero axes
+  and mixed-dtype forms stay fallback. Core-canonicalized import aliases such
+  as `np.where` and `from numpy import where as choose` are supported; runtime
+  assignment/rebinding aliases stay fallback. Comparison and branch shapes
+  are validated independently under NumPy broadcasting, including zero axes
   (`RXTP-NUMPY-014`).
 - **`numpy.dot(a, b)` / `a.dot(b)`** on same-dtype **1-D float64 and int64**
   only. **float32** 1-D dots are **deliberately fallback**
@@ -283,7 +288,7 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 On this tree:
 
-- `.venv/bin/python -m pytest --collect-only -q` reports **949** collected tests total.
+- `.venv/bin/python -m pytest --collect-only -q` reports **950** collected tests total.
 - The focused collection command
   `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
   reports **150** real-Cargo certification cases.

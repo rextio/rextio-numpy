@@ -24,12 +24,16 @@ advertise the optional standalone-artifact capability.
 - Adds non-chained `==`, `!=`, `<`, `<=`, `>`, and `>=` over same-dtype
   f64/f32/i64 rank-1/rank-2 arrays, including every rank pairing and matching
   array↔scalar forms. Results are plugin-owned resident boolean arrays with no
-  Python boundary conversion.
+  annotation spellings and no Python boundary conversion, so source cannot
+  name or forge a condition type; returning one through an exported boundary
+  is rejected by Core with `RXT092`.
 - Adds exact three-positional-argument `numpy.where(condition, x, y)` for a
   resident comparison condition and same-dtype numeric array branches, or one
   array plus a matching scalar. Independent three-way broadcasting includes
   zero axes and NumPy-compatible shape errors; condition-only, keyword,
-  two-scalar, mixed-dtype, and alias forms remain fallback.
+  two-scalar, and mixed-dtype forms remain fallback. Core-canonicalized import
+  aliases (`np.where`, `from numpy import where as choose`) remain supported;
+  runtime assignment/rebinding aliases stay fallback.
 - Certifies f32 weak Python scalars across huge finite values, NaN, infinities,
   and signed zero for comparisons and both `where` scalar branch positions,
   including selected-value bits. Integer scalar lanes inherit Core's signed-i64
@@ -71,7 +75,7 @@ advertise the optional standalone-artifact capability.
 - Required CI installs the live Core `0.1.6` integration branch, asserts plugin
   API 1.5, and runs the complete real-Cargo certification suite without test
   selection; skipped certification cases fail the job.
-- The current tree collects **949** tests in total and **150** tests in the
+- The current tree collects **950** tests in total and **150** tests in the
   real-Cargo certification module.
 
 ## 0.1.1 — 2026-07-14

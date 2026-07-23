@@ -57,8 +57,8 @@ def test_type_vocabulary_surface_via_plugin_still_wave0() -> None:
         ("rextio_numpy.types.F32Arr2",),
         ("rextio_numpy.types.I64Arr1",),
         ("rextio_numpy.types.I64Arr2",),
-        ("rextio_numpy.types._resident.BoolArr1",),
-        ("rextio_numpy.types._resident.BoolArr2",),
+        (),
+        (),
     ]
 
     # Wave-0 F64 rank-1 compatibility surface remains first and unchanged.

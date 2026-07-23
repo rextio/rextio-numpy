@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
 
+from rextio.analyzer.plugin_claims import ClaimEngine
 from rextio.analyzer.project_scanner import analyze_project
 from rextio.codegen.rust.generator import generate_rust_module
 from rextio.config.schema import PluginConfig, RextioConfig
@@ -78,11 +80,17 @@ def _write_project(tmp_path: Path) -> Path:
         """
 import numpy as np
 import rextio
+from numpy import where as choose
 from rextio_numpy.types import F64Arr1
-from rextio_numpy.types._resident import BoolArr1
+
+where_rebound = np.where
 
 def choose_positive(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
-    return np.where(values > 0.0, values, fallback)
+    mask = values > 0.0
+    return np.where(mask, values, fallback)
+
+def choose_positive_import_alias(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
+    return choose(values > 0.0, values, fallback)
 
 def chained_fallback(a: F64Arr1, b: F64Arr1, c: F64Arr1) -> F64Arr1:
     return np.where(a < b < c, a, c)
@@ -94,8 +102,14 @@ def condition_boundary(mask: np.ndarray, a: F64Arr1, b: F64Arr1) -> F64Arr1:
     return np.where(mask, a, b)
 
 @rextio.native
-def resident_bool_boundary(mask: BoolArr1) -> int:
-    return 1
+def comparison_boundary(values: F64Arr1):
+    return values > 0.0
+
+def runtime_rebound_where(
+    values: F64Arr1,
+    fallback: F64Arr1,
+) -> F64Arr1:
+    return where_rebound(values > 0.0, values, fallback)
 """,
         encoding="utf-8",
     )
@@ -109,6 +123,20 @@ def _function(analysis, name: str):
             if function.qualname == qualname:
                 return function
     raise AssertionError(f"{qualname!r} not found")
+
+
+def test_result_only_bool_type_cannot_be_forged_from_source() -> None:
+    engine = ClaimEngine(_registry(), RextioConfig())
+    direct = ast.parse("rextio_numpy.types.BoolArr1", mode="eval").body
+    imported = ast.parse("BoolArr1", mode="eval").body
+
+    assert engine.resolve_annotation(direct, {}) is None
+    assert engine.resolve_annotation(
+        imported,
+        {"BoolArr1": "rextio_numpy.types.BoolArr1"},
+    ) is None
+    assert engine.is_plugin_type("rextio-numpy/bool-1d") is True
+    assert engine.is_resident_type("rextio-numpy/bool-1d") is True
 
 
 def test_api_15_compare_result_flows_into_where_and_codegen(tmp_path: Path) -> None:
@@ -153,6 +181,16 @@ def test_api_15_compare_result_flows_into_where_and_codegen(tmp_path: Path) -> N
     assert "__rxtnp_where111_aa_f64(&" in source
     assert "Array1<bool>" in source
 
+    imported_alias = _function(analysis, "choose_positive_import_alias")
+    assert imported_alias.accepted is True
+    assert [
+        (claim.kind, claim.target, claim.rule_id)
+        for claim in imported_alias.plugin_claims
+    ] == [
+        ("compare", ">", "rextio-numpy/elementwise-compare"),
+        ("call", "numpy.where", "rextio-numpy/where-three-argument"),
+    ]
+
     for name in ("chained_fallback", "identity_fallback", "condition_boundary"):
         function = _function(analysis, name)
         assert function.accepted is False, (
@@ -169,7 +207,18 @@ def test_api_15_compare_result_flows_into_where_and_codegen(tmp_path: Path) -> N
             for claim in function.plugin_claims
         )
 
-    resident_boundary = _function(analysis, "resident_bool_boundary")
-    assert resident_boundary.has_resident_signature is True
-    assert resident_boundary.accepted is False
-    assert "RXT092" in resident_boundary.rejection_codes
+    comparison_boundary = _function(analysis, "comparison_boundary")
+    assert comparison_boundary.accepted is False
+    assert "RXT092" in comparison_boundary.rejection_codes
+    assert any(
+        claim.rule_id == "rextio-numpy/elementwise-compare"
+        and claim.result_type == "rextio-numpy/bool-1d"
+        for claim in comparison_boundary.plugin_claims
+    )
+
+    rebound = _function(analysis, "runtime_rebound_where")
+    assert rebound.accepted is False
+    assert not any(
+        claim.rule_id == "rextio-numpy/where-three-argument"
+        for claim in rebound.plugin_claims
+    )

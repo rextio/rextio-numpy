@@ -75,9 +75,7 @@ def test_bool_results_are_plugin_owned_resident_types_without_boundaries() -> No
     assert {BOOL_1D, BOOL_2D}.issubset(plugin_type_keys())
     for key, rank in ((BOOL_1D, 1), (BOOL_2D, 2)):
         resident = plugin_type(key)
-        assert resident.annotations == (
-            f"rextio_numpy.types._resident.BoolArr{rank}",
-        )
+        assert resident.annotations == ()
         assert resident.rust_type == f"numpy::ndarray::Array{rank}<bool>"
         assert resident.conversion is None
         assert resident.is_resident is True
@@ -226,7 +224,7 @@ def test_where_near_misses_fail_closed(operands: tuple[str | None, ...]) -> None
         assert isinstance(result, Rejected)
 
 
-def test_where_rejects_keywords_and_aliases() -> None:
+def test_where_rejects_keywords_and_other_numpy_apis() -> None:
     keyword = PLUGIN.claim(
         _site(
             "call",

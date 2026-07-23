@@ -70,7 +70,7 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
     assert len(registry.types) == 8
     assert all(binding.plugin_id == "rextio-numpy" for binding in registry.types)
     loaded = tuple(binding.plugin_type for binding in registry.types)
-    # Exact stable order: f64 r1/r2, f32 r1/r2, i64 r1/r2.
+    # Exact stable order: six boundary arrays, then two result-only bool types.
     assert [pt.key for pt in loaded] == [
         "rextio-numpy/f64-1d",
         "rextio-numpy/f64-2d",
@@ -88,8 +88,8 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
         ("rextio_numpy.types.F32Arr2",),
         ("rextio_numpy.types.I64Arr1",),
         ("rextio_numpy.types.I64Arr2",),
-        ("rextio_numpy.types._resident.BoolArr1",),
-        ("rextio_numpy.types._resident.BoolArr2",),
+        (),
+        (),
     ]
     # Identity with the feature-owned registry (no duplicate unit coverage).
     assert loaded == PLUGIN_TYPES
@@ -106,6 +106,13 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
     assert conversion.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
     assert conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
 
+    by_key = {pt.key: pt for pt in loaded}
+    for key in ("rextio-numpy/bool-1d", "rextio-numpy/bool-2d"):
+        resident = by_key[key]
+        assert resident.annotations == ()
+        assert resident.conversion is None
+        assert resident.is_resident is True
+
     # Spot-check remaining ranks/dtypes via the integrated registry surface.
     expected_rust = {
         "rextio-numpy/f64-2d": ("Array2<f64>", "PyReadonlyArray2", "PyArray2"),
@@ -114,7 +121,6 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
         "rextio-numpy/i64-1d": ("Array1<i64>", "PyReadonlyArray1", "PyArray1"),
         "rextio-numpy/i64-2d": ("Array2<i64>", "PyReadonlyArray2", "PyArray2"),
     }
-    by_key = {pt.key: pt for pt in loaded}
     for key, (array_ty, param_ty, return_ty) in expected_rust.items():
         elem = key.split("/")[-1].split("-")[0]  # f64 / f32 / i64
         pt = by_key[key]
