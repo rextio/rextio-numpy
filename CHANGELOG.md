@@ -6,6 +6,11 @@ Requires **`rextio>=0.1.3,<0.2`** and advertises plugin API **1.3** solely to
 consume Core receiver metadata; it does not advertise the API-1.4 artifact
 capability.
 
+- Adds exact two-positional/no-keyword `numpy.add`, `numpy.subtract`,
+  `numpy.multiply`, and `numpy.divide` call aliases over the existing
+  operator dtype/rank/broadcast matrix. Optional ufunc arguments (`out`,
+  `where`, `dtype`, `casting`, and all other extras), mixed dtypes, and
+  unsupported ranks remain fail-closed fallback.
 - Adds certified ndarray method parity for `a.dot(b)`, whole-array
   `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
   the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly

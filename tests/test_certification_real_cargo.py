@@ -81,6 +81,22 @@ def div(a: F64Arr1, b: F64Arr1) -> F64Arr1:
     return a / b
 
 
+def ufunc_add_f64_2d(a: F64Arr2, b: F64Arr2) -> F64Arr2:
+    return np.add(a, b)
+
+
+def ufunc_sub_f64_2d_1d(a: F64Arr2, b: F64Arr1) -> F64Arr2:
+    return np.subtract(a, b)
+
+
+def ufunc_mul_f32_scalar(a: F32Arr1, factor: float) -> F32Arr1:
+    return np.multiply(a, factor)
+
+
+def ufunc_div_i64_1d(a: I64Arr1, b: I64Arr1) -> F64Arr1:
+    return np.divide(a, b)
+
+
 def scale(a: F64Arr1, factor: float) -> F64Arr1:
     return a * factor
 
@@ -569,6 +585,31 @@ def test_elementwise_array_array_exact(project: CertifiedProject, name: str) -> 
     check = checker(project, name, equals=array_equals, args_equals=array_equals)
     result = check(ARRAY, OTHER)
     assert isinstance(result, np.ndarray)
+    assert result.dtype == np.float64
+
+
+def test_exact_ufunc_call_aliases_are_natively_served(project: CertifiedProject) -> None:
+    """Four exact call spellings reuse the certified operator matrix."""
+    add = _require_native(project, "ufunc_add_f64_2d")
+    sub = _require_native(project, "ufunc_sub_f64_2d_1d")
+    mul = _require_native(project, "ufunc_mul_f32_scalar")
+    div = _require_native(project, "ufunc_div_i64_1d")
+
+    matrix = np.array([[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]], dtype=np.float64)
+    other = np.array([[0.5, 4.0, -1.0], [2.0, -3.0, 8.0]], dtype=np.float64)
+    vector = np.array([0.25, -0.5, 2.0], dtype=np.float64)
+    f32 = np.array([1.5, -2.0, 0.0], dtype=np.float32)
+    left_i64 = np.array([1, -2, 0], dtype=np.int64)
+    right_i64 = np.array([2, 4, 0], dtype=np.int64)
+
+    np.testing.assert_array_equal(add(matrix, other), np.add(matrix, other))
+    np.testing.assert_array_equal(sub(matrix, vector), np.subtract(matrix, vector))
+    np.testing.assert_array_equal(mul(f32, 2.5), np.multiply(f32, 2.5))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = div(left_i64, right_i64)
+        expected = np.divide(left_i64, right_i64)
+    assert np.array_equal(result, expected, equal_nan=True)
     assert result.dtype == np.float64
 
 

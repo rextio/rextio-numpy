@@ -1,4 +1,4 @@
-"""Claim decisions for elementwise binops (+, -, *, /)."""
+"""Claim decisions for elementwise operators and exact NumPy ufunc aliases."""
 
 from __future__ import annotations
 
@@ -14,8 +14,15 @@ from rextio_numpy.diagnostics import (
 
 # Binary operator token -> the elementwise helper op name (shared with lower).
 BINOP_NAMES = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+UFUNC_CALL_NAMES = {
+    "numpy.add": "+",
+    "numpy.subtract": "-",
+    "numpy.multiply": "*",
+    "numpy.divide": "/",
+}
 
 _ELEMENTWISE_RULE = "rextio-numpy/elementwise-float64"
+_ELEMENTWISE_UFUNC_RULE = "rextio-numpy/elementwise-ufunc-call"
 
 
 def _result_array_type(dtype: str, rank: int, op: str) -> str:
@@ -26,10 +33,8 @@ def _result_array_type(dtype: str, rank: int, op: str) -> str:
     return type_key_for(dtype, rank)
 
 
-def try_claim(site: ClaimSite) -> ClaimResult | None:
-    """Return a claim result for elementwise binops, or None if not this lane."""
-    if site.kind != "binop" or site.target not in BINOP_NAMES:
-        return None
+def _claim_operands(site: ClaimSite, op: str, rule_id: str) -> ClaimResult:
+    """Claim the shared array/scalar matrix for one normalized operator."""
     if len(site.operand_types) != 2:
         return not_covered_or_rejected(site)
     left, right = site.operand_types
@@ -44,10 +49,7 @@ def try_claim(site: ClaimSite) -> ClaimResult | None:
     if left is None or right is None:
         return not_covered_or_rejected(site)
 
-    op = site.target
-
     if left_arr and right_arr:
-        assert left is not None and right is not None
         left_meta = array_meta(left)
         right_meta = array_meta(right)
         assert left_meta is not None and right_meta is not None
@@ -58,30 +60,43 @@ def try_claim(site: ClaimSite) -> ClaimResult | None:
             return not_covered_or_rejected(site)
         result_rank = max(left_rank, right_rank)
         return Claimed(
-            rule_id=_ELEMENTWISE_RULE,
+            rule_id=rule_id,
             result_type=_result_array_type(left_dtype, result_rank, op),
         )
 
     # Exactly one operand is an array; the other must be the matching scalar.
     if left_arr:
-        assert left is not None
         meta = array_meta(left)
         assert meta is not None
         dtype, rank = meta
         if right != SCALAR_FOR_DTYPE[dtype]:
             return not_covered_or_rejected(site)
         return Claimed(
-            rule_id=_ELEMENTWISE_RULE,
+            rule_id=rule_id,
             result_type=_result_array_type(dtype, rank, op),
         )
 
-    assert right is not None
     meta = array_meta(right)
     assert meta is not None
     dtype, rank = meta
     if left != SCALAR_FOR_DTYPE[dtype]:
         return not_covered_or_rejected(site)
     return Claimed(
-        rule_id=_ELEMENTWISE_RULE,
+        rule_id=rule_id,
         result_type=_result_array_type(dtype, rank, op),
+    )
+
+
+def try_claim(site: ClaimSite) -> ClaimResult | None:
+    """Return a claim result for elementwise operators or exact ufunc calls."""
+    if site.kind == "binop" and site.target in BINOP_NAMES:
+        return _claim_operands(site, site.target, _ELEMENTWISE_RULE)
+    if site.kind != "call" or site.target not in UFUNC_CALL_NAMES:
+        return None
+    if site.receiver is not None or site.keywords or site.callables:
+        return not_covered_or_rejected(site)
+    return _claim_operands(
+        site,
+        UFUNC_CALL_NAMES[site.target],
+        _ELEMENTWISE_UFUNC_RULE,
     )

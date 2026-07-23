@@ -40,6 +40,42 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         verified=True,
     ),
     RuleRecord(
+        id="rextio-numpy/elementwise-ufunc-call",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern=(
+                "exact numpy.add/subtract/multiply/divide(a, b) calls with two "
+                "positional operands and no keywords, over the same dtype/rank/"
+                "broadcast matrix as element-wise +, -, *, /"
+            ),
+        ),
+        constraint=(
+            "Exact two-positional-operand NumPy ufunc calls reuse the certified "
+            "operator lowering without broadening it: same-dtype float64/float32/"
+            "int64 arrays of rank 1 or 2 under rank-1/rank-2 broadcasting, or one "
+            "such array and the matching Python scalar. Subtract and divide preserve "
+            "operand order; int64 divide yields float64 at the broadcast result rank; "
+            "int64 add/subtract/multiply wrap as NumPy release builds do. Calls with "
+            "out, where, dtype, casting, order, subok, signature, extobj, or any "
+            "other keyword/extra argument are rejected and retain Python fallback. "
+            "Mixed array dtypes, mismatched scalar types, unresolved operands, and "
+            "other ranks remain outside the native surface. As for the operator "
+            "route, native floating operations omit NumPy RuntimeWarnings while "
+            "preserving certified values, dtypes, shapes, exceptions, and inputs."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-007",
+        guidance=(
+            "Use numpy.add/subtract/multiply/divide with exactly two positional "
+            "operands from the documented same-dtype rank-1/rank-2 array/scalar "
+            "matrix and no optional ufunc arguments; otherwise keep the call on "
+            "Python fallback."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
         id="rextio-numpy/dot-float64",
         provider="rextio-numpy",
         scope=RuleScope(

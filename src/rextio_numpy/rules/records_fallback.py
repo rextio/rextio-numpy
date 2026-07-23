@@ -12,7 +12,7 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             kind="call",
             pattern=(
                 "covered numpy.dot/sum/mean/max/min/unary module (including certified ndarray method) "
-                "call or elementwise +/-/*// binop "
+                "call, exact numpy.add/subtract/multiply/divide call, or elementwise +/-/*// binop "
                 "whose resolved operand types are outside the float64/float32/int64 "
                 "rank-1/2 surface (including excluded reduction dtype cells)"
             ),
@@ -29,7 +29,9 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "1-D dot covers same-dtype float64/int64 only (float32 dots "
             "are excluded). Unresolved operands and wrong-arity/unsupported call "
             "shapes (including bare max/min, non-literal axis, tuple axis, extra "
-            "kwargs) are NotCovered instead, so core's own diagnostic fires. Emitted "
+            "kwargs) are NotCovered instead, except exact arithmetic ufunc calls with "
+            "optional/extra arguments, which fail closed through this fallback "
+            "diagnostic. Emitted "
             "from both call and binop sites — the code is the operand-type rejection, "
             "not a dtype-annotation rule."
         ),
@@ -122,7 +124,8 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             pattern=(
                 "any numpy API outside the covered symbols (fancy indexing, unsupported "
                 "method forms, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
-                "matmul/@, ufunc kwargs, random, linalg, amax/amin, ...)"
+                "matmul/@, unsupported ufuncs or optional ufunc arguments, random, "
+                "linalg, amax/amin, ...)"
             ),
         ),
         constraint=(

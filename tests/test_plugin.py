@@ -160,6 +160,7 @@ def test_rule_records_shape() -> None:
     native_ids = {record.id for record in records if record.outcome == "native"}
     assert native_ids == {
         "rextio-numpy/elementwise-float64",
+        "rextio-numpy/elementwise-ufunc-call",
         "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/dot-float64",
             "rextio-numpy/reduction-sum-mean",

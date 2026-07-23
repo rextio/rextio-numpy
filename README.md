@@ -67,6 +67,11 @@ semantics matter, keep the enclosing function on Python fallback.
   array–scalar, and scalar–array; operand order preserved for `-` and `/`.
   int64 true division (`/`) yields a **float64** array at the broadcast
   result rank (`RXTP-NUMPY-001`).
+- **Exact binary ufunc calls** `numpy.add`, `numpy.subtract`,
+  `numpy.multiply`, and `numpy.divide` with exactly two positional operands
+  reuse that same dtype/rank/broadcast matrix (`RXTP-NUMPY-007`). Optional
+  ufunc arguments such as `out`, `where`, `dtype`, and `casting`, extra
+  operands, and mixed/unsupported dtypes remain on Python fallback.
 - **`numpy.dot(a, b)` / `a.dot(b)`** on same-dtype **1-D float64 and int64**
   only. **float32** 1-D dots are **deliberately fallback**
   (sequential f32 accumulation diverges materially from NumPy pairwise
@@ -123,9 +128,10 @@ rules.
 
 ### Optimization-safe lower validation
 
-Every native lowerer — elementwise binops, dot, reductions, unary calls, and
-fusion — independently revalidates its claim/context contract before emitting
-Rust. The explicit `ValueError` guards remain active under `python -O` /
+Every native lowerer — elementwise binops and exact ufunc-call aliases, dot,
+reductions, unary calls, and fusion — independently revalidates its
+claim/context contract before emitting Rust. The explicit `ValueError` guards
+remain active under `python -O` /
 `PYTHONOPTIMIZE=1`: they verify the route rule and reconstructed result type,
 operand mode and placement, operand arity/types, and the route's permitted
 literals, keywords, callables, expression, and receiver metadata. Forged or
@@ -154,6 +160,7 @@ contract; warning parity is **not** part of the acceptance surface.
 | Rule | Outcome | Code |
 |---|---|---|
 | Element-wise `+ - * /` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar) | native (verified) | RXTP-NUMPY-001 |
+| Exact two-positional/no-keyword `numpy.add/subtract/multiply/divide(a, b)` over the same matrix | native (verified) | RXTP-NUMPY-007 |
 | `numpy.dot(a, b)` / `a.dot(b)` on same-dtype 1-D f64/i64 (not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
 | Whole-array `numpy.sum` / `a.sum` on f64/i64 ranks 1–2; `numpy.mean` / `a.mean` on f64 ranks 1–2 (no kwargs) | native (verified) | RXTP-NUMPY-003 |
 | Literal-axis module or ndarray-method `sum/mean/max/min(axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |

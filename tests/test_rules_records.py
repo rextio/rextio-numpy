@@ -25,6 +25,10 @@ def test_public_coverage_import() -> None:
         "numpy.ndarray.mean",
         "numpy.ndarray.max",
         "numpy.ndarray.min",
+        "numpy.add",
+        "numpy.subtract",
+        "numpy.multiply",
+        "numpy.divide",
         "numpy.negative",
         "numpy.absolute",
         "numpy.abs",
@@ -60,6 +64,7 @@ def test_native_records_broadened_but_ids_stable() -> None:
     by_id = {r.id: r for r in NATIVE_RECORDS}
     assert set(by_id) == {
         "rextio-numpy/elementwise-float64",
+        "rextio-numpy/elementwise-ufunc-call",
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
         "rextio-numpy/reduction-axis",
@@ -71,6 +76,10 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "rank 1 or 2" in elem.scope.pattern
     assert "int64" in elem.constraint
     assert "broadcast" in elem.constraint.lower()
+    ufunc = by_id["rextio-numpy/elementwise-ufunc-call"]
+    assert ufunc.diagnostic_code == "RXTP-NUMPY-007"
+    assert "numpy.add" in ufunc.scope.pattern
+    assert "out" in ufunc.constraint and "where" in ufunc.constraint
     dot = by_id["rextio-numpy/dot-float64"]
     assert dot.diagnostic_code == "RXTP-NUMPY-002"
     assert "2-D" in dot.scope.pattern or "2-D" in dot.constraint
