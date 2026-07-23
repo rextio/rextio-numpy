@@ -45,8 +45,8 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         scope=RuleScope(
             kind="call",
             pattern=(
-                "numpy.dot(a, b) on same-dtype 1-D float64/int64 arrays "
-                "(module-call form; float32, 2-D, and matmul/@ are not claimed)"
+                "numpy.dot(a, b) or a.dot(b) on same-dtype 1-D float64/int64 arrays "
+                "(float32, 2-D, keywords, and matmul/@ are not claimed)"
             ),
         ),
         constraint=(
@@ -57,7 +57,10 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "the Python fallback: sequential f32 accumulation diverges materially from "
             "NumPy pairwise summation on long/mixed-magnitude inputs, and the plugin "
             "API has no enforceable runtime length gate or fallback hook. 2-D "
-            "operands, mixed dtypes, and the @ operator stay unclaimed. Documented "
+            "operands, mixed dtypes, keyword forms, and the @ operator stay unclaimed. "
+            "The equivalent ndarray method form a.dot(b) is admitted only through "
+            "plugin API 1.3 receiver metadata; core evaluates the receiver exactly "
+            "once before b. Documented "
             "divergences for claimed float64 dots: float summation order may differ "
             "from NumPy's pairwise summation (verified means within-tolerance, not "
             "bit-equivalence); certified within 1e-12 relative/absolute tolerance. "
@@ -67,7 +70,7 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         outcome="native",
         diagnostic_code="RXTP-NUMPY-002",
         guidance=(
-            "Use numpy.dot directly on same-dtype 1-D float64/int64 arrays; float32 "
+            "Use numpy.dot(a, b) or a.dot(b) on same-dtype 1-D float64/int64 arrays; float32 "
             "dots, the @ operator, and 2-D matmul forms are not lowered by "
             "rextio-numpy, so they stay on the fallback. Avoid dtype-mixing operands "
             "(cast explicitly first)."
@@ -81,11 +84,10 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         scope=RuleScope(
             kind="call",
             pattern=(
-                "numpy.sum over a whole float64/int64 array of rank 1 or 2, or "
-                "numpy.mean over a whole float64 array of rank 1 or 2 "
-                "(module-call form with no keywords; float32 whole-array reductions, "
-                "int64 mean, ndarray method forms, bare max/min, and non-literal "
-                "axis forms are not claimed under this rule)"
+                "numpy.sum(a)/a.sum() over a whole float64/int64 array of rank 1 or 2, "
+                "or numpy.mean(a)/a.mean() over a whole float64 array of rank 1 or 2 "
+                "(no keywords; float32 whole-array reductions, int64 mean, bare max/min, "
+                "and non-literal axis forms are not claimed under this rule)"
             ),
         ),
         constraint=(
@@ -100,7 +102,9 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "tile([2**53, 1, -2**53], n) → NumPy ~0.11 vs sequential 0.0), and the "
             "plugin API has no enforceable runtime length gate or fallback hook. "
             "Literal single-axis reductions live under rextio-numpy/reduction-axis "
-            "(RXTP-NUMPY-004). The a.sum()/a.mean() method forms stay on the fallback. "
+            "(RXTP-NUMPY-004). The equivalent a.sum()/a.mean() method forms are "
+            "admitted through plugin API 1.3 receiver metadata, evaluated exactly "
+            "once by core before any positional operands. "
             "Result dtypes follow NumPy 2.4 practical semantics: int64 sum is int64 "
             "(wraparound under overflow); float64 sum/mean return a builtin Python "
             "float (not a NumPy scalar subclass — type()/repr/.dtype observably "
@@ -130,18 +134,20 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         scope=RuleScope(
             kind="call",
             pattern=(
-                "numpy.sum/mean/max/min(a, axis=<int literal>) with exactly one "
-                "positional array and exactly one named axis keyword "
-                "(module-call form; ranks 1–2; see constraint for dtype matrix)"
+                "numpy.sum/mean/max/min(a, axis=<int literal>) or "
+                "a.sum/mean/max/min(axis=<int literal>) with exactly one named axis "
+                "keyword (ranks 1–2; see constraint for dtype matrix)"
             ),
         ),
         constraint=(
             "Single-axis reductions with a static signed integer axis literal "
             "(normalized against rank at claim time; out-of-range axes are not "
-            "claimed). Accepted forms: exactly one positional array argument and "
-            "exactly the keyword axis=<int>; no dtype/out/keepdims/initial/where, "
+            "claimed). Accepted forms: module calls with exactly one positional array "
+            "argument, or ndarray method calls with that array as the API-1.3 receiver, "
+            "and in both forms exactly the keyword axis=<int>; no dtype/out/keepdims/initial/where, "
             "no positional axis, no axis=None, no tuple axis, no dynamic axis, no "
-            "duplicate/extra keywords, no method forms, no numpy.amax/amin. "
+            "duplicate/extra keywords, no numpy.amax/amin. Core evaluates a method "
+            "receiver exactly once before call operands. "
             "Dtype/rank matrix: sum on float64/int64 ranks 1–2; mean on float64 "
             "ranks 1–2; max/min on float64/int64 ranks 1–2 and float32 rank 2 only "
             "(rank-1 float32 max/min stay fallback so a core float scalar cannot "
@@ -173,10 +179,11 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         outcome="native",
         diagnostic_code="RXTP-NUMPY-004",
         guidance=(
-            "Write numpy.sum/mean/max/min(a, axis=<int literal>) with a static "
+            "Write numpy.sum/mean/max/min(a, axis=<int literal>) or "
+            "a.sum/mean/max/min(axis=<int literal>) with a static "
             "integer axis on float64/int64 ranks 1–2 (or float32 rank-2 max/min). "
             "Cast float32 sum/mean and int64 mean to float64 at the boundary if a "
-            "native reduction is required. Keep method forms, amax/amin, tuple "
+            "native reduction is required. Keep amax/amin, tuple "
             "axes, and keepdims/out kwargs on the Python fallback."
         ),
         stability="experimental",

@@ -20,6 +20,11 @@ def test_public_coverage_import() -> None:
         "numpy.mean",
         "numpy.max",
         "numpy.min",
+        "numpy.ndarray.dot",
+        "numpy.ndarray.sum",
+        "numpy.ndarray.mean",
+        "numpy.ndarray.max",
+        "numpy.ndarray.min",
     )
 
 

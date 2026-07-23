@@ -8,20 +8,19 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: 0.1.1 released
+## Status: 0.1.2 development
 
-`rextio-numpy` **0.1.1** is released — tagged and uploaded to PyPI on
-2026-07-14. The prior published cut was **`rextio-numpy` 0.1.0**
-(2026-07-12 on PyPI).
+`rextio-numpy` **0.1.2** is the active development branch. The latest
+published cut is **`rextio-numpy` 0.1.1** (2026-07-14).
 
-Implements **plugin API 1.2** end to end: the annotation vocabulary, the
+Implements **plugin API 1.3** end to end: the annotation vocabulary, the
 deterministic `claim` pass (including keyword/literal axis metadata and
 structured `ClaimExpr` trees from core API 1.2), `lower()` emission to Rust via
 the `ndarray` crate, multi-op elementwise chain fusion via
-`operand_mode="leaves"`, and pinned crate injection (rust-numpy
+`operand_mode="leaves"`, receiver metadata for certified ndarray methods, and pinned crate injection (rust-numpy
 `numpy =0.29.0`; ndarray via its re-export).
 
-**Dependency:** requires **`rextio>=0.1.2,<0.2`**. NumPy is deliberately **not**
+**Dependency:** requires **`rextio>=0.1.3,<0.2`**. NumPy is deliberately **not**
 a runtime dependency of this package — only the user-facing
 `rextio_numpy.types` vocabulary imports NumPy in the **user** project.
 
@@ -55,8 +54,8 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   array–scalar, and scalar–array; operand order preserved for `-` and `/`.
   int64 true division (`/`) yields a **float64** array at the broadcast
   result rank (`RXTP-NUMPY-001`).
-- **`numpy.dot(a, b)`** on same-dtype **1-D float64 and int64** only
-  (module-call form). **float32** 1-D dots are **deliberately fallback**
+- **`numpy.dot(a, b)` / `a.dot(b)`** on same-dtype **1-D float64 and int64**
+  only. **float32** 1-D dots are **deliberately fallback**
   (sequential f32 accumulation diverges materially from NumPy pairwise
   summation; the plugin API has no enforceable runtime length gate).
   **2-D** operands and **`@` / matmul** stay unclaimed (`RXTP-NUMPY-002`).
@@ -68,10 +67,11 @@ analyzer resolves them to plugin type keys when the plugin is enabled.
   - **float32** sum/mean and **int64 mean** are fallback (material
     accumulation-order divergence; no runtime length gate).
   - Bare `numpy.max` / `numpy.min` (no `axis=`) stay fallback.
-  - `a.sum()` / `a.mean()` method forms fallback (`RXTP-NUMPY-003`).
-- **Literal-axis reductions** (module-call,
-  `numpy.sum|mean|max|min(a, axis=<int literal>)` only — exactly one
-  positional array and exactly one named `axis` keyword):
+  - Equivalent `a.sum()` / `a.mean()` method forms are native under Core's
+    API-1.3 receiver contract (`RXTP-NUMPY-003`).
+- **Literal-axis reductions** (`numpy.sum|mean|max|min(a, axis=<int literal>)`
+  or `a.sum|mean|max|min(axis=<int literal>)` — exactly one named `axis`
+  keyword; module calls additionally carry exactly one positional array):
   - `sum`: f64/i64 ranks 1–2; `mean`: f64 ranks 1–2
   - `max`/`min`: f64/i64 ranks 1–2; **f32 rank 2 only** (rank-1 f32 stays
     fallback to preserve `numpy.float32` scalar semantics)
@@ -130,14 +130,14 @@ contract; warning parity is **not** part of the acceptance surface.
 | Rule | Outcome | Code |
 |---|---|---|
 | Element-wise `+ - * /` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar) | native (verified) | RXTP-NUMPY-001 |
-| `numpy.dot(a, b)` on same-dtype 1-D f64/i64 (module-call; not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
-| Whole-array `numpy.sum` on f64/i64 ranks 1–2; `numpy.mean` on f64 ranks 1–2 (module-call, no kwargs) | native (verified) | RXTP-NUMPY-003 |
-| Literal-axis `numpy.sum/mean/max/min(a, axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
+| `numpy.dot(a, b)` / `a.dot(b)` on same-dtype 1-D f64/i64 (not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
+| Whole-array `numpy.sum` / `a.sum` on f64/i64 ranks 1–2; `numpy.mean` / `a.mean` on f64 ranks 1–2 (no kwargs) | native (verified) | RXTP-NUMPY-003 |
+| Literal-axis module or ndarray-method `sum/mean/max/min(axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
 | Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
 | Operand types outside the claimed set (incl. f32 sum/mean/dots, rank-1 f32 max/min, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
-| Any other NumPy API (method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
+| Any other NumPy API (unsupported method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
 
 All rules are `experimental`. Codes RXTP-NUMPY-011/012/019 are
 declarative-only: they document fallback boundaries in the rule records but

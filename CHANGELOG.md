@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2 — unreleased
+
+Requires **`rextio>=0.1.3,<0.2`** and advertises plugin API **1.3** solely to
+consume Core receiver metadata; it does not advertise the API-1.4 artifact
+capability.
+
+- Adds certified ndarray method parity for `a.dot(b)`, whole-array
+  `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
+  the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly
+  once before ordinary operands.
+- Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, float32
+  dot/sum/mean, and int64 mean on the Python fallback.
+
 ## 0.1.1 — 2026-07-14
 
 Released cut for package version **0.1.1**, tagged and uploaded to PyPI on

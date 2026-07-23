@@ -1,4 +1,4 @@
-"""Claim decisions for linear algebra sites (numpy.dot)."""
+"""Claim decisions for certified ``numpy.dot`` and ``ndarray.dot`` sites."""
 
 from __future__ import annotations
 
@@ -19,16 +19,24 @@ _DOT_RESULT: dict[str, str] = {
 
 
 def try_claim(site: ClaimSite) -> ClaimResult | None:
-    """Return a claim result for ``numpy.dot``, or None if not this lane."""
-    if site.kind != "call" or site.target != "numpy.dot":
+    """Return a claim result for the certified 1-D dot surface, or None."""
+    is_method = site.receiver is not None and site.target.rpartition(".")[2] == "dot"
+    if site.kind != "call" or (site.target != "numpy.dot" and not is_method):
         return None
+    if site.keywords:
+        return NotCovered()
     operands = site.operand_types
-    if len(operands) != 2:
+    expected_arity = 1 if is_method else 2
+    if len(operands) != expected_arity:
         # Wrong arity is an unsupported call SHAPE, not an operand-type
         # problem; hand it back so core's RXT030 names the real cause
         # instead of the dtype-oriented RXTP-NUMPY-010 (council round 8).
         return NotCovered()
-    left, right = operands
+    if is_method:
+        left = site.receiver.arg_type
+        (right,) = operands
+    else:
+        left, right = operands
     if not is_array_type(left) and not is_array_type(right):
         # No plugin-typed operand at all.
         if left is None or right is None:

@@ -105,6 +105,22 @@ def average(a: F64Arr1) -> float:
     return np.mean(a)
 
 
+def method_dot(a: F64Arr1, b: F64Arr1) -> float:
+    return a.dot(b)
+
+
+def method_total(a: F64Arr1) -> float:
+    return a.sum()
+
+
+def method_average_axis(a: F64Arr2) -> F64Arr1:
+    return a.mean(axis=1)
+
+
+def method_max_axis(a: F32Arr2) -> F32Arr1:
+    return a.max(axis=0)
+
+
 def accumulate(a: F64Arr1, b: F64Arr1, n: int) -> F64Arr1:
     c = a + b
     for i in range(n):
@@ -563,6 +579,22 @@ def test_dot_sum_mean_close(project: CertifiedProject) -> None:
     assert float(dot(ARRAY, OTHER)) == pytest.approx(float(np.dot(ARRAY, OTHER)), rel=1e-12)
     assert float(total(ARRAY)) == pytest.approx(float(np.sum(ARRAY)), rel=1e-12)
     assert float(average(ARRAY)) == pytest.approx(float(np.mean(ARRAY)), rel=1e-12)
+
+
+def test_method_parity_is_natively_served(project: CertifiedProject) -> None:
+    """API-1.3 receiver paths use the same certified helpers as module calls."""
+    dot = _require_native_scalar(project, "method_dot", scalar_close)
+    total = _require_native_scalar(project, "method_total", scalar_close)
+    mean_axis = _require_native(project, "method_average_axis")
+    max_axis = _require_native(project, "method_max_axis")
+    a = np.array([1.0, -2.5, 3.25])
+    b = np.array([0.5, 4.0, -1.0])
+    matrix = np.array([[1.0, -2.0], [3.0, 4.0]], dtype=np.float64)
+    matrix32 = matrix.astype(np.float32)
+    assert float(dot(a, b)) == pytest.approx(float(a.dot(b)), rel=SCALAR_REL_TOL)
+    assert float(total(a)) == pytest.approx(float(a.sum()), rel=SCALAR_REL_TOL)
+    np.testing.assert_allclose(mean_axis(matrix), matrix.mean(axis=1))
+    np.testing.assert_array_equal(max_axis(matrix32), matrix32.max(axis=0))
 
 
 def test_dot_length_mismatch_raises_equivalently(project: CertifiedProject) -> None:

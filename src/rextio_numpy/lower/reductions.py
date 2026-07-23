@@ -17,17 +17,39 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     """Return a lowered expression for sum/mean/max/min, or None if not this lane."""
     if claimed.kind != "call":
         return None
-    if claimed.target not in _AXIS_TARGETS:
+    is_method = claimed.receiver is not None and claimed.target.rpartition(".")[2] in {
+        "sum",
+        "mean",
+        "max",
+        "min",
+    }
+    target = f"numpy.{claimed.target.rpartition('.')[2]}" if is_method else claimed.target
+    if target not in _AXIS_TARGETS:
         return None
 
     # Fail closed on malformed lower-time metadata rather than emitting
     # incorrect reduction code (asserts are stripped under PYTHONOPTIMIZE=1).
-    if len(claimed.operand_types) != 1:
+    expected_arity = 0 if is_method else 1
+    if len(claimed.operand_types) != expected_arity:
+        requirement = (
+            "exactly zero operand types"
+            if is_method
+            else "exactly one operand type"
+        )
         raise ValueError(
-            "rextio-numpy reductions lower requires exactly one operand type; "
+            f"rextio-numpy reductions lower requires {requirement}; "
             f"got {len(claimed.operand_types)}"
         )
-    operand = claimed.operand_types[0]
+    if is_method:
+        if ctx.receiver is None:
+            raise ValueError("rextio-numpy method reductions lower requires ctx.receiver")
+        operand = claimed.receiver.arg_type
+        operand_expr = ctx.receiver
+        expected_ctx_arity = 0
+    else:
+        operand = claimed.operand_types[0]
+        operand_expr = ctx.operands[0] if ctx.operands else ""
+        expected_ctx_arity = 1
     if operand is None:
         raise ValueError("rextio-numpy reductions lower requires non-None operand type")
     meta = array_meta(operand)
@@ -39,21 +61,26 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
 
     if not claimed.keywords:
         # Whole-array sum/mean (bare max/min are never claimed).
-        if claimed.target not in _WHOLE_ARRAY_TARGETS:
+        if target not in _WHOLE_ARRAY_TARGETS:
             return None
-        if len(ctx.operands) != 1:
+        if len(ctx.operands) != expected_ctx_arity:
+            requirement = (
+                "exactly zero ctx.operands entries"
+                if is_method
+                else "exactly one ctx.operands entry"
+            )
             raise ValueError(
-                "rextio-numpy reductions lower requires exactly one ctx.operands entry; "
+                f"rextio-numpy reductions lower requires {requirement}; "
                 f"got {len(ctx.operands)}"
             )
-        if claimed.target == "numpy.sum":
+        if target == "numpy.sum":
             name = rust_snippets.sum_call_name(dtype, rank)
             helper = rust_snippets.sum_typed(dtype, rank)
         else:
             name = rust_snippets.mean_call_name(dtype, rank)
             helper = rust_snippets.mean_typed(dtype, rank)
         return LoweredExpr(
-            rust=f"{name}(&{ctx.operands[0]})?",
+            rust=f"{name}(&{operand_expr})?",
             helpers=(helper,),
         )
 
@@ -81,15 +108,20 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         raise ValueError(
             f"rextio-numpy reductions lower: axis {raw!r} out of range for rank {rank}"
         )
-    if len(ctx.operands) != 1:
+    if len(ctx.operands) != expected_ctx_arity:
+        requirement = (
+            "exactly zero ctx.operands entries"
+            if is_method
+            else "exactly one ctx.operands entry"
+        )
         raise ValueError(
-            "rextio-numpy reductions lower requires exactly one ctx.operands entry; "
+            f"rextio-numpy reductions lower requires {requirement}; "
             f"got {len(ctx.operands)}"
         )
-    op = op_from_target(claimed.target)
+    op = op_from_target(target)
     name = axis_call_name(op, dtype, rank, axis)
     helpers = axis_typed(op, dtype, rank, axis)
     return LoweredExpr(
-        rust=f"{name}(&{ctx.operands[0]})?",
+        rust=f"{name}(&{operand_expr})?",
         helpers=helpers,
     )

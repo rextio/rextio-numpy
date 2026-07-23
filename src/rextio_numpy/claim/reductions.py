@@ -9,9 +9,10 @@ Literal-axis surface (exactly ``axis=<int literal>``):
   * ``numpy.max`` / ``numpy.min`` — float64/int64 ranks 1–2; float32 rank 2 only
 
 Bare ``max``/``min`` without ``axis=``, positional axis, ``axis=None``, tuple
-axis, dynamic axis, extra kwargs, method forms, and ``amax``/``amin`` stay
-unclaimed (``NotCovered`` / honest fallback). float32 sum/mean and int64 mean
-remain RXTP-NUMPY-010 rejections.
+axis, dynamic axis, extra kwargs, and ``amax``/``amin`` stay unclaimed
+(``NotCovered`` / honest fallback). Certified ``ndarray`` method forms use
+plugin API 1.3 receiver metadata and share the exact module-call matrix.
+float32 sum/mean and int64 mean remain RXTP-NUMPY-010 rejections.
 """
 
 from __future__ import annotations
@@ -108,17 +109,25 @@ def _axis_literal(site: ClaimSite) -> int | None:
 
 def try_claim(site: ClaimSite) -> ClaimResult | None:
     """Return a claim result for sum/mean/max/min, or None if not this lane."""
-    if site.kind != "call" or site.target not in _ALL_TARGETS:
+    is_method = site.receiver is not None and site.target.rpartition(".")[2] in {
+        "sum",
+        "mean",
+        "max",
+        "min",
+    }
+    target = f"numpy.{site.target.rpartition('.')[2]}" if is_method else site.target
+    if site.kind != "call" or target not in _ALL_TARGETS:
         return None
     operands = site.operand_types
-    if len(operands) != 1:
+    expected_arity = 0 if is_method else 1
+    if len(operands) != expected_arity:
         # Wrong arity (incl. positional axis) — leave to core RXT030.
         return NotCovered()
-    (operand,) = operands
+    operand = site.receiver.arg_type if is_method else operands[0]
 
     if not site.keywords:
         # Whole-array path: sum/mean only. Bare max/min stay fallback.
-        if site.target not in _WHOLE_ARRAY_TARGETS:
+        if target not in _WHOLE_ARRAY_TARGETS:
             return NotCovered()
         if not is_array_type(operand):
             return not_covered_or_rejected(site)
@@ -126,15 +135,15 @@ def try_claim(site: ClaimSite) -> ClaimResult | None:
         meta = array_meta(operand)
         assert meta is not None
         dtype, _rank = meta
-        if not _dtype_allowed(site.target, dtype, _rank, axis=False):
+        if not _dtype_allowed(target, dtype, _rank, axis=False):
             return not_covered_or_rejected(site)
         return Claimed(
             rule_id=_WHOLE_ARRAY_RULE,
-            result_type=_whole_array_result_type(site.target, dtype),
+            result_type=_whole_array_result_type(target, dtype),
         )
 
     # Axis path: exactly one named keyword ``axis=<int literal>``.
-    if site.target not in _AXIS_TARGETS:
+    if target not in _AXIS_TARGETS:
         return NotCovered()
     raw_axis = _axis_literal(site)
     if raw_axis is None:
@@ -147,9 +156,9 @@ def try_claim(site: ClaimSite) -> ClaimResult | None:
     dtype, rank = meta
     if normalize_axis(raw_axis, rank) is None:
         return NotCovered()
-    if not _dtype_allowed(site.target, dtype, rank, axis=True):
+    if not _dtype_allowed(target, dtype, rank, axis=True):
         return not_covered_or_rejected(site)
     return Claimed(
         rule_id=_AXIS_RULE,
-        result_type=_axis_result_type(site.target, dtype, rank),
+        result_type=_axis_result_type(target, dtype, rank),
     )

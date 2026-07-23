@@ -11,7 +11,8 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         scope=RuleScope(
             kind="call",
             pattern=(
-                "covered numpy.dot/sum/mean/max/min call or elementwise +/-/*// binop "
+                "covered numpy.dot/sum/mean/max/min (including certified ndarray method) "
+                "call or elementwise +/-/*// binop "
                 "whose resolved operand types are outside the float64/float32/int64 "
                 "rank-1/2 surface (including excluded reduction dtype cells)"
             ),
@@ -88,8 +89,8 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         scope=RuleScope(
             kind="call",
             pattern=(
-                "any numpy API outside the covered symbols (fancy indexing, method-form "
-                "reductions, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
+                "any numpy API outside the covered symbols (fancy indexing, unsupported "
+                "method forms, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
                 "matmul/@, ufunc kwargs, random, linalg, amax/amin, ...)"
             ),
         ),
