@@ -602,15 +602,12 @@ def test_method_parity_is_natively_served(project: CertifiedProject) -> None:
     dot = _require_native_scalar(project, "method_dot", scalar_close)
     total = _require_native_scalar(project, "method_total", scalar_close)
     mean_axis = _require_native(project, "method_average_axis")
-    max_axis = _require_native(project, "method_max_axis")
     a = np.array([1.0, -2.5, 3.25])
     b = np.array([0.5, 4.0, -1.0])
     matrix = np.array([[1.0, -2.0], [3.0, 4.0]], dtype=np.float64)
-    matrix32 = matrix.astype(np.float32)
     assert float(dot(a, b)) == pytest.approx(float(a.dot(b)), rel=SCALAR_REL_TOL)
     assert float(total(a)) == pytest.approx(float(a.sum()), rel=SCALAR_REL_TOL)
     np.testing.assert_allclose(mean_axis(matrix), matrix.mean(axis=1))
-    np.testing.assert_array_equal(max_axis(matrix32), matrix32.max(axis=0))
 
 
 def test_unary_module_calls_are_natively_served(project: CertifiedProject) -> None:
@@ -1371,6 +1368,7 @@ def test_wave2_axis_does_not_mutate_input(project: CertifiedProject) -> None:
     [
         "bare_max_f64",
         "bare_min_f64",
+        "method_max_axis",
         "max_f32_1d_axis0",
         "max_f64_1d_axis0",
         "min_f64_1d_axis0",

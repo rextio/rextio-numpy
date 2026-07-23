@@ -75,11 +75,9 @@ def test_claim_whole_array_methods(method: str, receiver: str, result: str) -> N
     [
         ("sum", F64_1D, -1, "float"),
         ("mean", F64_1D, 0, "float"),
-        ("max", F64_1D, 0, "float"),
         ("min", I64_1D, 0, "int"),
         ("sum", F64_2D, 0, F64_1D),
         ("mean", F64_2D, 1, F64_1D),
-        ("max", F32_2D, 0, F32_1D),
         ("min", I64_2D, -1, I64_1D),
     ],
 )
@@ -87,6 +85,23 @@ def test_claim_literal_axis_methods(method: str, receiver: str, axis: int, resul
     assert try_claim_reduction(method_site(method, receiver, keywords=axis_kw(axis))) == Claimed(
         "rextio-numpy/reduction-axis", result
     )
+
+
+@pytest.mark.parametrize(
+    ("method", "receiver"),
+    [
+        ("max", F64_1D),
+        ("min", F64_1D),
+        ("max", F32_2D),
+        ("min", F32_2D),
+    ],
+)
+def test_claim_float_literal_axis_extrema_methods_are_not_covered(
+    method: str, receiver: str
+) -> None:
+    claim_site = method_site(method, receiver, keywords=axis_kw(0))
+    assert try_claim_reduction(claim_site) == NotCovered()
+    assert claim(claim_site, CONFIG) == NotCovered()
 
 
 @pytest.mark.parametrize(
@@ -105,4 +120,3 @@ def test_claim_literal_axis_methods(method: str, receiver: str, axis: int, resul
 )
 def test_unsupported_method_forms_do_not_broaden_surface(site: ClaimSite) -> None:
     assert claim(site, CONFIG) == NotCovered() or claim(site, CONFIG).diagnostic.code == "RXTP-NUMPY-010"
-

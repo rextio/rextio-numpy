@@ -159,7 +159,7 @@ contract; warning parity is **not** part of the acceptance surface.
 | Literal-axis module or ndarray-method `sum/mean/max/min(axis=<int>)` (see native surface) | native (verified) | RXTP-NUMPY-004 |
 | Multi-op elementwise chain fusion (2–8 pure array-name binops; leaves mode) | native (verified) | RXTP-NUMPY-005 |
 | Exact `numpy.negative/absolute/abs/square(a)` on f64/f32/i64 ranks 1–2 | native (verified) | RXTP-NUMPY-006 |
-| Operand types outside the claimed set (incl. f32 sum/mean/dots, rank-1 f32 max/min, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
+| Operand types outside the claimed set (incl. float extrema, f32 sum/mean/dots, i64 mean, mixed dtypes) | fallback | RXTP-NUMPY-010 |
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
 | Runtime ndarray subclasses / `matrix` / `__array_ufunc__` overrides at a native boundary | reject (runtime TypeError; not static fallback) | RXTP-NUMPY-013 |
