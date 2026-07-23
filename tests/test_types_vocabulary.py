@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from rextio_numpy.diagnostics import (
+    BOOL_1D,
+    BOOL_2D,
     F32_1D,
     F32_2D,
     F64_1D,
@@ -31,7 +33,7 @@ def test_type_key_constants() -> None:
 
 
 def test_type_vocabulary_surface_via_plugin_still_wave0() -> None:
-    """Plugin facade: type_vocabulary() is the integrated Wave-1 six-type registry.
+    """Plugin facade exposes six boundary types plus two resident bool types.
 
     Keeps the historical test name so existing failure reports stay stable;
     assertions now match director integration of plugin_types into plugin.py.
@@ -45,6 +47,8 @@ def test_type_vocabulary_surface_via_plugin_still_wave0() -> None:
         F32_2D,
         I64_1D,
         I64_2D,
+        BOOL_1D,
+        BOOL_2D,
     ]
     assert [t.annotations for t in types] == [
         ("rextio_numpy.types.F64Arr1",),
@@ -53,6 +57,8 @@ def test_type_vocabulary_surface_via_plugin_still_wave0() -> None:
         ("rextio_numpy.types.F32Arr2",),
         ("rextio_numpy.types.I64Arr1",),
         ("rextio_numpy.types.I64Arr2",),
+        ("rextio_numpy.types._resident.BoolArr1",),
+        ("rextio_numpy.types._resident.BoolArr2",),
     ]
 
     # Wave-0 F64 rank-1 compatibility surface remains first and unchanged.
@@ -81,6 +87,8 @@ def test_feature_owned_registry_is_complete() -> None:
         F32_2D,
         I64_1D,
         I64_2D,
+        BOOL_1D,
+        BOOL_2D,
     }
 
 
@@ -94,3 +102,5 @@ def test_runtime_aliases() -> None:
     assert types.F32Arr2 is numpy.ndarray
     assert types.I64Arr1 is numpy.ndarray
     assert types.I64Arr2 is numpy.ndarray
+    assert not hasattr(types, "BoolArr1")
+    assert not hasattr(types, "BoolArr2")

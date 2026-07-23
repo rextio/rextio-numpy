@@ -1,8 +1,8 @@
 """Feature-owned plugin type registry for the rextio-numpy array surface.
 
 Holds the complete ``PluginType`` / ``BoundaryConversion`` definitions for
-float64, float32, and int64 at ranks 1 and 2 (six types). ``plugin.py``
-exposes this registry via ``type_vocabulary()`` → ``plugin_types()``.
+float64, float32, and int64 at ranks 1 and 2 plus two resident boolean result
+types. ``plugin.py`` exposes this registry via ``type_vocabulary()``.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from __future__ import annotations
 from rextio.plugins.api import BoundaryConversion, PluginType
 
 from rextio_numpy.diagnostics import (
+    BOOL_1D,
+    BOOL_2D,
     F32_1D,
     F32_2D,
     F64_1D,
@@ -72,7 +74,17 @@ def _array_type(
     )
 
 
-# Stable, ordered registry: f64/f32/i64 × ranks 1–2 (f64 rank-1 first for compat).
+def _resident_bool_type(*, key: str, rank: int, annotation: str) -> PluginType:
+    """Build an internal-only boolean array type with no Python boundary."""
+    return PluginType(
+        key=key,
+        annotations=(f"rextio_numpy.types.{annotation}",),
+        rust_type=f"numpy::ndarray::Array{rank}<bool>",
+        conversion=None,
+    )
+
+
+# Stable registry: six materialized numeric types, then two resident bool types.
 PLUGIN_TYPES: tuple[PluginType, ...] = (
     _array_type(key=F64_1D, annotation="F64Arr1", rank=1, elem="f64"),
     _array_type(key=F64_2D, annotation="F64Arr2", rank=2, elem="f64"),
@@ -80,13 +92,15 @@ PLUGIN_TYPES: tuple[PluginType, ...] = (
     _array_type(key=F32_2D, annotation="F32Arr2", rank=2, elem="f32"),
     _array_type(key=I64_1D, annotation="I64Arr1", rank=1, elem="i64"),
     _array_type(key=I64_2D, annotation="I64Arr2", rank=2, elem="i64"),
+    _resident_bool_type(key=BOOL_1D, rank=1, annotation="_resident.BoolArr1"),
+    _resident_bool_type(key=BOOL_2D, rank=2, annotation="_resident.BoolArr2"),
 )
 
 _PLUGIN_TYPES_BY_KEY: dict[str, PluginType] = {t.key: t for t in PLUGIN_TYPES}
 
 
 def plugin_types() -> tuple[PluginType, ...]:
-    """Return the full six-type array vocabulary (stable public registry API)."""
+    """Return six boundary numeric types plus two resident boolean types."""
     return PLUGIN_TYPES
 
 

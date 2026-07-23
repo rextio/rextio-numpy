@@ -19,9 +19,13 @@ F32_1D = "rextio-numpy/f32-1d"
 F32_2D = "rextio-numpy/f32-2d"
 I64_1D = "rextio-numpy/i64-1d"
 I64_2D = "rextio-numpy/i64-2d"
+BOOL_1D = "rextio-numpy/bool-1d"
+BOOL_2D = "rextio-numpy/bool-2d"
 
 #: All array type keys this plugin owns.
 ARRAY_TYPE_KEYS: frozenset[str] = frozenset({F64_1D, F64_2D, F32_1D, F32_2D, I64_1D, I64_2D})
+BOOL_TYPE_KEYS: frozenset[str] = frozenset({BOOL_1D, BOOL_2D})
+PLUGIN_ARRAY_TYPE_KEYS: frozenset[str] = ARRAY_TYPE_KEYS | BOOL_TYPE_KEYS
 
 # dtype token -> (rank -> type key)
 _TYPE_KEY_BY_DTYPE_RANK: dict[str, dict[int, str]] = {
@@ -38,6 +42,11 @@ _ARRAY_META: dict[str, tuple[str, int]] = {
     F32_2D: ("f32", 2),
     I64_1D: ("i64", 1),
     I64_2D: ("i64", 2),
+}
+
+_BOOL_RANK: dict[str, int] = {
+    BOOL_1D: 1,
+    BOOL_2D: 2,
 }
 
 # dtype token -> core scalar type name used in claim operand_types
@@ -59,8 +68,27 @@ def type_key_for(dtype: str, rank: int) -> str:
 
 
 def is_array_type(type_key: str | None) -> bool:
-    """Report whether ``type_key`` is one of this plugin's array types."""
+    """Report whether ``type_key`` is one of this plugin's numeric array types."""
     return type_key is not None and type_key in ARRAY_TYPE_KEYS
+
+
+def is_bool_type(type_key: str | None) -> bool:
+    """Report whether ``type_key`` is a resident boolean array result type."""
+    return type_key is not None and type_key in BOOL_TYPE_KEYS
+
+
+def bool_rank(type_key: str) -> int | None:
+    """Return the resident boolean-array rank, else ``None``."""
+    return _BOOL_RANK.get(type_key)
+
+
+def bool_type_for(rank: int) -> str:
+    """Return the resident boolean-array key for rank 1 or 2."""
+    if rank == 1:
+        return BOOL_1D
+    if rank == 2:
+        return BOOL_2D
+    raise KeyError(rank)
 
 
 # The remediation guidance for claim rejections comes from the rule record
@@ -82,8 +110,9 @@ def not_covered_or_rejected(site: ClaimSite) -> ClaimResult:
             message=(
                 f"rextio-numpy cannot lower {site.target!r}: operand types "
                 f"({named}) are outside the supported array surface "
-                f"(float64/float32/int64 ranks 1–2, plus matching scalars "
-                f"for elementwise binops; keys {sorted(ARRAY_TYPE_KEYS)})"
+                f"(float64/float32/int64 ranks 1–2, resident bool masks, plus "
+                f"matching scalars for elementwise operations; keys "
+                f"{sorted(PLUGIN_ARRAY_TYPE_KEYS)})"
             ),
             file_path="",
             line=0,

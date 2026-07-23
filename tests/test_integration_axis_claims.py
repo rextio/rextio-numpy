@@ -1,7 +1,7 @@
 """End-to-end analyzer → ClaimSite keyword literal → IR claim integration.
 
-Verifies that core API 1.2 offers ``axis=<int literal>`` metadata to this
-plugin (``api_version`` 1.3) and that the plugin claims/rejects the Wave-2
+Verifies that Core offers ``axis=<int literal>`` metadata to this API-1.5
+plugin and that the plugin claims/rejects the Wave-2
 literal-axis surface correctly. Lower emission is checked on the claimed
 sites so the analyzer→claim→lower path is covered without Cargo.
 """
@@ -88,7 +88,7 @@ def method_whole_i64_min(a: I64Arr2) -> int:
 """,
     )
     registry = _registry()
-    assert registry.active[0].api_version == "1.3"
+    assert registry.active[0].api_version == "1.5"
     analysis = analyze_project(
         root,
         active_plugins=registry.active,

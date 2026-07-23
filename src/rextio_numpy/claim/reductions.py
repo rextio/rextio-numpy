@@ -12,7 +12,7 @@ Literal-axis surface (named ``axis=<int literal>`` or one positional literal):
 Float ``max``/``min``, ``axis=None``, tuple axis, dynamic axis, extra
 positional/keyword options, and ``amax``/``amin`` stay unclaimed
 (``NotCovered`` / honest fallback). Certified ``ndarray`` method forms use
-plugin API 1.3 receiver metadata and share the exact module-call matrix.
+the current receiver metadata contract and share the exact module-call matrix.
 float32 sum/mean and int64 mean remain RXTP-NUMPY-010 rejections.
 """
 

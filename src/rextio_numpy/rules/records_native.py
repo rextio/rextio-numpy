@@ -6,6 +6,42 @@ from rextio.plugins.api import RuleRecord, RuleScope
 
 NATIVE_RECORDS: tuple[RuleRecord, ...] = (
     RuleRecord(
+        id="rextio-numpy/elementwise-compare",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="compare",
+            pattern=(
+                "non-chained ==, !=, <, <=, >, >= over same-dtype "
+                "float64/float32/int64 rank-1/rank-2 arrays, including "
+                "array-array broadcasting and matching scalar forms"
+            ),
+        ),
+        constraint=(
+            "Plugin API 1.5 offers only non-chained comparison sites. Exactly "
+            "two operands are accepted: same-dtype numeric arrays at ranks 1–2 "
+            "under NumPy broadcasting, or one such array plus its matching "
+            "Python scalar type (float for floating arrays, int for int64). "
+            "The result is a plugin-owned resident bool rank-1/rank-2 array and "
+            "cannot cross a Python function boundary. Rust comparison semantics "
+            "match NumPy boolean results for finite values, NaN, infinities, and "
+            "signed zero; float32 weak Python scalars are narrowed to float32 and "
+            "int scalars are limited by the Core signed-i64 boundary. A Python int "
+            "outside [-2**63, 2**63-1] is a native-boundary type-contract violation "
+            "that raises OverflowError before this helper runs; ordinary NumPy "
+            "fallback may accept it. Chained comparisons, is/is not, in/not in, "
+            "mixed dtypes, higher ranks, and hidden metadata remain fallback/rejected."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-009",
+        guidance=(
+            "Use one non-chained comparison between same-dtype rank-1/rank-2 "
+            "numeric arrays, or an array and its matching Python scalar, and "
+            "consume the resident bool result immediately in a supported plugin call."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
         id="rextio-numpy/elementwise-float64",
         provider="rextio-numpy",
         scope=RuleScope(
@@ -95,7 +131,7 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "API has no enforceable runtime length gate or fallback hook. 2-D "
             "operands, mixed dtypes, keyword forms, and the @ operator stay unclaimed. "
             "The equivalent ndarray method form a.dot(b) is admitted only through "
-            "plugin API 1.3 receiver metadata; core evaluates the receiver exactly "
+            "the current receiver metadata contract; core evaluates the receiver exactly "
             "once before b. Documented "
             "divergences for claimed float64 dots: float summation order may differ "
             "from NumPy's pairwise summation (verified means within-tolerance, not "
@@ -141,7 +177,7 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "(RXTP-NUMPY-004), and whole-array int64 max/min under "
             "rextio-numpy/reduction-whole-i64-extrema (RXTP-NUMPY-008). The "
             "equivalent a.sum()/a.mean() method forms are "
-            "admitted through plugin API 1.3 receiver metadata, evaluated exactly "
+            "admitted through the current receiver metadata contract, evaluated exactly "
             "once by core before any positional operands. "
             "Result dtypes follow NumPy 2.4 practical semantics: int64 sum is int64 "
             "(wraparound under overflow); float64 sum/mean return a builtin Python "
@@ -287,6 +323,42 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "Use numpy.negative/absolute/abs/square with exactly one typed float64, "
             "float32, or int64 rank-1/rank-2 ndarray and no optional arguments; keep "
             "other ufunc forms on the Python fallback."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
+        id="rextio-numpy/where-three-argument",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern=(
+                "exact numpy.where(condition, x, y) with a resident comparison "
+                "mask and same-dtype numeric rank-1/rank-2 array branches"
+            ),
+        ),
+        constraint=(
+            "Exactly three positional operands and no keywords. condition must "
+            "be a plugin-owned resident bool rank-1/rank-2 result; condition "
+            "parameters/returns are not materialized boundaries. x/y must be "
+            "same-dtype float64/float32/int64 rank-1/rank-2 arrays, or one array "
+            "and a matching Python scalar; two scalar branches, dtype mixing, "
+            "coercion ambiguity, condition-only where, out/keyword forms, and "
+            "higher ranks are excluded. The helper independently computes the "
+            "three-way NumPy broadcast shape (including zero axes), raises "
+            "NumPy-compatible shape errors, and copies the selected branch value "
+            "without arithmetic, preserving NaN/inf classes and signed-zero bits. "
+            "Float32 Python scalar branches use NumPy 2.4 weak-scalar narrowing, "
+            "including overflow to infinity. Integer branches inherit Core's signed-"
+            "i64 boundary; out-of-range Python ints are boundary type-contract "
+            "violations and may differ from ordinary fallback NumPy behavior."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-014",
+        guidance=(
+            "Call numpy.where(mask, x, y) with a resident comparison mask and "
+            "same-dtype supported numeric branches, at least one of which is an "
+            "annotated array; use three positional arguments and no options."
         ),
         stability="experimental",
         verified=True,

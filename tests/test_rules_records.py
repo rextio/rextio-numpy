@@ -33,6 +33,7 @@ def test_public_coverage_import() -> None:
         "numpy.absolute",
         "numpy.abs",
         "numpy.square",
+        "numpy.where",
     )
 
 
@@ -71,6 +72,8 @@ def test_native_records_broadened_but_ids_stable() -> None:
         "rextio-numpy/reduction-axis",
         "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/unary-module",
+        "rextio-numpy/elementwise-compare",
+        "rextio-numpy/where-three-argument",
     }
     elem = by_id["rextio-numpy/elementwise-float64"]
     assert elem.diagnostic_code == "RXTP-NUMPY-001"
@@ -149,12 +152,12 @@ def test_ndarray_subclass_rule_is_runtime_rejection_not_static_fallback() -> Non
     assert "exact numpy.ndarray" in record.constraint
 
 
-def test_unsupported_api_records_array_conditional_core_blocker() -> None:
+def test_unsupported_api_records_remaining_conditional_exclusions() -> None:
     record = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-api")
-    assert "array comparisons feeding numpy.where" in record.scope.pattern
-    assert "ast.Compare claim sites" in record.constraint
-    assert "boolean-array result" in record.constraint
-    assert "comparison/mask selection" in record.guidance
+    assert "chained/identity/membership comparisons" in record.scope.pattern
+    assert "condition-only where" in record.scope.pattern
+    assert "API 1.5" in record.constraint
+    assert "keyword" in record.guidance
 
 
 def test_rust_snippets_package_public_api() -> None:

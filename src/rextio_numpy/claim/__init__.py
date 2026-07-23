@@ -5,7 +5,7 @@ from __future__ import annotations
 from rextio.config.schema import RextioConfig
 from rextio.plugins.api import ClaimResult, ClaimSite, NotCovered
 
-from rextio_numpy.claim import binops, fusion, linear, reductions, unary
+from rextio_numpy.claim import binops, compare, fusion, linear, reductions, unary, where
 
 __all__ = ["claim"]
 
@@ -27,6 +27,8 @@ def claim(site: ClaimSite, config: RextioConfig) -> ClaimResult:
     # Fusion must run before ordinary elementwise so eligible multi-op roots
     # claim with operand_mode="leaves" and subsume descendant binops.
     for handler in (
+        compare.try_claim,
+        where.try_claim,
         linear.try_claim,
         reductions.try_claim,
         unary.try_claim,

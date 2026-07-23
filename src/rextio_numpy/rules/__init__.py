@@ -13,8 +13,8 @@ whole-array float64 ``mean``, plus literal-axis ``sum`` (float64/int64),
 sum/mean/dot, and int64 mean stay fallback) — plus the explicit
 exclusions around it.
 
-All records are ``experimental`` (plugin API 1.3, requires ``rextio>=0.1.3``
-with core API 1.3 receiver metadata). Records with outcome ``native`` carry
+All records are ``experimental`` (plugin API 1.5, requires ``rextio>=0.1.6``).
+Records with outcome ``native`` carry
 ``verified=True``: their lowering is certified via the core plugin
 certification kit (``rextio.plugins.testing``) against CPython NumPy, with the
 divergences documented per rule in ``constraint``. Exclusion records use
