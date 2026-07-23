@@ -149,6 +149,14 @@ def test_ndarray_subclass_rule_is_runtime_rejection_not_static_fallback() -> Non
     assert "exact numpy.ndarray" in record.constraint
 
 
+def test_unsupported_api_records_array_conditional_core_blocker() -> None:
+    record = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-api")
+    assert "array comparisons feeding numpy.where" in record.scope.pattern
+    assert "ast.Compare claim sites" in record.constraint
+    assert "boolean-array result" in record.constraint
+    assert "comparison/mask selection" in record.guidance
+
+
 def test_rust_snippets_package_public_api() -> None:
     # Same import path as the pre-split module.
     assert callable(rust_snippets.dot1)

@@ -21,6 +21,11 @@ capability.
   NumPy-compatible `ValueError`; floating extrema remain fallback because
   signed-zero and NaN selection varies across supported platform/SIMD
   profiles.
+- Keeps array comparisons and `numpy.where(mask, x, y)` on fallback for this
+  plugin-only cut. Core does not currently offer `ast.Compare` as a plugin
+  claim site and types comparison expressions as scalar `bool`, so the plugin
+  cannot safely propagate a boolean-array result into `numpy.where` without a
+  future Core contract change.
 - Adds certified ndarray method parity for `a.dot(b)`, whole-array
   `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
   the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly
@@ -57,6 +62,8 @@ capability.
 - Required CI now runs the complete real-Cargo certification suite, without
   test selection, for both Core 0.1.3 and 0.1.5; skipped certification cases
   fail the job.
+- The current tree collects **847** tests in total and **119** tests in the
+  real-Cargo certification module.
 
 ## 0.1.1 — 2026-07-14
 

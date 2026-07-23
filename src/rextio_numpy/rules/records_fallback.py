@@ -126,21 +126,24 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
                 "any numpy API outside the covered symbols (fancy indexing, unsupported "
                 "method forms, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
                 "matmul/@, unsupported ufuncs or optional ufunc arguments, random, "
-                "linalg, amax/amin, ...)"
+                "linalg, amax/amin, array comparisons feeding numpy.where, ...)"
             ),
         ),
         constraint=(
             "APIs outside the covered surface have no verified Rust lowering and keep the "
             "surrounding candidate on the Python fallback — Rextio never guesses. Literal "
             "single-axis sum/mean/max/min are covered under RXTP-NUMPY-004; other axis "
-            "forms remain fallback."
+            "forms remain fallback. Array comparisons and numpy.where are excluded because "
+            "the current Core plugin contract does not offer ast.Compare claim sites or "
+            "propagate a plugin boolean-array result from a comparison."
         ),
         outcome="fallback",
         diagnostic_code="RXTP-NUMPY-019",
         guidance=(
             "Isolate covered array math into its own typed function and leave the rest of "
             "the NumPy usage on the fallback (or under Numba, which stays a valid choice for "
-            "kernels this plugin does not cover)."
+            "kernels this plugin does not cover). Keep comparison/mask selection outside "
+            "the native function until Core exposes an array-comparison result contract."
         ),
         stability="experimental",
     ),

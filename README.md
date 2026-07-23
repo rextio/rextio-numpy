@@ -123,6 +123,15 @@ semantics matter, keep the enclosing function on Python fallback.
   is claimed. Floating signed-zero/NaN/infinity values follow NumPy; int64
   negative/absolute/square use wraparound arithmetic, including `INT64_MIN`.
 
+Array comparisons and `numpy.where(mask, x, y)` remain **NO-GO / fallback**
+for this plugin-only cut. Core currently offers plugins call and binary-
+arithmetic claim sites, but not `ast.Compare` sites, and its expression
+inference types every comparison as the scalar core `bool`. Consequently the
+plugin cannot truthfully produce and propagate a rank-1/rank-2 boolean-array
+type from `a > b` into `numpy.where` without a future Core contract change.
+This exclusion also avoids silently substituting scalar truth semantics for
+NumPy's element-wise mask semantics.
+
 Shape/length mismatches raise `ValueError` with NumPy's exact messages.
 int64 `+`, `-`, `*`, `sum`, and `dot` use **wraparound** arithmetic matching
 NumPy **release** builds. Floating reductions/dots are certified
@@ -176,6 +185,7 @@ contract; warning parity is **not** part of the acceptance surface.
 | Rank > 2 or unknown rank | fallback | RXTP-NUMPY-011 |
 | Mutating aliased views | fallback | RXTP-NUMPY-012 |
 | Runtime ndarray subclasses / `matrix` / `__array_ufunc__` overrides at a native boundary | reject (runtime TypeError; not static fallback) | RXTP-NUMPY-013 |
+| Array comparisons and `numpy.where` (Core has no plugin comparison-result contract yet) | fallback | RXTP-NUMPY-019 |
 | Any other NumPy API (unsupported method forms, non-literal/tuple axis, 2-D matmul/`@`, …) | fallback | RXTP-NUMPY-019 |
 
 All rules are `experimental`. Codes RXTP-NUMPY-011/012/013/019 are
@@ -253,10 +263,10 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 On this tree:
 
-- `.venv/bin/python -m pytest --collect-only -q` reports **743** collected tests total.
+- `.venv/bin/python -m pytest --collect-only -q` reports **847** collected tests total.
 - The focused collection command
   `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **115** real-Cargo certification cases.
+  reports **119** real-Cargo certification cases.
 
 Those 119 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material
