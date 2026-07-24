@@ -43,6 +43,83 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         verified=True,
     ),
     RuleRecord(
+        id="rextio-numpy/resident-logical-not",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern="exact numpy.logical_not(mask) over one plugin-owned resident bool rank-1/rank-2 mask",
+        ),
+        constraint=(
+            "Exactly one positional resident bool mask and no keywords, optional "
+            "arguments, receiver, or callable metadata. The mask must have been "
+            "produced inside the native expression graph by a claimed comparison or "
+            "another claimed resident logical operation; it has no source annotation "
+            "or Python boundary conversion. The result has the same resident rank and "
+            "can only feed another claimed native expression. Elementwise boolean "
+            "negation preserves shape, including zero axes, and does not mutate input."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-015",
+        guidance=(
+            "Use numpy.logical_not immediately on a resident mask produced by a "
+            "supported NumPy comparison; do not pass masks across a Python boundary."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
+        id="rextio-numpy/resident-logical-binary",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern=(
+                "exact numpy.logical_and(mask_a, mask_b) or numpy.logical_or(mask_a, mask_b) "
+                "over two plugin-owned resident bool rank-1/rank-2 masks"
+            ),
+        ),
+        constraint=(
+            "Exactly two positional resident bool masks and no keywords, optional "
+            "arguments, receiver, or callable metadata. Both operands stay inside the "
+            "native expression graph; NumPy rank-1/rank-2 broadcasting, including "
+            "zero axes, determines the resident bool result rank. Mismatched shapes "
+            "raise the established NumPy-compatible broadcast ValueError. No mask can "
+            "be named, constructed, returned, or supplied from Python source."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-016",
+        guidance=(
+            "Compose supported comparison masks with exact two-argument "
+            "numpy.logical_and/or calls, then consume the result in numpy.where or "
+            "numpy.all/any."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
+        id="rextio-numpy/resident-logical-reduction",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="call",
+            pattern="exact numpy.all(mask) or numpy.any(mask) over one resident bool rank-1/rank-2 mask",
+        ),
+        constraint=(
+            "Exactly one positional resident bool mask and no axis, out, keepdims, "
+            "where, dtype, initial, keyword, receiver, or callable metadata. The "
+            "whole-array result is a core builtin bool (rather than NumPy bool_), so it "
+            "can participate in native scalar control flow without exposing the opaque "
+            "mask. Empty-mask identities "
+            "are NumPy-compatible: all is true and any is false. Inputs are not mutated."
+        ),
+        outcome="native",
+        diagnostic_code="RXTP-NUMPY-017",
+        guidance=(
+            "Use numpy.all(mask) or numpy.any(mask) with no options on a resident "
+            "mask produced by a supported native comparison/logical expression."
+        ),
+        stability="experimental",
+        verified=True,
+    ),
+    RuleRecord(
         id="rextio-numpy/elementwise-float64",
         provider="rextio-numpy",
         scope=RuleScope(

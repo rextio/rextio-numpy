@@ -92,6 +92,18 @@ def choose_positive(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
 def choose_positive_import_alias(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
     return choose(values > 0.0, values, fallback)
 
+def choose_composed_masks(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
+    mask = np.logical_or(np.logical_not(values > 0.0), fallback < 0.0)
+    return np.where(mask, values, fallback)
+
+def all_positive(values: F64Arr1) -> bool:
+    return np.all(values > 0.0)
+
+def any_positive_branch(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
+    if np.any(values > 0.0):
+        return values + 0.0
+    return fallback + 0.0
+
 def chained_fallback(a: F64Arr1, b: F64Arr1, c: F64Arr1) -> F64Arr1:
     return np.where(a < b < c, a, c)
 
@@ -140,7 +152,9 @@ def test_result_only_bool_type_cannot_be_forged_from_source() -> None:
 
 
 def test_api_15_compare_result_flows_into_where_and_codegen(tmp_path: Path) -> None:
-    assert PLUGIN_API_VERSION == "1.5"
+    host_major, host_minor = (int(part) for part in PLUGIN_API_VERSION.split(".", 1))
+    assert host_major == 1
+    assert host_minor >= 5
     registry = _registry()
     assert registry.active[0].api_version == "1.5"
     analysis = analyze_project(
@@ -180,6 +194,34 @@ def test_api_15_compare_result_flows_into_where_and_codegen(tmp_path: Path) -> N
     assert "__rxtnp_cmp_gt1_as_f64(&values, 0.0)?" in source
     assert "__rxtnp_where111_aa_f64(&" in source
     assert "Array1<bool>" in source
+
+    composed = _function(analysis, "choose_composed_masks")
+    assert composed.accepted is True
+    assert [claim.rule_id for claim in composed.plugin_claims] == [
+        "rextio-numpy/elementwise-compare",
+        "rextio-numpy/resident-logical-not",
+        "rextio-numpy/elementwise-compare",
+        "rextio-numpy/resident-logical-binary",
+        "rextio-numpy/where-three-argument",
+    ]
+    assert "__rxtnp_logical_not_1" in source
+    assert "__rxtnp_logical_or11" in source
+
+    all_positive = _function(analysis, "all_positive")
+    assert all_positive.accepted is True
+    assert [claim.rule_id for claim in all_positive.plugin_claims] == [
+        "rextio-numpy/elementwise-compare",
+        "rextio-numpy/resident-logical-reduction",
+    ]
+    assert "__rxtnp_logical_all_1" in source
+
+    any_positive_branch = _function(analysis, "any_positive_branch")
+    assert any_positive_branch.accepted is True
+    assert [claim.rule_id for claim in any_positive_branch.plugin_claims[:2]] == [
+        "rextio-numpy/elementwise-compare",
+        "rextio-numpy/resident-logical-reduction",
+    ]
+    assert "__rxtnp_logical_any_1" in source
 
     imported_alias = _function(analysis, "choose_positive_import_alias")
     assert imported_alias.accepted is True

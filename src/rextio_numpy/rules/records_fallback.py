@@ -13,7 +13,7 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             pattern=(
                 "covered numpy.dot/sum/mean/max/min/unary module (including certified ndarray method) "
                 "call, exact numpy.add/subtract/multiply/divide call, or elementwise +/-/*// binop "
-                "or API-1.5 comparison/numpy.where conditional "
+                "or API-1.5 comparison/resident-logical/numpy.where conditional "
                 "whose resolved operand types are outside the float64/float32/int64 "
                 "rank-1/2 surface (including excluded reduction dtype cells)"
             ),
@@ -23,7 +23,8 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "supported set is rejected here so the plugin's guidance is delivered. "
             "Elementwise covers same-dtype float64/float32/int64 arrays of rank 1 or 2 "
             "plus matching float/int scalars. Comparison results are resident bool "
-            "rank-1/rank-2 arrays; three-argument where requires such a condition "
+            "rank-1/rank-2 arrays; resident logical calls consume only such masks, "
+            "and whole-array all/any return a core bool. Three-argument where requires such a condition "
             "plus same-dtype numeric branches with at least one array. Whole-array "
             "and literal-axis sum cover "
             "float64/int64 ranks 1–2; mean covers float64 ranks 1–2 only (float32 "
@@ -131,7 +132,8 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
                 "method forms, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
                 "matmul/@, unsupported ufuncs or optional ufunc arguments, random, "
                 "linalg, amax/amin, chained/identity/membership comparisons, "
-                "condition-only where, numpy.select, ...)"
+                "condition-only where, logical calls over Python/materialized masks, "
+                "logical reduction options, numpy.select, ...)"
             ),
         ),
         constraint=(
@@ -139,8 +141,9 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "surrounding candidate on the Python fallback — Rextio never guesses. Literal "
             "single-axis sum/mean/max/min are covered under RXTP-NUMPY-004; other axis "
             "forms remain fallback. Core/plugin API 1.5 admits only non-chained "
-            "==/!=/</<=/>/>= comparisons and exact three-argument numpy.where "
-            "within the separately documented numeric/resident-bool matrix."
+            "==/!=/</<=/>/>= comparisons, exact resident-mask logical_not/logical_and/"
+            "logical_or, whole-array resident-mask all/any, and exact three-argument "
+            "numpy.where within the separately documented numeric/resident-bool matrix."
         ),
         outcome="fallback",
         diagnostic_code="RXTP-NUMPY-019",

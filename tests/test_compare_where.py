@@ -32,6 +32,9 @@ BOOL_1D = "rextio-numpy/bool-1d"
 BOOL_2D = "rextio-numpy/bool-2d"
 COMPARE_RULE = "rextio-numpy/elementwise-compare"
 WHERE_RULE = "rextio-numpy/where-three-argument"
+LOGICAL_NOT_RULE = "rextio-numpy/resident-logical-not"
+LOGICAL_BINARY_RULE = "rextio-numpy/resident-logical-binary"
+LOGICAL_REDUCTION_RULE = "rextio-numpy/resident-logical-reduction"
 
 PLUGIN = RextioNumpyPlugin()
 CONFIG = RextioConfig()
@@ -183,6 +186,135 @@ def test_comparison_lower_revalidates_result_type_and_literals() -> None:
             ),
             _ctx("values", "limit"),
         )
+
+
+@pytest.mark.parametrize(
+    ("target", "operands", "rule_id", "result_type"),
+    (
+        ("numpy.logical_not", (BOOL_1D,), LOGICAL_NOT_RULE, BOOL_1D),
+        ("numpy.logical_not", (BOOL_2D,), LOGICAL_NOT_RULE, BOOL_2D),
+        ("numpy.logical_and", (BOOL_1D, BOOL_2D), LOGICAL_BINARY_RULE, BOOL_2D),
+        ("numpy.logical_or", (BOOL_2D, BOOL_1D), LOGICAL_BINARY_RULE, BOOL_2D),
+        ("numpy.all", (BOOL_1D,), LOGICAL_REDUCTION_RULE, "bool"),
+        ("numpy.any", (BOOL_2D,), LOGICAL_REDUCTION_RULE, "bool"),
+    ),
+)
+def test_claims_exact_resident_logical_surface(
+    target: str,
+    operands: tuple[str, ...],
+    rule_id: str,
+    result_type: str,
+) -> None:
+    assert PLUGIN.claim(_site("call", target, operands), CONFIG) == Claimed(
+        rule_id=rule_id,
+        result_type=result_type,
+    )
+
+
+@pytest.mark.parametrize(
+    ("target", "operands", "expected_type"),
+    (
+        ("numpy.logical_not", (F64_1D,), Rejected),
+        ("numpy.logical_and", (BOOL_1D, F64_1D), Rejected),
+        ("numpy.logical_or", (BOOL_1D,), Rejected),
+        ("numpy.all", (F64_1D,), Rejected),
+        ("numpy.any", (BOOL_1D, BOOL_1D), Rejected),
+        ("numpy.logical_not", (None,), NotCovered),
+    ),
+)
+def test_resident_logical_near_misses_fail_closed(
+    target: str,
+    operands: tuple[str | None, ...],
+    expected_type: type[Rejected] | type[NotCovered],
+) -> None:
+    assert isinstance(PLUGIN.claim(_site("call", target, operands), CONFIG), expected_type)
+
+
+def test_resident_logical_options_and_lower_metadata_fail_closed() -> None:
+    option = PLUGIN.claim(
+        _site(
+            "call",
+            "numpy.all",
+            (BOOL_1D,),
+            keywords=(
+                KeywordArg(
+                    name="axis",
+                    arg_type="int",
+                    literal=ClaimLiteral(is_literal=True, value=0),
+                ),
+            ),
+        ),
+        CONFIG,
+    )
+    assert isinstance(option, Rejected)
+
+    claimed = _claimed(_site("call", "numpy.logical_and", (BOOL_1D, BOOL_2D)))
+    with pytest.raises(ValueError, match="result_type"):
+        PLUGIN.lower(replace(claimed, result_type=BOOL_1D), _ctx("left", "right"))
+    with pytest.raises(ValueError, match="operand_literals"):
+        PLUGIN.lower(
+            replace(
+                claimed,
+                operand_literals=(
+                    ClaimLiteral(is_literal=True, value=True),
+                    ClaimLiteral(is_literal=False),
+                ),
+            ),
+            _ctx("left", "right"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("target", "operands", "helper_name", "rust_call"),
+    (
+        (
+            "numpy.logical_not",
+            (BOOL_1D,),
+            "__rxtnp_logical_not_1",
+            "__rxtnp_logical_not_1(&mask)?",
+        ),
+        (
+            "numpy.logical_and",
+            (BOOL_1D, BOOL_2D),
+            "__rxtnp_logical_and12",
+            "__rxtnp_logical_and12(&left, &right)?",
+        ),
+        (
+            "numpy.logical_or",
+            (BOOL_2D, BOOL_1D),
+            "__rxtnp_logical_or21",
+            "__rxtnp_logical_or21(&left, &right)?",
+        ),
+        (
+            "numpy.all",
+            (BOOL_2D,),
+            "__rxtnp_logical_all_2",
+            "__rxtnp_logical_all_2(&mask)?",
+        ),
+        (
+            "numpy.any",
+            (BOOL_1D,),
+            "__rxtnp_logical_any_1",
+            "__rxtnp_logical_any_1(&mask)?",
+        ),
+    ),
+)
+def test_lowers_exact_resident_logical_surface(
+    target: str,
+    operands: tuple[str, ...],
+    helper_name: str,
+    rust_call: str,
+) -> None:
+    rendered = ("mask",) if len(operands) == 1 else ("left", "right")
+    lowered = PLUGIN.lower(_claimed(_site("call", target, operands)), _ctx(*rendered))
+    assert lowered.rust == rust_call
+    helpers = "\n".join(lowered.helpers)
+    assert f"fn {helper_name}" in helpers
+    if target in {"numpy.logical_and", "numpy.logical_or"}:
+        assert "__rxtnp_broadcast_shape" in helpers
+        assert "numpy::ndarray::Zip::from" in helpers
+    if target in {"numpy.all", "numpy.any"}:
+        assert ".iter()." in helpers
 
 
 @pytest.mark.parametrize(

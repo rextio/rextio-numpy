@@ -58,6 +58,14 @@ from rextio_numpy.rust_snippets.fusion import (
     fusion_helpers_bundle,
 )
 from rextio_numpy.rust_snippets.linear import dot1, dot_call_name, dot_typed
+from rextio_numpy.rust_snippets.logical import (
+    logical_binary_call_name,
+    logical_binary_typed,
+    logical_not_call_name,
+    logical_not_typed,
+    logical_reduction_call_name,
+    logical_reduction_typed,
+)
 from rextio_numpy.rust_snippets.reductions import (
     axis_call_name,
     axis_typed,
@@ -117,6 +125,12 @@ __all__ = [
     "mean1",
     "mean_call_name",
     "mean_typed",
+    "logical_binary_call_name",
+    "logical_binary_typed",
+    "logical_not_call_name",
+    "logical_not_typed",
+    "logical_reduction_call_name",
+    "logical_reduction_typed",
     "op_from_target",
     "shared_broadcast_helpers",
     "sum1",

@@ -33,6 +33,11 @@ def test_public_coverage_import() -> None:
         "numpy.absolute",
         "numpy.abs",
         "numpy.square",
+        "numpy.logical_not",
+        "numpy.logical_and",
+        "numpy.logical_or",
+        "numpy.all",
+        "numpy.any",
         "numpy.where",
     )
 
@@ -73,6 +78,9 @@ def test_native_records_broadened_but_ids_stable() -> None:
         "rextio-numpy/elementwise-chain-fusion",
         "rextio-numpy/unary-module",
         "rextio-numpy/elementwise-compare",
+        "rextio-numpy/resident-logical-not",
+        "rextio-numpy/resident-logical-binary",
+        "rextio-numpy/resident-logical-reduction",
         "rextio-numpy/where-three-argument",
     }
     elem = by_id["rextio-numpy/elementwise-float64"]
@@ -124,6 +132,15 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "numpy.negative" in unary.scope.pattern
     assert "wrapping" in unary.constraint
     assert "out" in unary.constraint
+    logical_not = by_id["rextio-numpy/resident-logical-not"]
+    assert logical_not.diagnostic_code == "RXTP-NUMPY-015"
+    assert "resident bool" in logical_not.scope.pattern
+    logical_binary = by_id["rextio-numpy/resident-logical-binary"]
+    assert logical_binary.diagnostic_code == "RXTP-NUMPY-016"
+    assert "broadcast" in logical_binary.constraint.lower()
+    logical_reduction = by_id["rextio-numpy/resident-logical-reduction"]
+    assert logical_reduction.diagnostic_code == "RXTP-NUMPY-017"
+    assert "Empty-mask identities" in logical_reduction.constraint
 
 
 def test_fallback_ndim_is_rank_gt_2() -> None:

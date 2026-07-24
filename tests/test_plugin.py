@@ -178,6 +178,9 @@ def test_rule_records_shape() -> None:
             "rextio-numpy/reduction-axis",
         "rextio-numpy/unary-module",
         "rextio-numpy/elementwise-compare",
+        "rextio-numpy/resident-logical-not",
+        "rextio-numpy/resident-logical-binary",
+        "rextio-numpy/resident-logical-reduction",
         "rextio-numpy/where-three-argument",
     }
     assert all(record.verified is True for record in records if record.outcome == "native")
