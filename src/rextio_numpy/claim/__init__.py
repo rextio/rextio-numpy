@@ -5,7 +5,7 @@ from __future__ import annotations
 from rextio.config.schema import RextioConfig
 from rextio.plugins.api import ClaimResult, ClaimSite, NotCovered
 
-from rextio_numpy.claim import binops, compare, fusion, linear, reductions, unary, where
+from rextio_numpy.claim import binops, compare, fusion, linear, logical, reductions, unary, where
 
 __all__ = ["claim"]
 
@@ -28,6 +28,7 @@ def claim(site: ClaimSite, config: RextioConfig) -> ClaimResult:
     # claim with operand_mode="leaves" and subsume descendant binops.
     for handler in (
         compare.try_claim,
+        logical.try_claim,
         where.try_claim,
         linear.try_claim,
         reductions.try_claim,

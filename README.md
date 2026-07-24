@@ -88,8 +88,14 @@ semantics matter, keep the enclosing function on Python fallback.
   Python parameter or return boundary; a direct exported return is rejected
   by Core with `RXT092` (`RXTP-NUMPY-009`). Chained, identity, and membership
   comparisons stay fallback.
+- **Resident-mask logical composition:** exact `numpy.logical_not(mask)`,
+  `numpy.logical_and(left, right)`, and `numpy.logical_or(left, right)` consume
+  only resident rank-1/rank-2 boolean masks produced by supported comparisons
+  or logical calls. Binary forms use NumPy-compatible rank-1/rank-2
+  broadcasting, including zero axes; masks remain unnameable and cannot cross a
+  Python boundary (`RXTP-NUMPY-015` / `016`).
 - **Exact three-positional-argument `numpy.where(condition, x, y)`** where
-  `condition` is one of those resident comparison results and the branches
+  `condition` is one resident comparison/logical result and the branches
   are same-dtype numeric arrays, or one array plus its matching Python scalar.
   At least one branch must be an array. Condition-only, keyword, two-scalar,
   and mixed-dtype forms stay fallback. Core-canonicalized import aliases such
@@ -180,8 +186,8 @@ arity-matched `ClaimLiteral(is_literal=False)` placeholders are accepted;
 populated slots require the route's exact count and lane-specific,
 type-compatible literal metadata.
 
-Required CI installs the live Core `0.1.6` integration branch, asserts plugin
-API 1.5, runs the complete real-Cargo suite without test selection, and rejects
+Required CI installs the live Core `0.1.6` integration branch, requires host
+plugin API 1.5 or later, runs the complete real-Cargo suite without test selection, and rejects
 skipped certification cases.
 
 ### Accepted release divergence: missing NumPy `RuntimeWarning`
@@ -199,7 +205,9 @@ contract; warning parity is **not** part of the acceptance surface.
 | Rule | Outcome | Code |
 |---|---|---|
 | Non-chained `== != < <= > >=` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar); resident bool result | native (verified) | RXTP-NUMPY-009 |
-| Exact three-positional `numpy.where(condition, x, y)` with resident comparison condition and bounded same-dtype branches | native (verified) | RXTP-NUMPY-014 |
+| `numpy.logical_not` over one resident bool mask | native (verified) | RXTP-NUMPY-015 |
+| `numpy.logical_and` / `numpy.logical_or` over two resident bool masks (rank-1/rank-2 broadcast) | native (verified) | RXTP-NUMPY-016 |
+| Exact three-positional `numpy.where(condition, x, y)` with resident comparison/logical condition and bounded same-dtype branches | native (verified) | RXTP-NUMPY-014 |
 | Element-wise `+ - * /` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar) | native (verified) | RXTP-NUMPY-001 |
 | Exact two-positional/no-keyword `numpy.add/subtract/multiply/divide(a, b)` over the same matrix | native (verified) | RXTP-NUMPY-007 |
 | `numpy.dot(a, b)` / `a.dot(b)` on same-dtype 1-D f64/i64 (not f32, not 2-D, not `@`) | native (verified) | RXTP-NUMPY-002 |
@@ -288,12 +296,12 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 On this tree:
 
-- `.venv/bin/python -m pytest --collect-only -q` reports **950** collected tests total.
+- `.venv/bin/python -m pytest --collect-only -q` reports **969** collected tests total.
 - The focused collection command
   `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **150** real-Cargo certification cases.
+  reports **151** real-Cargo certification cases.
 
-Those 150 cases are **cargo-gated** and may also skip via dependency
+Those 151 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material
 test changes; do not treat these numbers as a product API.
 

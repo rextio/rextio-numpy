@@ -27,8 +27,13 @@ advertise the optional standalone-artifact capability.
   annotation spellings and no Python boundary conversion, so source cannot
   name or forge a condition type; returning one through an exported boundary
   is rejected by Core with `RXT092`.
+- Adds exact resident-mask `numpy.logical_not`, `numpy.logical_and`, and
+  `numpy.logical_or`. They consume only plugin-owned rank-1/rank-2 comparison
+  or logical results; binary calls preserve NumPy rank-1/rank-2 broadcasting,
+  including zero axes. Masks remain result-only and cannot gain an annotation
+  spelling or cross a Python boundary.
 - Adds exact three-positional-argument `numpy.where(condition, x, y)` for a
-  resident comparison condition and same-dtype numeric array branches, or one
+  resident comparison/logical condition and same-dtype numeric array branches, or one
   array plus a matching scalar. Independent three-way broadcasting includes
   zero axes and NumPy-compatible shape errors; condition-only, keyword,
   two-scalar, and mixed-dtype forms remain fallback. Core-canonicalized import
@@ -72,10 +77,10 @@ advertise the optional standalone-artifact capability.
   The guards are covered under `python -O` as well as normal execution; an
   omitted non-literal operand-literal tuple and Core's arity-matched nonliteral
   placeholders remain valid representations.
-- Required CI installs the live Core `0.1.6` integration branch, asserts plugin
-  API 1.5, and runs the complete real-Cargo certification suite without test
+- Required CI installs the live Core `0.1.6` integration branch, requires host
+  plugin API 1.5 or later, and runs the complete real-Cargo certification suite without test
   selection; skipped certification cases fail the job.
-- The current tree collects **950** tests in total and **150** tests in the
+- The current tree collects **969** tests in total and **151** tests in the
   real-Cargo certification module.
 
 ## 0.1.1 — 2026-07-14

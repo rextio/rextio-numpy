@@ -575,6 +575,32 @@ def where_eq_i64_scalar(
     no: I64Arr1,
 ) -> I64Arr1:
     return np.where(values == target, yes, no)
+
+
+# --- API 1.5 resident bool composition surface ---
+
+def logical_where_not_f64(values: F64Arr1, yes: F64Arr1, no: F64Arr1) -> F64Arr1:
+    return np.where(np.logical_not(values > 0.0), yes, no)
+
+
+def logical_where_and_f64_12(
+    left: F64Arr1,
+    right: F64Arr2,
+    yes: F64Arr2,
+    no: F64Arr1,
+) -> F64Arr2:
+    return np.where(np.logical_and(left > 0.0, right < 0.0), yes, no)
+
+
+def logical_where_or_f64_21(
+    left: F64Arr2,
+    right: F64Arr1,
+    yes: F64Arr1,
+    no: F64Arr2,
+) -> F64Arr2:
+    return np.where(np.logical_or(left > 0.0, right < 0.0), yes, no)
+
+
 """
 
 
@@ -1054,6 +1080,55 @@ def _require_native_scalar(project: CertifiedProject, name: str, equals):
             f"Wave-1 kernel {name!r} is not natively served — likely waiting on "
             f"plugin.py type_vocabulary integration (plugin_types()): {exc}"
         )
+
+
+def test_api15_resident_logical_composition(
+    project: CertifiedProject,
+) -> None:
+    """Certify native compare→logical→where composition."""
+    logical_not = _require_native(project, "logical_where_not_f64")
+    logical_and = _require_native(project, "logical_where_and_f64_12")
+    logical_or = _require_native(project, "logical_where_or_f64_21")
+
+    values = np.array([-1.0, 0.0, 2.0])
+    yes = np.array([10.0, 20.0, 30.0])
+    no = np.array([-10.0, -20.0, -30.0])
+    np.testing.assert_array_equal(
+        logical_not(values, yes, no),
+        np.where(np.logical_not(values > 0.0), yes, no),
+    )
+
+    left_1d = np.array([1.0, -1.0, 2.0])
+    right_2d = np.array([[-1.0, 1.0, -1.0], [1.0, -1.0, 1.0]])
+    yes_2d = np.arange(6.0).reshape(2, 3)
+    no_1d = np.array([-1.0, -2.0, -3.0])
+    np.testing.assert_array_equal(
+        logical_and(left_1d, right_2d, yes_2d, no_1d),
+        np.where(np.logical_and(left_1d > 0.0, right_2d < 0.0), yes_2d, no_1d),
+    )
+    np.testing.assert_array_equal(
+        logical_or(right_2d, left_1d, no_1d, yes_2d),
+        np.where(np.logical_or(right_2d > 0.0, left_1d < 0.0), no_1d, yes_2d),
+    )
+
+    np.testing.assert_array_equal(
+        logical_and(
+            np.array([], dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+            np.array([], dtype=np.float64),
+        ),
+        np.empty((2, 0), dtype=np.float64),
+    )
+    np.testing.assert_array_equal(
+        logical_or(
+            np.empty((2, 0), dtype=np.float64),
+            np.array([], dtype=np.float64),
+            np.array([], dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+        ),
+        np.empty((2, 0), dtype=np.float64),
+    )
 
 
 @pytest.mark.parametrize(

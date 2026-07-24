@@ -23,14 +23,14 @@ jobs:
       - run: python -m pip install -e .core-rextio
       - run: python -m pip install pytest ruff mypy numpy hypothesis build
       - run: python -m pip install --no-deps -e .
-      - run: python -c "from rextio.plugins.api import PLUGIN_API_VERSION; assert PLUGIN_API_VERSION == '1.5', PLUGIN_API_VERSION"
+      - run: python -c "from rextio.plugins.api import PLUGIN_API_VERSION; major, minor = map(int, PLUGIN_API_VERSION.split('.', 1)); assert 1 <= major < 2 and minor >= 5, PLUGIN_API_VERSION"
       - run: python -m pytest tests/test_claim_and_lower.py tests/test_claim_linear.py tests/test_claim_reductions.py tests/test_claim_methods.py tests/test_claim_unary.py tests/test_compare_where.py tests/test_integration_compare_where.py tests/test_lower_binops.py tests/test_lower_contract_hardening.py tests/test_lower_linear.py tests/test_lower_reductions.py tests/test_lower_methods.py tests/test_lower_unary.py tests/test_plugin.py tests/test_rules_records.py
       - run: ruff check src tests
       - run: mypy src
       - run: python -m build
 
   native-certification:
-    name: Required native certification (Core 0.1.6 / API 1.5)
+    name: Required native certification (Core 0.1.6 / compatible API 1.x)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -48,7 +48,7 @@ jobs:
       - run: python -m pip install -e .core-rextio
       - run: python -m pip install pytest numpy hypothesis
       - run: python -m pip install --no-deps -e .
-      - run: python -c "from rextio.plugins.api import PLUGIN_API_VERSION; assert PLUGIN_API_VERSION == '1.5', PLUGIN_API_VERSION"
+      - run: python -c "from rextio.plugins.api import PLUGIN_API_VERSION; major, minor = map(int, PLUGIN_API_VERSION.split('.', 1)); assert 1 <= major < 2 and minor >= 5, PLUGIN_API_VERSION"
       - name: Run the complete required native certification suite
         shell: bash
         run: |

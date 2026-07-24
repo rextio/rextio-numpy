@@ -32,6 +32,9 @@ COVERAGE = CoverageDecl(
         "numpy.absolute",
         "numpy.abs",
         "numpy.square",
+        "numpy.logical_not",
+        "numpy.logical_and",
+        "numpy.logical_or",
         "numpy.where",
     ),
 )
