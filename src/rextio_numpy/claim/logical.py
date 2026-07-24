@@ -1,10 +1,9 @@
-"""Claims for resident-boolean NumPy logical composition and reductions.
+"""Claims for resident-boolean NumPy logical composition.
 
 The boolean ndarray keys owned by this plugin are result-only resident types:
 they can be produced only by an already claimed expression and cannot cross a
 Python boundary.  These routes deliberately keep that property: logical calls
-accept only resident masks, while whole-array ``all`` / ``any`` return a core
-``bool`` scalar.
+accept only resident masks and preserve the result-only property.
 """
 
 from __future__ import annotations
@@ -23,14 +22,8 @@ LOGICAL_BINARY_TARGETS: dict[str, str] = {
     "numpy.logical_and": "and",
     "numpy.logical_or": "or",
 }
-LOGICAL_REDUCTION_TARGETS: dict[str, str] = {
-    "numpy.all": "all",
-    "numpy.any": "any",
-}
-
 LOGICAL_NOT_RULE = "rextio-numpy/resident-logical-not"
 LOGICAL_BINARY_RULE = "rextio-numpy/resident-logical-binary"
-LOGICAL_REDUCTION_RULE = "rextio-numpy/resident-logical-reduction"
 
 
 def _reject_or_uncovered(site: ClaimSite) -> ClaimResult:
@@ -53,7 +46,8 @@ def _claim_binary(site: ClaimSite) -> ClaimResult:
     left, right = site.operand_types
     if not is_bool_type(left) or not is_bool_type(right):
         return _reject_or_uncovered(site)
-    assert left is not None and right is not None
+    if left is None or right is None:
+        return _reject_or_uncovered(site)
     left_rank = bool_rank(left)
     right_rank = bool_rank(right)
     if left_rank is None or right_rank is None:
@@ -64,25 +58,14 @@ def _claim_binary(site: ClaimSite) -> ClaimResult:
     )
 
 
-def _claim_reduction(site: ClaimSite) -> ClaimResult:
-    if len(site.operand_types) != 1 or site.receiver is not None or site.keywords or site.callables:
-        return _reject_or_uncovered(site)
-    (mask,) = site.operand_types
-    if not is_bool_type(mask):
-        return _reject_or_uncovered(site)
-    return Claimed(rule_id=LOGICAL_REDUCTION_RULE, result_type="bool")
-
-
 def try_claim(site: ClaimSite) -> ClaimResult | None:
-    """Claim only exact resident-mask logical calls and whole reductions."""
+    """Claim only exact resident-mask logical calls."""
     if site.kind != "call":
         return None
     if site.target == LOGICAL_NOT_TARGET:
         return _claim_not(site)
     if site.target in LOGICAL_BINARY_TARGETS:
         return _claim_binary(site)
-    if site.target in LOGICAL_REDUCTION_TARGETS:
-        return _claim_reduction(site)
     return None
 
 
@@ -91,7 +74,5 @@ __all__ = [
     "LOGICAL_BINARY_TARGETS",
     "LOGICAL_NOT_RULE",
     "LOGICAL_NOT_TARGET",
-    "LOGICAL_REDUCTION_RULE",
-    "LOGICAL_REDUCTION_TARGETS",
     "try_claim",
 ]

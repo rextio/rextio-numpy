@@ -96,14 +96,6 @@ def choose_composed_masks(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
     mask = np.logical_or(np.logical_not(values > 0.0), fallback < 0.0)
     return np.where(mask, values, fallback)
 
-def all_positive(values: F64Arr1) -> bool:
-    return np.all(values > 0.0)
-
-def any_positive_branch(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
-    if np.any(values > 0.0):
-        return values + 0.0
-    return fallback + 0.0
-
 def chained_fallback(a: F64Arr1, b: F64Arr1, c: F64Arr1) -> F64Arr1:
     return np.where(a < b < c, a, c)
 
@@ -206,22 +198,6 @@ def test_api_15_compare_result_flows_into_where_and_codegen(tmp_path: Path) -> N
     ]
     assert "__rxtnp_logical_not_1" in source
     assert "__rxtnp_logical_or11" in source
-
-    all_positive = _function(analysis, "all_positive")
-    assert all_positive.accepted is True
-    assert [claim.rule_id for claim in all_positive.plugin_claims] == [
-        "rextio-numpy/elementwise-compare",
-        "rextio-numpy/resident-logical-reduction",
-    ]
-    assert "__rxtnp_logical_all_1" in source
-
-    any_positive_branch = _function(analysis, "any_positive_branch")
-    assert any_positive_branch.accepted is True
-    assert [claim.rule_id for claim in any_positive_branch.plugin_claims[:2]] == [
-        "rextio-numpy/elementwise-compare",
-        "rextio-numpy/resident-logical-reduction",
-    ]
-    assert "__rxtnp_logical_any_1" in source
 
     imported_alias = _function(analysis, "choose_positive_import_alias")
     assert imported_alias.accepted is True

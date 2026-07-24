@@ -24,8 +24,8 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "Elementwise covers same-dtype float64/float32/int64 arrays of rank 1 or 2 "
             "plus matching float/int scalars. Comparison results are resident bool "
             "rank-1/rank-2 arrays; resident logical calls consume only such masks, "
-            "and whole-array all/any return a core bool. Three-argument where requires such a condition "
-            "plus same-dtype numeric branches with at least one array. Whole-array "
+            "and three-argument where requires such a condition plus same-dtype numeric "
+            "branches with at least one array. Whole-array "
             "and literal-axis sum cover "
             "float64/int64 ranks 1–2; mean covers float64 ranks 1–2 only (float32 "
             "sum/mean and int64 mean are excluded). Whole-array and literal-axis "
@@ -133,7 +133,7 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
                 "matmul/@, unsupported ufuncs or optional ufunc arguments, random, "
                 "linalg, amax/amin, chained/identity/membership comparisons, "
                 "condition-only where, logical calls over Python/materialized masks, "
-                "logical reduction options, numpy.select, ...)"
+                "numpy.select, ...)"
             ),
         ),
         constraint=(
@@ -142,7 +142,7 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "single-axis sum/mean/max/min are covered under RXTP-NUMPY-004; other axis "
             "forms remain fallback. Core/plugin API 1.5 admits only non-chained "
             "==/!=/</<=/>/>= comparisons, exact resident-mask logical_not/logical_and/"
-            "logical_or, whole-array resident-mask all/any, and exact three-argument "
+            "logical_or, and exact three-argument "
             "numpy.where within the separately documented numeric/resident-bool matrix."
         ),
         outcome="fallback",

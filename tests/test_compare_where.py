@@ -34,7 +34,6 @@ COMPARE_RULE = "rextio-numpy/elementwise-compare"
 WHERE_RULE = "rextio-numpy/where-three-argument"
 LOGICAL_NOT_RULE = "rextio-numpy/resident-logical-not"
 LOGICAL_BINARY_RULE = "rextio-numpy/resident-logical-binary"
-LOGICAL_REDUCTION_RULE = "rextio-numpy/resident-logical-reduction"
 
 PLUGIN = RextioNumpyPlugin()
 CONFIG = RextioConfig()
@@ -195,8 +194,6 @@ def test_comparison_lower_revalidates_result_type_and_literals() -> None:
         ("numpy.logical_not", (BOOL_2D,), LOGICAL_NOT_RULE, BOOL_2D),
         ("numpy.logical_and", (BOOL_1D, BOOL_2D), LOGICAL_BINARY_RULE, BOOL_2D),
         ("numpy.logical_or", (BOOL_2D, BOOL_1D), LOGICAL_BINARY_RULE, BOOL_2D),
-        ("numpy.all", (BOOL_1D,), LOGICAL_REDUCTION_RULE, "bool"),
-        ("numpy.any", (BOOL_2D,), LOGICAL_REDUCTION_RULE, "bool"),
     ),
 )
 def test_claims_exact_resident_logical_surface(
@@ -217,8 +214,6 @@ def test_claims_exact_resident_logical_surface(
         ("numpy.logical_not", (F64_1D,), Rejected),
         ("numpy.logical_and", (BOOL_1D, F64_1D), Rejected),
         ("numpy.logical_or", (BOOL_1D,), Rejected),
-        ("numpy.all", (F64_1D,), Rejected),
-        ("numpy.any", (BOOL_1D, BOOL_1D), Rejected),
         ("numpy.logical_not", (None,), NotCovered),
     ),
 )
@@ -230,24 +225,7 @@ def test_resident_logical_near_misses_fail_closed(
     assert isinstance(PLUGIN.claim(_site("call", target, operands), CONFIG), expected_type)
 
 
-def test_resident_logical_options_and_lower_metadata_fail_closed() -> None:
-    option = PLUGIN.claim(
-        _site(
-            "call",
-            "numpy.all",
-            (BOOL_1D,),
-            keywords=(
-                KeywordArg(
-                    name="axis",
-                    arg_type="int",
-                    literal=ClaimLiteral(is_literal=True, value=0),
-                ),
-            ),
-        ),
-        CONFIG,
-    )
-    assert isinstance(option, Rejected)
-
+def test_resident_logical_lower_metadata_fail_closed() -> None:
     claimed = _claimed(_site("call", "numpy.logical_and", (BOOL_1D, BOOL_2D)))
     with pytest.raises(ValueError, match="result_type"):
         PLUGIN.lower(replace(claimed, result_type=BOOL_1D), _ctx("left", "right"))
@@ -260,6 +238,11 @@ def test_resident_logical_options_and_lower_metadata_fail_closed() -> None:
                     ClaimLiteral(is_literal=False),
                 ),
             ),
+            _ctx("left", "right"),
+        )
+    with pytest.raises(ValueError, match="resident bool mask"):
+        PLUGIN.lower(
+            replace(claimed, operand_types=(None, BOOL_2D)),
             _ctx("left", "right"),
         )
 
@@ -285,18 +268,6 @@ def test_resident_logical_options_and_lower_metadata_fail_closed() -> None:
             "__rxtnp_logical_or21",
             "__rxtnp_logical_or21(&left, &right)?",
         ),
-        (
-            "numpy.all",
-            (BOOL_2D,),
-            "__rxtnp_logical_all_2",
-            "__rxtnp_logical_all_2(&mask)?",
-        ),
-        (
-            "numpy.any",
-            (BOOL_1D,),
-            "__rxtnp_logical_any_1",
-            "__rxtnp_logical_any_1(&mask)?",
-        ),
     ),
 )
 def test_lowers_exact_resident_logical_surface(
@@ -313,8 +284,6 @@ def test_lowers_exact_resident_logical_surface(
     if target in {"numpy.logical_and", "numpy.logical_or"}:
         assert "__rxtnp_broadcast_shape" in helpers
         assert "numpy::ndarray::Zip::from" in helpers
-    if target in {"numpy.all", "numpy.any"}:
-        assert ".iter()." in helpers
 
 
 @pytest.mark.parametrize(

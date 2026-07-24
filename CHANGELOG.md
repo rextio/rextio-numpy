@@ -32,13 +32,6 @@ advertise the optional standalone-artifact capability.
   or logical results; binary calls preserve NumPy rank-1/rank-2 broadcasting,
   including zero axes. Masks remain result-only and cannot gain an annotation
   spelling or cross a Python boundary.
-- Adds exact whole-mask `numpy.all(mask)` and `numpy.any(mask)` for one
-  resident rank-1/rank-2 boolean mask with no options. They return a core
-  builtin `bool` (including empty identities `all=True` / `any=False`) and are
-  certified as scalar conditions in supported native control flow. `axis`,
-  `out`, `keepdims`, `where`, `dtype`, and every other option remain fallback.
-  Native builtin `bool` is truth-value equivalent but not identical to NumPy's
-  `numpy.bool_` scalar subclass.
 - Adds exact three-positional-argument `numpy.where(condition, x, y)` for a
   resident comparison/logical condition and same-dtype numeric array branches, or one
   array plus a matching scalar. Independent three-way broadcasting includes

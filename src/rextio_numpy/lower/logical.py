@@ -1,4 +1,4 @@
-"""Defensive lowering for resident-mask logical composition and reductions."""
+"""Defensive lowering for resident-mask logical composition."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from rextio_numpy.claim.logical import (
     LOGICAL_BINARY_TARGETS,
     LOGICAL_NOT_RULE,
     LOGICAL_NOT_TARGET,
-    LOGICAL_REDUCTION_RULE,
-    LOGICAL_REDUCTION_TARGETS,
 )
 from rextio_numpy.diagnostics import bool_rank, bool_type_for, is_bool_type
 from rextio_numpy.lower.contracts import (
@@ -25,9 +23,8 @@ from rextio_numpy.lower.contracts import (
 
 def _require_mask(mask: str | None, lane: str) -> tuple[str, int]:
     """Reconstruct one resident bool mask key and its fixed rank."""
-    if not is_bool_type(mask):
+    if mask is None or not is_bool_type(mask):
         raise ValueError(f"rextio-numpy {lane} lower requires a resident bool mask, got {mask!r}")
-    assert mask is not None
     rank = bool_rank(mask)
     if rank is None:
         raise ValueError(f"rextio-numpy {lane} lower received an unknown mask rank: {mask!r}")
@@ -78,27 +75,6 @@ def _lower_binary(claimed: ClaimSite, ctx: LoweringContext, op: str) -> LoweredE
     )
 
 
-def _lower_reduction(claimed: ClaimSite, ctx: LoweringContext, op: str) -> LoweredExpr:
-    lane = f"resident logical {op}"
-    require_rule_id(claimed, LOGICAL_REDUCTION_RULE, lane)
-    require_direct_context(ctx, lane, receiver=False)
-    require_no_hidden_site_metadata(
-        claimed, lane, allow_expression=True, expected_operand_literals=1
-    )
-    require_site_expression_matches_claim(claimed, lane)
-    if claimed.receiver is not None or claimed.keywords or len(claimed.operand_types) != 1:
-        raise ValueError(f"rextio-numpy resident {op} lower requires one positional mask")
-    if len(ctx.operands) != 1:
-        raise ValueError(f"rextio-numpy resident {op} lower requires one rendered operand")
-    _mask, rank = _require_mask(claimed.operand_types[0], lane)
-    require_result_type(claimed, "bool", lane)
-    name = rust_snippets.logical_reduction_call_name(op, rank)
-    return LoweredExpr(
-        rust=f"{name}(&{ctx.operands[0]})?",
-        helpers=(rust_snippets.logical_reduction_typed(op, rank),),
-    )
-
-
 def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     """Lower exact logical resident-mask calls, or return ``None`` for other sites."""
     if claimed.kind != "call":
@@ -108,9 +84,6 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     op = LOGICAL_BINARY_TARGETS.get(claimed.target)
     if op is not None:
         return _lower_binary(claimed, ctx, op)
-    op = LOGICAL_REDUCTION_TARGETS.get(claimed.target)
-    if op is not None:
-        return _lower_reduction(claimed, ctx, op)
     return None
 
 

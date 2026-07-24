@@ -94,14 +94,6 @@ semantics matter, keep the enclosing function on Python fallback.
   or logical calls. Binary forms use NumPy-compatible rank-1/rank-2
   broadcasting, including zero axes; masks remain unnameable and cannot cross a
   Python boundary (`RXTP-NUMPY-015` / `016`).
-- **Whole-mask truth reductions:** exact `numpy.all(mask)` and `numpy.any(mask)`
-  consume one resident rank-1/rank-2 boolean mask and return a native Python
-  `bool`, including NumPy empty identities (`all=True`, `any=False`). No
-  `axis`, `out`, `keepdims`, `where`, `dtype`, or other option is claimed, so
-  the scalar result can safely drive supported native control flow
-  (`RXTP-NUMPY-017`). As with other scalar reductions, native returns builtin
-  `bool` while NumPy returns `numpy.bool_`; truth value is certified, exact
-  scalar subclass identity is not.
 - **Exact three-positional-argument `numpy.where(condition, x, y)`** where
   `condition` is one resident comparison/logical result and the branches
   are same-dtype numeric arrays, or one array plus its matching Python scalar.
@@ -215,7 +207,6 @@ contract; warning parity is **not** part of the acceptance surface.
 | Non-chained `== != < <= > >=` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar); resident bool result | native (verified) | RXTP-NUMPY-009 |
 | `numpy.logical_not` over one resident bool mask | native (verified) | RXTP-NUMPY-015 |
 | `numpy.logical_and` / `numpy.logical_or` over two resident bool masks (rank-1/rank-2 broadcast) | native (verified) | RXTP-NUMPY-016 |
-| `numpy.all` / `numpy.any` over one resident bool mask, no options | native (verified) | RXTP-NUMPY-017 |
 | Exact three-positional `numpy.where(condition, x, y)` with resident comparison/logical condition and bounded same-dtype branches | native (verified) | RXTP-NUMPY-014 |
 | Element-wise `+ - * /` on same-dtype f64/f32/i64 ranks 1–2 (broadcasting, array↔scalar) | native (verified) | RXTP-NUMPY-001 |
 | Exact two-positional/no-keyword `numpy.add/subtract/multiply/divide(a, b)` over the same matrix | native (verified) | RXTP-NUMPY-007 |

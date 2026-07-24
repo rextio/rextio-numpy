@@ -63,29 +63,9 @@ def logical_binary_typed(op: str, left_rank: int, right_rank: int) -> str:
     )
 
 
-def logical_reduction_call_name(op: str, rank: int) -> str:
-    """Return a deterministic whole-mask reduction helper name."""
-    return f"__rxtnp_logical_{op}_{rank}"
-
-
-def logical_reduction_typed(op: str, rank: int) -> str:
-    """Return exact whole-array ``all`` / ``any`` over a resident bool mask."""
-    if op not in {"all", "any"}:
-        raise ValueError(f"unsupported resident logical reduction op: {op!r}")
-    iterator = "all" if op == "all" else "any"
-    name = logical_reduction_call_name(op, rank)
-    return (
-        f"fn {name}(mask: &{_arr(rank)}) -> pyo3::PyResult<bool> {{\n"
-        f"    Ok(mask.iter().{iterator}(|&value| value))\n"
-        "}"
-    )
-
-
 __all__ = [
     "logical_binary_call_name",
     "logical_binary_typed",
     "logical_not_call_name",
     "logical_not_typed",
-    "logical_reduction_call_name",
-    "logical_reduction_typed",
 ]

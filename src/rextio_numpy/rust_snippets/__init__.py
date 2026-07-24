@@ -63,8 +63,6 @@ from rextio_numpy.rust_snippets.logical import (
     logical_binary_typed,
     logical_not_call_name,
     logical_not_typed,
-    logical_reduction_call_name,
-    logical_reduction_typed,
 )
 from rextio_numpy.rust_snippets.reductions import (
     axis_call_name,
@@ -129,8 +127,6 @@ __all__ = [
     "logical_binary_typed",
     "logical_not_call_name",
     "logical_not_typed",
-    "logical_reduction_call_name",
-    "logical_reduction_typed",
     "op_from_target",
     "shared_broadcast_helpers",
     "sum1",

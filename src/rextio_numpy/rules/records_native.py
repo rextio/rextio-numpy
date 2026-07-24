@@ -89,32 +89,7 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
         diagnostic_code="RXTP-NUMPY-016",
         guidance=(
             "Compose supported comparison masks with exact two-argument "
-            "numpy.logical_and/or calls, then consume the result in numpy.where or "
-            "numpy.all/any."
-        ),
-        stability="experimental",
-        verified=True,
-    ),
-    RuleRecord(
-        id="rextio-numpy/resident-logical-reduction",
-        provider="rextio-numpy",
-        scope=RuleScope(
-            kind="call",
-            pattern="exact numpy.all(mask) or numpy.any(mask) over one resident bool rank-1/rank-2 mask",
-        ),
-        constraint=(
-            "Exactly one positional resident bool mask and no axis, out, keepdims, "
-            "where, dtype, initial, keyword, receiver, or callable metadata. The "
-            "whole-array result is a core builtin bool (rather than NumPy bool_), so it "
-            "can participate in native scalar control flow without exposing the opaque "
-            "mask. Empty-mask identities "
-            "are NumPy-compatible: all is true and any is false. Inputs are not mutated."
-        ),
-        outcome="native",
-        diagnostic_code="RXTP-NUMPY-017",
-        guidance=(
-            "Use numpy.all(mask) or numpy.any(mask) with no options on a resident "
-            "mask produced by a supported native comparison/logical expression."
+            "numpy.logical_and/or calls, then consume the result in numpy.where."
         ),
         stability="experimental",
         verified=True,

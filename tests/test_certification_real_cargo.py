@@ -577,7 +577,7 @@ def where_eq_i64_scalar(
     return np.where(values == target, yes, no)
 
 
-# --- API 1.5 resident bool composition/reduction surface ---
+# --- API 1.5 resident bool composition surface ---
 
 def logical_where_not_f64(values: F64Arr1, yes: F64Arr1, no: F64Arr1) -> F64Arr1:
     return np.where(np.logical_not(values > 0.0), yes, no)
@@ -601,18 +601,6 @@ def logical_where_or_f64_21(
     return np.where(np.logical_or(left > 0.0, right < 0.0), yes, no)
 
 
-def all_positive_f64(values: F64Arr1) -> bool:
-    return np.all(values > 0.0)
-
-
-def any_positive_f64(values: F64Arr1) -> bool:
-    return np.any(values > 0.0)
-
-
-def any_positive_branch_f64(values: F64Arr1, fallback: F64Arr1) -> F64Arr1:
-    if np.any(values > 0.0):
-        return values + 0.0
-    return fallback + 0.0
 """
 
 
@@ -1099,16 +1087,13 @@ def _require_native_scalar(project: CertifiedProject, name: str, equals):
         )
 
 
-def test_api15_resident_logical_composition_and_whole_reductions(
+def test_api15_resident_logical_composition(
     project: CertifiedProject,
 ) -> None:
-    """Certify native compare→logical→where and compare→all/any scalar flow."""
+    """Certify native compare→logical→where composition."""
     logical_not = _require_native(project, "logical_where_not_f64")
     logical_and = _require_native(project, "logical_where_and_f64_12")
     logical_or = _require_native(project, "logical_where_or_f64_21")
-    all_positive = _require_native_scalar(project, "all_positive_f64", scalar_bool_equal)
-    any_positive = _require_native_scalar(project, "any_positive_f64", scalar_bool_equal)
-    any_branch = _require_native(project, "any_positive_branch_f64")
 
     values = np.array([-1.0, 0.0, 2.0])
     yes = np.array([10.0, 20.0, 30.0])
@@ -1131,19 +1116,23 @@ def test_api15_resident_logical_composition_and_whole_reductions(
         np.where(np.logical_or(right_2d > 0.0, left_1d < 0.0), no_1d, yes_2d),
     )
 
-    assert all_positive(np.array([1.0, 2.0])) is True
-    assert all_positive(np.array([1.0, 0.0])) is False
-    assert all_positive(np.array([], dtype=np.float64)) is True
-    assert any_positive(np.array([0.0, 2.0])) is True
-    assert any_positive(np.array([0.0, -2.0])) is False
-    assert any_positive(np.array([], dtype=np.float64)) is False
     np.testing.assert_array_equal(
-        any_branch(np.array([0.0, 1.0]), no),
-        np.array([0.0, 1.0]),
+        logical_and(
+            np.array([], dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+            np.array([], dtype=np.float64),
+        ),
+        np.empty((2, 0), dtype=np.float64),
     )
     np.testing.assert_array_equal(
-        any_branch(np.array([0.0, -1.0]), no),
-        no,
+        logical_or(
+            np.empty((2, 0), dtype=np.float64),
+            np.array([], dtype=np.float64),
+            np.array([], dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+        ),
+        np.empty((2, 0), dtype=np.float64),
     )
 
 
