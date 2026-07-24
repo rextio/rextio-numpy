@@ -82,8 +82,9 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "arguments, receiver, or callable metadata. Both operands stay inside the "
             "native expression graph; NumPy rank-1/rank-2 broadcasting, including "
             "zero axes, determines the resident bool result rank. Mismatched shapes "
-            "raise the established NumPy-compatible broadcast ValueError. No mask can "
-            "be named, constructed, returned, or supplied from Python source."
+            "raise the established NumPy-compatible broadcast ValueError. A mask may "
+            "be bound only as a fresh resident local inside the native graph; it cannot "
+            "be materialized, annotated, returned, or supplied through a Python boundary."
         ),
         outcome="native",
         diagnostic_code="RXTP-NUMPY-016",

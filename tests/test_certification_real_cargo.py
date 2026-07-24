@@ -668,11 +668,6 @@ def scalar_int_equal(left: object, right: object) -> bool:
     return default_equals(left, right)
 
 
-def scalar_bool_equal(left: object, right: object) -> bool:
-    """Compare Python ``bool`` native output to NumPy's ``bool_`` by value."""
-    return isinstance(left, (bool, np.bool_)) and isinstance(right, (bool, np.bool_)) and bool(left) is bool(right)
-
-
 def _sequential_f32_sum(values: np.ndarray) -> float:
     """Naive left-to-right f32 accumulation (models unclaimed native f32 sum)."""
     acc = np.float32(0.0)
