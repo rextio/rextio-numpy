@@ -21,7 +21,7 @@ classifiers = [
   "Programming Language :: Python :: 3 :: Only",
   "Topic :: Software Development :: Build Tools",
 ]
-# Comparisons require plugin API 1.5 from the unreleased Core 0.1.6 line.
+# Comparisons require plugin API 1.5 from the Core 0.1.6 line.
 # NumPy itself is deliberately NOT a dependency:
 # the plugin describes and lowers the USER project's numpy usage.
 dependencies = [

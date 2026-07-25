@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.2 — unreleased
+## 0.1.2 — 2026-07-26
+
+Public Alpha release on PyPI. The package requires
+**`rextio>=0.1.6,<0.2`**; its expanded resident comparison/mask/where surface
+does not broaden the explicitly retained fallback cases below.
 
 Requires **`rextio>=0.1.6,<0.2`** and advertises plugin API **1.5** for
 non-chained comparison claim sites and resident-result propagation. It does not

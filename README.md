@@ -8,10 +8,10 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: 0.1.2 development
+## Status: 0.1.2 public Alpha
 
-`rextio-numpy` **0.1.2** is the active development branch. The latest
-published cut is **`rextio-numpy` 0.1.1** (2026-07-14).
+`rextio-numpy` **0.1.2** was released on **2026-07-26**. The prior published
+cut was **`rextio-numpy` 0.1.1** (2026-07-14).
 
 Implements **plugin API 1.5** end to end: the annotation vocabulary, the
 deterministic `claim` pass (including keyword/literal axis metadata and
@@ -28,7 +28,7 @@ a runtime dependency of this package — only the user-facing
 
 ### Core compatibility
 
-This branch requires **core `rextio>=0.1.6,<0.2`** and plugin API 1.5 for
+This release requires **core `rextio>=0.1.6,<0.2`** and plugin API 1.5 for
 comparison claim sites and resident-result propagation. It does not implement
 or advertise the optional standalone-artifact capability.
 
@@ -261,21 +261,20 @@ def dot(a: F64Arr1, b: F64Arr1) -> float:
 ```
 
 ```bash
-pip install rextio-numpy   # development 0.1.2 requires rextio >= 0.1.6
+pip install rextio-numpy   # 0.1.2 requires rextio >= 0.1.6
 rextio capabilities --format json   # numpy rules appear under "rules"
 rextio build .                      # lowered kernels compile via cargo
 ```
 
-> **Note:** PyPI currently installs **0.1.1**. The development 0.1.2 surface
-> requires a core that provides plugin API 1.5 (`rextio>=0.1.6`). To work against the
-> surface from a source checkout, see Development below.
+> **Note:** The 0.1.2 surface requires a core that provides plugin API 1.5
+> (`rextio>=0.1.6`). To work against the surface from a source checkout, see
+> Development below.
 
 ## Development
 
-Core for this release requires **`rextio>=0.1.6,<0.2`**. Until that Core line is
-published, install the sibling/source checkout that exposes plugin API 1.5 and
-install this package editable without resolving a published `rextio-numpy`
-wheel over the tree:
+Core for this release requires **`rextio>=0.1.6,<0.2`**. For source
+development against a sibling Core checkout that exposes plugin API 1.5,
+install both trees editable:
 
 ```bash
 uv venv --python 3.11 .venv
@@ -292,7 +291,7 @@ python -m benchmarks --list
 python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 ```
 
-### Verified suite totals (this branch)
+### Verified suite totals (this release)
 
 On this tree:
 
