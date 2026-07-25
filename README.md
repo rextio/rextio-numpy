@@ -186,9 +186,9 @@ arity-matched `ClaimLiteral(is_literal=False)` placeholders are accepted;
 populated slots require the route's exact count and lane-specific,
 type-compatible literal metadata.
 
-Required CI installs the live Core `0.1.6` integration branch, requires host
-plugin API 1.5 or later, runs the complete real-Cargo suite without test selection, and rejects
-skipped certification cases.
+Required CI installs the public Core **`rextio==0.1.6`** release, requires host
+plugin API 1.5 or later, runs the complete real-Cargo suite without test
+selection, and rejects skipped certification cases.
 
 ### Accepted release divergence: missing NumPy `RuntimeWarning`
 

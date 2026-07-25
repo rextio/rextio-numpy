@@ -2,25 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main, "0.1.2"]
+    branches: [main]
   pull_request:
-    branches: [main, "0.1.2"]
+    branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: rextio/rextio
-          ref: "0.1.6"
-          path: .core-rextio
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e .core-rextio
+      - run: python -m pip install "rextio==0.1.6"
       - run: python -m pip install pytest ruff mypy numpy hypothesis build
       - run: python -m pip install --no-deps -e .
       - run: python -c "from rextio.plugins.api import PLUGIN_API_VERSION; major, minor = map(int, PLUGIN_API_VERSION.split('.', 1)); assert 1 <= major < 2 and minor >= 5, PLUGIN_API_VERSION"
@@ -35,17 +30,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: rextio/rextio
-          ref: "0.1.6"
-          path: .core-rextio
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - uses: dtolnay/rust-toolchain@stable
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e .core-rextio
+      - run: python -m pip install "rextio==0.1.6"
       - run: python -m pip install pytest numpy hypothesis
       - run: python -m pip install --no-deps -e .
       - run: python -c "from rextio.plugins.api import PLUGIN_API_VERSION; major, minor = map(int, PLUGIN_API_VERSION.split('.', 1)); assert 1 <= major < 2 and minor >= 5, PLUGIN_API_VERSION"

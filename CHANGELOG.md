@@ -81,9 +81,9 @@ advertise the optional standalone-artifact capability.
   The guards are covered under `python -O` as well as normal execution; an
   omitted non-literal operand-literal tuple and Core's arity-matched nonliteral
   placeholders remain valid representations.
-- Required CI installs the live Core `0.1.6` integration branch, requires host
-  plugin API 1.5 or later, and runs the complete real-Cargo certification suite without test
-  selection; skipped certification cases fail the job.
+- Required CI installs the public Core **`rextio==0.1.6`** release, requires
+  host plugin API 1.5 or later, and runs the complete real-Cargo certification
+  suite without test selection; skipped certification cases fail the job.
 - The current tree collects **969** tests in total and **151** tests in the
   real-Cargo certification module.
 
