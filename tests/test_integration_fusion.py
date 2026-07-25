@@ -69,14 +69,22 @@ def _type_maps() -> PluginTypeMaps:
     by_key: dict[str, RxtPluginType] = {}
     by_spelling: dict[str, RxtPluginType] = {}
     for pt in plugin_types():
-        rxt = RxtPluginType(
-            key=pt.key,
-            native_rust=pt.rust_type,
-            param_rust=pt.conversion.param_rust,
-            param_expr=pt.conversion.param_expr,
-            return_rust=pt.conversion.return_rust,
-            return_expr=pt.conversion.return_expr,
-        )
+        conversion = pt.conversion
+        if conversion is None:
+            rxt = RxtPluginType(
+                key=pt.key,
+                native_rust=pt.rust_type,
+                resident=True,
+            )
+        else:
+            rxt = RxtPluginType(
+                key=pt.key,
+                native_rust=pt.rust_type,
+                param_rust=conversion.param_rust,
+                param_expr=conversion.param_expr,
+                return_rust=conversion.return_rust,
+                return_expr=conversion.return_expr,
+            )
         by_key[pt.key] = rxt
         for spelling in pt.annotations:
             by_spelling[spelling] = rxt
@@ -94,7 +102,7 @@ def multi_op_chain(a: F64Arr1, b: F64Arr1) -> F64Arr1:
 """,
     )
     registry = _registry()
-    assert registry.active[0].api_version == "1.2"
+    assert registry.active[0].api_version == "1.5"
     analysis = analyze_project(
         root,
         active_plugins=registry.active,

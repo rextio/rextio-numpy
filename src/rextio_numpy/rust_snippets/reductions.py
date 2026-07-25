@@ -118,6 +118,29 @@ def mean_call_name(dtype: str, rank: int) -> str:
     return f"__rxtnp_mean{rank}_{dtype}"
 
 
+def extrema_call_name(op: str, dtype: str, rank: int) -> str:
+    """Return the Rust helper name for a whole-array integer extremum."""
+    if op not in {"max", "min"} or dtype != "i64" or rank not in {1, 2}:
+        raise ValueError(
+            f"unsupported whole-array extremum: {op!r}/{dtype!r}/rank-{rank}"
+        )
+    return f"__rxtnp_{op}{rank}_{dtype}"
+
+
+def extrema_typed(op: str, dtype: str, rank: int) -> str:
+    """Return an exact whole-array int64 min/max helper."""
+    name = extrema_call_name(op, dtype, rank)
+    arr = _ARR[(dtype, rank)]
+    iterator_op = "max" if op == "max" else "min"
+    message = _MAX_EMPTY_MSG if op == "max" else _MIN_EMPTY_MSG
+    return (
+        f"fn {name}(a: &{arr}) -> pyo3::PyResult<i64> {{\n"
+        f"    a.iter().copied().{iterator_op}().ok_or_else(|| "
+        f'pyo3::exceptions::PyValueError::new_err("{message}"))\n'
+        "}"
+    )
+
+
 def axis_call_name(op: str, dtype: str, rank: int, axis: int) -> str:
     """Return the Rust helper name for a normalized single-axis reduction.
 

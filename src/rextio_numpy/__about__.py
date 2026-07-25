@@ -4,4 +4,4 @@ setuptools reads ``[tool.setuptools.dynamic] version`` by parsing this module's
 AST, so it stays a single literal assignment.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"

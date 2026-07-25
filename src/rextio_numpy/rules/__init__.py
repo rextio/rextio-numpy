@@ -7,23 +7,27 @@ lowering surface — float64/float32/int64 ranks 1–2 element-wise arithmetic
 (array-array with NumPy broadcasting, array-scalar, scalar-array), multi-op
 elementwise chain fusion (2–8 pure array-name binops via ClaimExpr leaves
 mode), 1-D float64/int64 ``numpy.dot``, whole-array float64/int64 ``sum`` and
-whole-array float64 ``mean``, plus literal-axis ``sum``/``mean``/``max``/``min``
-(``axis=<int literal>``) via the Rust ``ndarray`` crate (float32 sum/mean/dot,
-rank-1 float32 max/min, and int64 mean stay fallback) — plus the explicit
+whole-array float64 ``mean``, plus literal-axis ``sum`` (float64/int64),
+``mean`` (float64), and ``max``/``min`` (int64 only) with
+``axis=<int literal>`` via the Rust ``ndarray`` crate (float extrema, float32
+sum/mean/dot, and int64 mean stay fallback) — plus the explicit
 exclusions around it.
 
-All records are ``experimental`` (plugin API 1.2, requires ``rextio>=0.1.2``
-with core API 1.2 claim metadata). Records with outcome ``native`` carry
+All records are ``experimental`` (plugin API 1.5, requires ``rextio>=0.1.6``).
+Records with outcome ``native`` carry
 ``verified=True``: their lowering is certified via the core plugin
 certification kit (``rextio.plugins.testing``) against CPython NumPy, with the
-divergences documented per rule in ``constraint``. Records with outcome
-``fallback`` are exclusions that keep code on the Python fallback.
+divergences documented per rule in ``constraint``. Exclusion records use
+``fallback`` for static fallback or ``reject`` for the exact-array runtime
+boundary gate.
 
-RXTP-NUMPY-011 (rank), RXTP-NUMPY-012 (view aliasing), and RXTP-NUMPY-019
-(uncovered API) are **declarative-only**: they document why code stays on the
-fallback but are never emitted by ``claim()`` — sites outside the covered
-surface return ``NotCovered`` and core reports its own diagnostic (RXT030).
-Only RXTP-NUMPY-010 is actively emitted, via ``Rejected``.
+RXTP-NUMPY-011 (rank), RXTP-NUMPY-012 (view aliasing), RXTP-NUMPY-013
+(runtime exact-base-ndarray boundary rejection), and RXTP-NUMPY-019 (uncovered
+API) are **declarative-only**. RXTP-NUMPY-013 is specifically not a static
+fallback: nominal annotations cannot distinguish subclasses, so the selected
+native route rejects them deterministically at runtime. Other outside sites
+return ``NotCovered`` and core reports RXT030. Only RXTP-NUMPY-010 is actively
+emitted by ``claim()``, via ``Rejected``.
 """
 
 from __future__ import annotations

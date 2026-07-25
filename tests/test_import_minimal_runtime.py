@@ -73,7 +73,7 @@ def test_types_and_root_exports_import_without_rextio_config(tmp_path: Path) -> 
         provider = plugin()
         assert isinstance(provider, RextioNumpyPlugin)
         assert provider.plugin_id == "rextio-numpy"
-        assert provider.api_version == "1.2"
+        assert provider.api_version == "1.5"
         print("ok")
         """
     )
@@ -163,7 +163,7 @@ def test_root_plugin_export_stable_after_entry_point_submodule_import() -> None:
         provider = plugin()
         assert isinstance(provider, RextioNumpyPlugin)
         assert provider.plugin_id == "rextio-numpy"
-        assert provider.api_version == "1.2"
+        assert provider.api_version == "1.5"
         print("ok")
         """
     )

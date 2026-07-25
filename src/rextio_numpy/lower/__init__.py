@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rextio.plugins.api import ClaimSite, LoweredExpr, LoweringContext
 
-from rextio_numpy.lower import binops, fusion, linear, reductions
+from rextio_numpy.lower import binops, compare, fusion, linear, logical, reductions, unary, where
 
 __all__ = ["lower"]
 
@@ -19,8 +19,12 @@ def lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr:
     and the frozen ``ClaimExpr`` tree.
     """
     for handler in (
+        compare.try_lower,
+        logical.try_lower,
+        where.try_lower,
         linear.try_lower,
         reductions.try_lower,
+        unary.try_lower,
         fusion.try_lower,
         binops.try_lower,
     ):

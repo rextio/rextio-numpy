@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rextio-numpy"
 dynamic = ["version"]
-description = "Rextio plugin that lowers eligible NumPy code to native Rust (plugin API 1.2: claim/lower, annotation vocabulary, pinned crate injection)."
+description = "Rextio plugin that lowers eligible NumPy code to native Rust (plugin API 1.5: comparison claims, claim/lower, resident types, annotation vocabulary, pinned crate injection)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -21,11 +21,11 @@ classifiers = [
   "Programming Language :: Python :: 3 :: Only",
   "Topic :: Software Development :: Build Tools",
 ]
-# The plugin implements protocol v2 from rextio.plugins.api at plugin API 1.2,
-# which requires rextio 0.1.2. NumPy itself is deliberately NOT a dependency:
+# Comparisons require plugin API 1.5 from the Core 0.1.6 line.
+# NumPy itself is deliberately NOT a dependency:
 # the plugin describes and lowers the USER project's numpy usage.
 dependencies = [
-  "rextio>=0.1.2,<0.2",
+  "rextio>=0.1.6,<0.2",
 ]
 
 [project.urls]

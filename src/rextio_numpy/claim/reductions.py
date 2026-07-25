@@ -3,15 +3,17 @@
 Whole-array surface (no keywords):
   * ``numpy.sum`` on float64/int64 ranks 1–2
   * ``numpy.mean`` on float64 ranks 1–2
+  * ``numpy.max`` / ``numpy.min`` on int64 ranks 1–2
 
-Literal-axis surface (exactly ``axis=<int literal>``):
+Literal-axis surface (named ``axis=<int literal>`` or one positional literal):
   * ``numpy.sum`` / ``numpy.mean`` — same dtype matrix as whole-array
-  * ``numpy.max`` / ``numpy.min`` — float64/int64 ranks 1–2; float32 rank 2 only
+  * ``numpy.max`` / ``numpy.min`` — int64 ranks 1–2 only
 
-Bare ``max``/``min`` without ``axis=``, positional axis, ``axis=None``, tuple
-axis, dynamic axis, extra kwargs, method forms, and ``amax``/``amin`` stay
-unclaimed (``NotCovered`` / honest fallback). float32 sum/mean and int64 mean
-remain RXTP-NUMPY-010 rejections.
+Float ``max``/``min``, ``axis=None``, tuple axis, dynamic axis, extra
+positional/keyword options, and ``amax``/``amin`` stay unclaimed
+(``NotCovered`` / honest fallback). Certified ``ndarray`` method forms use
+the current receiver metadata contract and share the exact module-call matrix.
+float32 sum/mean and int64 mean remain RXTP-NUMPY-010 rejections.
 """
 
 from __future__ import annotations
@@ -25,22 +27,24 @@ from rextio_numpy.diagnostics import (
     type_key_for,
 )
 
-_WHOLE_ARRAY_TARGETS = frozenset({"numpy.sum", "numpy.mean"})
+_WHOLE_ARRAY_TARGETS = frozenset(
+    {"numpy.sum", "numpy.mean", "numpy.max", "numpy.min"}
+)
 _AXIS_TARGETS = frozenset({"numpy.sum", "numpy.mean", "numpy.max", "numpy.min"})
 _ALL_TARGETS = _WHOLE_ARRAY_TARGETS | _AXIS_TARGETS
 
 _WHOLE_ARRAY_RULE = "rextio-numpy/reduction-sum-mean"
+_WHOLE_EXTREMA_RULE = "rextio-numpy/reduction-whole-i64-extrema"
 _AXIS_RULE = "rextio-numpy/reduction-axis"
 
 # float32 whole-array / axis sum/mean are intentionally unclaimed: sequential
 # f32 accumulation diverges materially from NumPy pairwise summation.
 # int64 mean is unclaimed: sequential i64→f64 cast-and-sum diverges from NumPy
 # pairwise mean on large integers near the float64 mantissa boundary.
-# float32 max/min rank-1 stays unclaimed: a core float scalar would lose
-# numpy.float32 scalar semantics; rank-2 axis max/min return F32Arr1.
+# Float max/min stay unclaimed: NumPy NaN payload/sign and signed-zero tie
+# behavior differs across supported platform/SIMD profiles.
 _SUM_DTYPES = frozenset({"f64", "i64"})
 _MEAN_DTYPES = frozenset({"f64"})
-_EXTREMA_DTYPES = frozenset({"f64", "i64", "f32"})
 
 
 def normalize_axis(axis: int, rank: int) -> int | None:
@@ -60,7 +64,7 @@ def normalize_axis(axis: int, rank: int) -> int | None:
 
 def _whole_array_result_type(target: str, dtype: str) -> str:
     """Return the core scalar result type for a whole-array reduction."""
-    if target == "numpy.sum" and dtype == "i64":
+    if target in {"numpy.sum", "numpy.max", "numpy.min"} and dtype == "i64":
         return "int"
     return "float"
 
@@ -82,21 +86,28 @@ def _dtype_allowed(target: str, dtype: str, rank: int, *, axis: bool) -> bool:
         return dtype in _SUM_DTYPES
     if target == "numpy.mean":
         return dtype in _MEAN_DTYPES
-    # max / min
-    if dtype == "f32":
-        # Rank-1 f32 extrema would surface as core float (losing float32 scalar).
-        return axis and rank == 2
-    return dtype in {"f64", "i64"}
+    # Float extrema reduction details (NaN payload/sign and signed-zero ties)
+    # vary across NumPy's supported platform/SIMD implementations. They cannot
+    # be reproduced by one stable native helper, so retain only exact i64.
+    return dtype == "i64"
 
 
-def _axis_literal(site: ClaimSite) -> int | None:
-    """Extract a single signed-int ``axis=`` literal, else None (unsupported form)."""
-    if len(site.keywords) != 1:
+def _axis_literal(site: ClaimSite, base_arity: int) -> int | None:
+    """Extract one named or positional signed-int axis literal."""
+    if len(site.operand_types) == base_arity and len(site.keywords) == 1:
+        kw = site.keywords[0]
+        if kw.name != "axis" or kw.arg_type != "int":
+            return None
+        lit = kw.literal
+    elif len(site.operand_types) == base_arity + 1 and not site.keywords:
+        axis_index = base_arity
+        if site.operand_types[axis_index] != "int":
+            return None
+        if len(site.operand_literals) != len(site.operand_types):
+            return None
+        lit = site.operand_literals[axis_index]
+    else:
         return None
-    kw = site.keywords[0]
-    if kw.name != "axis":
-        return None
-    lit = kw.literal
     if not lit.is_literal:
         return None
     value = lit.value
@@ -108,35 +119,48 @@ def _axis_literal(site: ClaimSite) -> int | None:
 
 def try_claim(site: ClaimSite) -> ClaimResult | None:
     """Return a claim result for sum/mean/max/min, or None if not this lane."""
-    if site.kind != "call" or site.target not in _ALL_TARGETS:
+    is_method = site.receiver is not None and site.target.rpartition(".")[2] in {
+        "sum",
+        "mean",
+        "max",
+        "min",
+    }
+    target = f"numpy.{site.target.rpartition('.')[2]}" if is_method else site.target
+    if site.kind != "call" or target not in _ALL_TARGETS:
         return None
     operands = site.operand_types
-    if len(operands) != 1:
-        # Wrong arity (incl. positional axis) — leave to core RXT030.
+    expected_arity = 0 if is_method else 1
+    if len(operands) not in {expected_arity, expected_arity + 1}:
+        # Wrong arity beyond the optional one positional axis.
         return NotCovered()
-    (operand,) = operands
+    operand = site.receiver.arg_type if is_method else operands[0]
 
-    if not site.keywords:
-        # Whole-array path: sum/mean only. Bare max/min stay fallback.
-        if site.target not in _WHOLE_ARRAY_TARGETS:
-            return NotCovered()
+    if len(operands) == expected_arity and not site.keywords:
+        # Whole-array path. Floating extrema remain ordinary fallback because
+        # signed-zero/NaN tie behavior varies across NumPy platform profiles.
         if not is_array_type(operand):
             return not_covered_or_rejected(site)
         assert operand is not None
         meta = array_meta(operand)
         assert meta is not None
         dtype, _rank = meta
-        if not _dtype_allowed(site.target, dtype, _rank, axis=False):
+        if target in {"numpy.max", "numpy.min"} and dtype != "i64":
+            return NotCovered()
+        if not _dtype_allowed(target, dtype, _rank, axis=False):
             return not_covered_or_rejected(site)
         return Claimed(
-            rule_id=_WHOLE_ARRAY_RULE,
-            result_type=_whole_array_result_type(site.target, dtype),
+            rule_id=(
+                _WHOLE_EXTREMA_RULE
+                if target in {"numpy.max", "numpy.min"}
+                else _WHOLE_ARRAY_RULE
+            ),
+            result_type=_whole_array_result_type(target, dtype),
         )
 
-    # Axis path: exactly one named keyword ``axis=<int literal>``.
-    if site.target not in _AXIS_TARGETS:
+    # Axis path: one named or positional ``axis=<int literal>``.
+    if target not in _AXIS_TARGETS:
         return NotCovered()
-    raw_axis = _axis_literal(site)
+    raw_axis = _axis_literal(site, expected_arity)
     if raw_axis is None:
         return NotCovered()
     if not is_array_type(operand):
@@ -147,9 +171,13 @@ def try_claim(site: ClaimSite) -> ClaimResult | None:
     dtype, rank = meta
     if normalize_axis(raw_axis, rank) is None:
         return NotCovered()
-    if not _dtype_allowed(site.target, dtype, rank, axis=True):
+    if target in {"numpy.max", "numpy.min"} and dtype != "i64":
+        # Leave platform/SIMD-dependent float extrema on ordinary fallback;
+        # this is an exclusion, not a type error in user code.
+        return NotCovered()
+    if not _dtype_allowed(target, dtype, rank, axis=True):
         return not_covered_or_rejected(site)
     return Claimed(
         rule_id=_AXIS_RULE,
-        result_type=_axis_result_type(site.target, dtype, rank),
+        result_type=_axis_result_type(target, dtype, rank),
     )

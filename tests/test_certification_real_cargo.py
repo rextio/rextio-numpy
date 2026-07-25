@@ -81,6 +81,22 @@ def div(a: F64Arr1, b: F64Arr1) -> F64Arr1:
     return a / b
 
 
+def ufunc_add_f64_2d(a: F64Arr2, b: F64Arr2) -> F64Arr2:
+    return np.add(a, b)
+
+
+def ufunc_sub_f64_2d_1d(a: F64Arr2, b: F64Arr1) -> F64Arr2:
+    return np.subtract(a, b)
+
+
+def ufunc_mul_f32_scalar(a: F32Arr1, factor: float) -> F32Arr1:
+    return np.multiply(a, factor)
+
+
+def ufunc_div_i64_1d(a: I64Arr1, b: I64Arr1) -> F64Arr1:
+    return np.divide(a, b)
+
+
 def scale(a: F64Arr1, factor: float) -> F64Arr1:
     return a * factor
 
@@ -103,6 +119,38 @@ def total(a: F64Arr1) -> float:
 
 def average(a: F64Arr1) -> float:
     return np.mean(a)
+
+
+def method_dot(a: F64Arr1, b: F64Arr1) -> float:
+    return a.dot(b)
+
+
+def method_total(a: F64Arr1) -> float:
+    return a.sum()
+
+
+def method_average_axis(a: F64Arr2) -> F64Arr1:
+    return a.mean(axis=1)
+
+
+def method_max_axis(a: F32Arr2) -> F32Arr1:
+    return a.max(axis=0)
+
+
+def unary_negative_f64(a: F64Arr1) -> F64Arr1:
+    return np.negative(a)
+
+
+def unary_absolute_f32(a: F32Arr2) -> F32Arr2:
+    return np.absolute(a)
+
+
+def unary_abs_i64(a: I64Arr1) -> I64Arr1:
+    return np.abs(a)
+
+
+def unary_square_i64(a: I64Arr2) -> I64Arr2:
+    return np.square(a)
 
 
 def accumulate(a: F64Arr1, b: F64Arr1, n: int) -> F64Arr1:
@@ -242,6 +290,18 @@ def total_i64_2d(a: I64Arr2) -> int:
     return np.sum(a)
 
 
+def whole_max_i64_1d(a: I64Arr1) -> int:
+    return np.max(a)
+
+
+def whole_min_i64_2d(a: I64Arr2) -> int:
+    return np.min(a)
+
+
+def method_whole_max_i64_2d(a: I64Arr2) -> int:
+    return a.max()
+
+
 def average_i64_2d(a: I64Arr2) -> float:
     return np.mean(a)
 
@@ -330,6 +390,22 @@ def max_i64_2d_axis0(a: I64Arr2) -> I64Arr1:
 
 def min_i64_2d_axis1(a: I64Arr2) -> I64Arr1:
     return np.min(a, axis=1)
+
+
+def sum_f64_2d_pos_axis0(a: F64Arr2) -> F64Arr1:
+    return np.sum(a, 0)
+
+
+def mean_f64_1d_pos_neg1(a: F64Arr1) -> float:
+    return np.mean(a, -1)
+
+
+def max_i64_1d_pos_axis0(a: I64Arr1) -> int:
+    return np.max(a, 0)
+
+
+def method_min_i64_2d_pos_axis1(a: I64Arr2) -> I64Arr1:
+    return a.min(1)
 
 
 def max_f32_2d_axis0(a: F32Arr2) -> F32Arr1:
@@ -422,6 +498,109 @@ def fuse_max_bound_i64(
     a8: I64Arr1,
 ) -> I64Arr1:
     return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8
+
+
+# --- API 1.5 resident comparison -> three-argument where surface ---
+
+def where_eq_f64_11(
+    left: F64Arr1,
+    right: F64Arr1,
+    yes: F64Arr1,
+    no: F64Arr1,
+) -> F64Arr1:
+    return np.where(left == right, yes, no)
+
+
+def where_ne_f64_12(
+    left: F64Arr1,
+    right: F64Arr2,
+    yes: F64Arr2,
+    no: F64Arr1,
+) -> F64Arr2:
+    return np.where(left != right, yes, no)
+
+
+def where_lt_f64_21(
+    left: F64Arr2,
+    right: F64Arr1,
+    yes: F64Arr1,
+    no: F64Arr2,
+) -> F64Arr2:
+    return np.where(left < right, yes, no)
+
+
+def where_le_f64_22(
+    left: F64Arr2,
+    right: F64Arr2,
+    yes: F64Arr2,
+    no: F64Arr2,
+) -> F64Arr2:
+    return np.where(left <= right, yes, no)
+
+
+def where_gt_f32_scalar(
+    values: F32Arr1,
+    threshold: float,
+    yes: F32Arr1,
+    no: F32Arr1,
+) -> F32Arr1:
+    return np.where(values > threshold, yes, no)
+
+
+def where_scalar_ge_f32(
+    threshold: float,
+    values: F32Arr2,
+    yes: F32Arr2,
+    no: F32Arr2,
+) -> F32Arr2:
+    return np.where(threshold >= values, yes, no)
+
+
+def where_f32_array_scalar(values: F32Arr1, no: float) -> F32Arr1:
+    return np.where(values >= 0.0, values, no)
+
+
+def where_f32_scalar_array(yes: float, values: F32Arr1) -> F32Arr1:
+    return np.where(values >= 0.0, yes, values)
+
+
+def where_f64_array_scalar(values: F64Arr1, no: float) -> F64Arr1:
+    return np.where(values >= 0.0, values, no)
+
+
+def where_eq_i64_scalar(
+    values: I64Arr1,
+    target: int,
+    yes: I64Arr1,
+    no: I64Arr1,
+) -> I64Arr1:
+    return np.where(values == target, yes, no)
+
+
+# --- API 1.5 resident bool composition surface ---
+
+def logical_where_not_f64(values: F64Arr1, yes: F64Arr1, no: F64Arr1) -> F64Arr1:
+    return np.where(np.logical_not(values > 0.0), yes, no)
+
+
+def logical_where_and_f64_12(
+    left: F64Arr1,
+    right: F64Arr2,
+    yes: F64Arr2,
+    no: F64Arr1,
+) -> F64Arr2:
+    return np.where(np.logical_and(left > 0.0, right < 0.0), yes, no)
+
+
+def logical_where_or_f64_21(
+    left: F64Arr2,
+    right: F64Arr1,
+    yes: F64Arr1,
+    no: F64Arr2,
+) -> F64Arr2:
+    return np.where(np.logical_or(left > 0.0, right < 0.0), yes, no)
+
+
 """
 
 
@@ -540,6 +719,31 @@ def test_elementwise_array_array_exact(project: CertifiedProject, name: str) -> 
     assert result.dtype == np.float64
 
 
+def test_exact_ufunc_call_aliases_are_natively_served(project: CertifiedProject) -> None:
+    """Four exact call spellings reuse the certified operator matrix."""
+    add = _require_native(project, "ufunc_add_f64_2d")
+    sub = _require_native(project, "ufunc_sub_f64_2d_1d")
+    mul = _require_native(project, "ufunc_mul_f32_scalar")
+    div = _require_native(project, "ufunc_div_i64_1d")
+
+    matrix = np.array([[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]], dtype=np.float64)
+    other = np.array([[0.5, 4.0, -1.0], [2.0, -3.0, 8.0]], dtype=np.float64)
+    vector = np.array([0.25, -0.5, 2.0], dtype=np.float64)
+    f32 = np.array([1.5, -2.0, 0.0], dtype=np.float32)
+    left_i64 = np.array([1, -2, 0], dtype=np.int64)
+    right_i64 = np.array([2, 4, 0], dtype=np.int64)
+
+    np.testing.assert_array_equal(add(matrix, other), np.add(matrix, other))
+    np.testing.assert_array_equal(sub(matrix, vector), np.subtract(matrix, vector))
+    np.testing.assert_array_equal(mul(f32, 2.5), np.multiply(f32, 2.5))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = div(left_i64, right_i64)
+        expected = np.divide(left_i64, right_i64)
+    assert np.array_equal(result, expected, equal_nan=True)
+    assert result.dtype == np.float64
+
+
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_elementwise_division_by_zero_is_ieee(project: CertifiedProject) -> None:
     check = checker(project, "div", equals=array_equals, args_equals=array_equals)
@@ -563,6 +767,77 @@ def test_dot_sum_mean_close(project: CertifiedProject) -> None:
     assert float(dot(ARRAY, OTHER)) == pytest.approx(float(np.dot(ARRAY, OTHER)), rel=1e-12)
     assert float(total(ARRAY)) == pytest.approx(float(np.sum(ARRAY)), rel=1e-12)
     assert float(average(ARRAY)) == pytest.approx(float(np.mean(ARRAY)), rel=1e-12)
+
+
+def test_method_parity_is_natively_served(project: CertifiedProject) -> None:
+    """API-1.3 receiver paths use the same certified helpers as module calls."""
+    dot = _require_native_scalar(project, "method_dot", scalar_close)
+    total = _require_native_scalar(project, "method_total", scalar_close)
+    mean_axis = _require_native(project, "method_average_axis")
+    a = np.array([1.0, -2.5, 3.25])
+    b = np.array([0.5, 4.0, -1.0])
+    matrix = np.array([[1.0, -2.0], [3.0, 4.0]], dtype=np.float64)
+    assert float(dot(a, b)) == pytest.approx(float(a.dot(b)), rel=SCALAR_REL_TOL)
+    assert float(total(a)) == pytest.approx(float(a.sum()), rel=SCALAR_REL_TOL)
+    np.testing.assert_allclose(mean_axis(matrix), matrix.mean(axis=1))
+
+
+def test_unary_module_calls_are_natively_served(project: CertifiedProject) -> None:
+    negative = _require_native(project, "unary_negative_f64")
+    absolute = _require_native(project, "unary_absolute_f32")
+    abs_i64 = _require_native(project, "unary_abs_i64")
+    square_i64 = _require_native(project, "unary_square_i64")
+    f64 = np.array([-0.0, np.inf, -np.inf, np.nan], dtype=np.float64)
+    f32 = np.array([[-0.0, -3.5], [np.inf, np.nan]], dtype=np.float32)
+    i64 = np.array([np.iinfo(np.int64).min, -3, 0, 4], dtype=np.int64)
+    i64_2d = np.array([[np.iinfo(np.int64).max, 2], [-3, 4]], dtype=np.int64)
+    negative_result = negative(f64)
+    absolute_result = absolute(f32)
+    assert array_equals(negative_result, np.negative(f64))
+    assert array_equals(absolute_result, np.absolute(f32))
+    assert bool(np.signbit(negative_result[0])) == bool(np.signbit(np.negative(f64)[0]))
+    assert bool(np.signbit(absolute_result[0, 0])) == bool(np.signbit(np.absolute(f32)[0, 0]))
+    np.testing.assert_array_equal(abs_i64(i64), np.abs(i64))
+    np.testing.assert_array_equal(square_i64(i64_2d), np.square(i64_2d))
+
+
+@pytest.mark.filterwarnings("ignore:the matrix subclass.*:PendingDeprecationWarning")
+def test_ndarray_subclasses_are_rejected_before_method_semantics(project: CertifiedProject) -> None:
+    """Matrix axis semantics must never be silently normalized to base ndarray."""
+    check = checker(project, "method_average_axis", equals=array_equals)
+    matrix = np.matrix([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+    native, _ = check._run("native", (matrix,))
+    fallback, _ = check._run("fallback", (matrix,))
+    assert native[0] == "raised"
+    assert isinstance(native[1], TypeError)
+    assert str(native[1]) == (
+        "rextio-numpy native boundary requires exact numpy.ndarray; "
+        "ndarray subclasses are unsupported"
+    )
+    assert fallback[0] == "returned"
+    assert type(fallback[1]) is np.matrix
+    assert fallback[1].shape == (2, 1)
+
+
+def test_array_ufunc_override_is_rejected_before_unary_helper(project: CertifiedProject) -> None:
+    """A custom __array_ufunc__ result remains fallback-only, never erased natively."""
+
+    class OverrideArray(np.ndarray):
+        def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+            del ufunc, method, inputs, kwargs
+            return "override-result"
+
+    values = np.array([1.0, -2.0], dtype=np.float64).view(OverrideArray)
+    check = checker(project, "unary_negative_f64", equals=array_equals)
+    native, _ = check._run("native", (values,))
+    fallback, _ = check._run("fallback", (values,))
+    assert native[0] == "raised"
+    assert isinstance(native[1], TypeError)
+    assert str(native[1]) == (
+        "rextio-numpy native boundary requires exact numpy.ndarray; "
+        "ndarray subclasses are unsupported"
+    )
+    assert fallback == ("returned", "override-result")
 
 
 def test_dot_length_mismatch_raises_equivalently(project: CertifiedProject) -> None:
@@ -807,6 +1082,55 @@ def _require_native_scalar(project: CertifiedProject, name: str, equals):
         )
 
 
+def test_api15_resident_logical_composition(
+    project: CertifiedProject,
+) -> None:
+    """Certify native compare→logical→where composition."""
+    logical_not = _require_native(project, "logical_where_not_f64")
+    logical_and = _require_native(project, "logical_where_and_f64_12")
+    logical_or = _require_native(project, "logical_where_or_f64_21")
+
+    values = np.array([-1.0, 0.0, 2.0])
+    yes = np.array([10.0, 20.0, 30.0])
+    no = np.array([-10.0, -20.0, -30.0])
+    np.testing.assert_array_equal(
+        logical_not(values, yes, no),
+        np.where(np.logical_not(values > 0.0), yes, no),
+    )
+
+    left_1d = np.array([1.0, -1.0, 2.0])
+    right_2d = np.array([[-1.0, 1.0, -1.0], [1.0, -1.0, 1.0]])
+    yes_2d = np.arange(6.0).reshape(2, 3)
+    no_1d = np.array([-1.0, -2.0, -3.0])
+    np.testing.assert_array_equal(
+        logical_and(left_1d, right_2d, yes_2d, no_1d),
+        np.where(np.logical_and(left_1d > 0.0, right_2d < 0.0), yes_2d, no_1d),
+    )
+    np.testing.assert_array_equal(
+        logical_or(right_2d, left_1d, no_1d, yes_2d),
+        np.where(np.logical_or(right_2d > 0.0, left_1d < 0.0), no_1d, yes_2d),
+    )
+
+    np.testing.assert_array_equal(
+        logical_and(
+            np.array([], dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+            np.array([], dtype=np.float64),
+        ),
+        np.empty((2, 0), dtype=np.float64),
+    )
+    np.testing.assert_array_equal(
+        logical_or(
+            np.empty((2, 0), dtype=np.float64),
+            np.array([], dtype=np.float64),
+            np.array([], dtype=np.float64),
+            np.empty((2, 0), dtype=np.float64),
+        ),
+        np.empty((2, 0), dtype=np.float64),
+    )
+
+
 @pytest.mark.parametrize(
     ("name", "a", "b"),
     [
@@ -1016,6 +1340,34 @@ def test_wave1_reductions_and_dot(
         )
 
 
+def test_whole_array_i64_extrema_and_empty_errors(
+    project: CertifiedProject,
+) -> None:
+    maximum = _require_native_scalar(project, "whole_max_i64_1d", scalar_int_equal)
+    minimum = _require_native_scalar(project, "whole_min_i64_2d", scalar_int_equal)
+    method_max = _require_native_scalar(
+        project,
+        "method_whole_max_i64_2d",
+        scalar_int_equal,
+    )
+
+    vector = np.array([3, -7, 4, np.iinfo(np.int64).max], dtype=np.int64)
+    matrix = np.array([[3, -7, 4], [12, 0, -5]], dtype=np.int64)
+    assert int(maximum(vector)) == int(np.max(vector))
+    assert int(minimum(matrix)) == int(np.min(matrix))
+    assert int(method_max(matrix)) == int(matrix.max())
+
+    for check, empty, operation in (
+        (maximum, np.array([], dtype=np.int64), np.max),
+        (minimum, np.empty((0, 2), dtype=np.int64), np.min),
+    ):
+        with pytest.raises(ValueError) as numpy_error:
+            operation(empty)
+        with pytest.raises(ValueError) as native_error:
+            check(empty)
+        assert str(native_error.value) == str(numpy_error.value)
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -1154,8 +1506,6 @@ def _signed_zero_equal(left: object, right: object) -> bool:
         ("sum_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
         ("sum_f64_1d_axis_neg1", np.array([1.0, -2.5, 3.25]), scalar_close),
         ("mean_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
-        ("max_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
-        ("min_f64_1d_axis0", np.array([1.0, -2.5, 3.25]), scalar_close),
         ("sum_i64_1d_axis0", np.array([1, 2, 3], dtype=np.int64), scalar_int_equal),
     ],
 )
@@ -1189,10 +1539,6 @@ def test_wave2_rank1_axis_scalar(
         ("sum_f64_2d_axis_neg2", -2),
         ("mean_f64_2d_axis0", 0),
         ("mean_f64_2d_axis1", 1),
-        ("max_f64_2d_axis0", 0),
-        ("max_f64_2d_axis1", 1),
-        ("min_f64_2d_axis0", 0),
-        ("min_f64_2d_axis1", 1),
     ],
 )
 def test_wave2_f64_rank2_axis(project: CertifiedProject, name: str, axis: int) -> None:
@@ -1236,71 +1582,33 @@ def test_wave2_i64_axis_max_min(project: CertifiedProject) -> None:
     np.testing.assert_array_equal(mn(a), np.min(a, axis=1))
 
 
-def test_wave2_f32_rank2_max_min(project: CertifiedProject) -> None:
-    a = np.array([[1.0, -2.0], [0.5, 3.5]], dtype=np.float32)
-    mx = _require_native(project, "max_f32_2d_axis0")
-    mn = _require_native(project, "min_f32_2d_axis1")
-    r0 = mx(a)
-    r1 = mn(a)
-    assert r0.dtype == np.float32 and r1.dtype == np.float32
-    np.testing.assert_array_equal(r0, np.max(a, axis=0))
-    np.testing.assert_array_equal(r1, np.min(a, axis=1))
+def test_positional_literal_axis_module_and_method_forms(
+    project: CertifiedProject,
+) -> None:
+    """Static positional axes use the same certified helpers as axis=."""
+    f64_matrix = np.array([[1.0, -2.0, 3.0], [4.0, 0.5, -6.0]], dtype=np.float64)
+    f64_vector = np.array([1.0, -2.5, 3.25], dtype=np.float64)
+    i64_vector = np.array([1, -7, 4], dtype=np.int64)
+    i64_matrix = np.array([[1, -2, 3], [4, 0, -5]], dtype=np.int64)
 
+    total = _require_native(project, "sum_f64_2d_pos_axis0")
+    average = _require_native_scalar(project, "mean_f64_1d_pos_neg1", scalar_close)
+    maximum = _require_native_scalar(project, "max_i64_1d_pos_axis0", scalar_int_equal)
+    minimum = _require_native(project, "method_min_i64_2d_pos_axis1")
 
-def test_wave2_float_extrema_nan_and_signed_zero(project: CertifiedProject) -> None:
-    max1 = checker(project, "max_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    min1 = checker(project, "min_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    # NaN propagates.
-    assert math.isnan(float(max1(np.array([1.0, float("nan"), 2.0]))))
-    assert math.isnan(float(min1(np.array([1.0, float("nan"), 2.0]))))
-    # Signed-zero extrema: max(+0, -0) = +0; min(+0, -0) = -0.
-    assert not math.copysign(1.0, float(max1(np.array([0.0, -0.0])))) < 0
-    assert math.copysign(1.0, float(min1(np.array([0.0, -0.0])))) < 0
-    assert not math.copysign(1.0, float(max1(np.array([-0.0, 0.0])))) < 0
-    assert math.copysign(1.0, float(min1(np.array([-0.0, 0.0])))) < 0
-
-    max2 = checker(project, "max_f64_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    min2 = checker(project, "min_f64_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
-    z = np.array([[0.0, -0.0], [-0.0, 0.0]])
-    max2(z)
-    min2(z)
-    nan_mat = np.array([[1.0, float("nan")], [2.0, 3.0]])
-    max2(nan_mat)
-    min2(nan_mat)
-
-
-def test_wave2_empty_max_min_raises_equivalently(project: CertifiedProject) -> None:
-    max1 = checker(project, "max_f64_1d_axis0", equals=scalar_close, args_equals=array_equals)
-    min1 = checker(project, "min_f64_1d_axis0", equals=scalar_close, args_equals=array_equals)
-    empty = np.zeros(0)
-    try:
-        np.max(empty, axis=0)
-    except ValueError as exc:
-        expected_max = str(exc)
-    else:  # pragma: no cover
-        pytest.fail("numpy.max empty did not raise")
-    with pytest.raises(ValueError) as excinfo:
-        max1(empty)
-    assert str(excinfo.value) == expected_max
-
-    try:
-        np.min(empty, axis=0)
-    except ValueError as exc:
-        expected_min = str(exc)
-    else:  # pragma: no cover
-        pytest.fail("numpy.min empty did not raise")
-    with pytest.raises(ValueError) as excinfo:
-        min1(empty)
-    assert str(excinfo.value) == expected_min
-
-    max2 = _require_native(project, "max_f64_2d_axis0")
-    min2 = _require_native(project, "min_f64_2d_axis1")
-    with pytest.raises(ValueError) as excinfo:
-        max2(np.zeros((0, 3)))
-    assert "maximum which has no identity" in str(excinfo.value)
-    with pytest.raises(ValueError) as excinfo:
-        min2(np.zeros((3, 0)))
-    assert "minimum which has no identity" in str(excinfo.value)
+    np.testing.assert_allclose(
+        total(f64_matrix),
+        np.sum(f64_matrix, 0),
+        rtol=SCALAR_REL_TOL,
+        atol=SCALAR_ABS_TOL,
+    )
+    assert float(average(f64_vector)) == pytest.approx(
+        float(np.mean(f64_vector, -1)),
+        rel=SCALAR_REL_TOL,
+        abs=SCALAR_ABS_TOL,
+    )
+    assert int(maximum(i64_vector)) == int(np.max(i64_vector, 0))
+    np.testing.assert_array_equal(minimum(i64_matrix), i64_matrix.min(1))
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
@@ -1327,7 +1635,7 @@ def test_wave2_empty_sum_mean_value_semantics(project: CertifiedProject) -> None
 
 def test_wave2_axis_does_not_mutate_input(project: CertifiedProject) -> None:
     a = np.array([[1.0, 2.0], [3.0, 4.0]])
-    for name in ("sum_f64_2d_axis0", "max_f64_2d_axis1", "mean_f64_2d_axis0"):
+    for name in ("sum_f64_2d_axis0", "mean_f64_2d_axis0"):
         check = _require_native(project, name)
         check(a)
     np.testing.assert_array_equal(a, np.array([[1.0, 2.0], [3.0, 4.0]]))
@@ -1338,7 +1646,16 @@ def test_wave2_axis_does_not_mutate_input(project: CertifiedProject) -> None:
     [
         "bare_max_f64",
         "bare_min_f64",
+        "method_max_axis",
         "max_f32_1d_axis0",
+        "max_f64_1d_axis0",
+        "min_f64_1d_axis0",
+        "max_f64_2d_axis0",
+        "max_f64_2d_axis1",
+        "min_f64_2d_axis0",
+        "min_f64_2d_axis1",
+        "max_f32_2d_axis0",
+        "min_f32_2d_axis1",
         "sum_f32_2d_axis0",
         "mean_i64_2d_axis0",
     ],
@@ -1369,34 +1686,6 @@ def test_wave2_hypothesis_axis_sum_mean(project: CertifiedProject, a) -> None:
         warnings.simplefilter("ignore", RuntimeWarning)
         m0(a)
         m1(a)
-
-
-@settings(max_examples=15, deadline=None)
-@given(
-    a=npst.arrays(
-        dtype=np.float64,
-        shape=st.tuples(st.integers(1, 8), st.integers(1, 8)),
-        elements=st.one_of(
-            st.floats(
-                allow_nan=False,
-                allow_infinity=False,
-                width=64,
-                min_value=-1e6,
-                max_value=1e6,
-            ),
-            st.just(float("nan")),
-            st.just(float("inf")),
-            st.just(float("-inf")),
-            st.just(0.0),
-            st.just(-0.0),
-        ),
-    )
-)
-def test_wave2_hypothesis_axis_max_min(project: CertifiedProject, a) -> None:
-    mx0 = checker(project, "max_f64_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    mn1 = checker(project, "min_f64_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
-    mx0(a)
-    mn1(a)
 
 
 # ---------------------------------------------------------------------------
@@ -1542,69 +1831,6 @@ def test_wave2_f64_axis_pairwise_helper_text_in_generated_source() -> None:
     # Whole-array route stays on ndarray sum (not rewritten by this fix).
     assert "Ok(a.sum())" in rust_snippets.sum_typed("f64", 1)
     assert "__rxtnp_numpy_pairwise_sum_f64" not in rust_snippets.sum_typed("f64", 1)
-
-
-def test_wave2_nan_payload_and_signed_zero_extrema(project: CertifiedProject) -> None:
-    """First NaN (sign/payload) and signed-zero extrema must match NumPy."""
-    neg_nan = np.copysign(np.nan, -1.0)
-    pos_nan = np.copysign(np.nan, 1.0)
-    max1 = checker(project, "max_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    min1 = checker(project, "min_f64_1d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    a = np.array([1.0, neg_nan, pos_nan], dtype=np.float64)
-    rmax = max1(a)
-    rmin = min1(a)
-    assert math.isnan(float(rmax)) and math.isnan(float(rmin))
-    assert bool(np.signbit(np.asarray(rmax))) == bool(np.signbit(np.max(a)))
-    assert bool(np.signbit(np.asarray(rmin))) == bool(np.signbit(np.min(a)))
-    maxf = checker(project, "max_f32_2d_axis0", equals=_signed_zero_equal, args_equals=array_equals)
-    minf = checker(project, "min_f32_2d_axis1", equals=_signed_zero_equal, args_equals=array_equals)
-    f32 = np.array(
-        [[np.float32(0.0), np.float32(-0.0)], [np.float32(neg_nan), np.float32(1.0)]],
-        dtype=np.float32,
-    )
-    maxf(f32)
-    minf(f32)
-
-
-def test_wave2_empty_max_min_all_zero_shapes(project: CertifiedProject) -> None:
-    """Empty (0,0)/(0,n)/(n,0) max/min raise NumPy-compatible text on both axes."""
-    max0 = _require_native(project, "max_f64_2d_axis0")
-    max1 = _require_native(project, "max_f64_2d_axis1")
-    min0 = _require_native(project, "min_f64_2d_axis0")
-    min1 = _require_native(project, "min_f64_2d_axis1")
-    maxf = _require_native(project, "max_f32_2d_axis0")
-    minf = _require_native(project, "min_f32_2d_axis1")
-    cases = (
-        (np.zeros((0, 0)), 0, "maximum"),
-        (np.zeros((0, 0)), 1, "maximum"),
-        (np.zeros((0, 3)), 0, "maximum"),
-        (np.zeros((3, 0)), 1, "maximum"),
-        (np.zeros((0, 3)), 0, "minimum"),
-        (np.zeros((3, 0)), 1, "minimum"),
-    )
-    for arr, axis, word in cases:
-        fn = {
-            ("maximum", 0): max0,
-            ("maximum", 1): max1,
-            ("minimum", 0): min0,
-            ("minimum", 1): min1,
-        }[(word, axis)]
-        try:
-            (np.max if word == "maximum" else np.min)(arr, axis=axis)
-        except ValueError as exc:
-            expected = str(exc)
-        else:  # pragma: no cover
-            pytest.fail("numpy empty extrema did not raise")
-        with pytest.raises(ValueError) as excinfo:
-            fn(arr)
-        assert str(excinfo.value) == expected
-        assert f"{word} which has no identity" in str(excinfo.value)
-    with pytest.raises(ValueError) as excinfo:
-        maxf(np.zeros((0, 2), dtype=np.float32))
-    assert "maximum which has no identity" in str(excinfo.value)
-    with pytest.raises(ValueError) as excinfo:
-        minf(np.zeros((2, 0), dtype=np.float32))
-    assert "minimum which has no identity" in str(excinfo.value)
 
 
 def test_wave2_rank1_builtin_scalar_not_numpy_subclass(project: CertifiedProject) -> None:
@@ -1967,3 +2193,288 @@ def test_wave2_fusion_max_bound_routes_and_generated_source(project: CertifiedPr
     assert echain_bodies, "no __rxtnp_echain_ helpers found in generated Rust"
     # Max-bound tree needs 9 leaf broadcasts on at least one helper.
     assert any(body.count("broadcast(dim)") >= 9 for body in echain_bodies)
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    (
+        (
+            "where_eq_f64_11",
+            (
+                np.array([1.0, 2.0, 3.0]),
+                np.array([2.0]),
+                np.array([10.0]),
+                np.array([20.0, 30.0, 40.0]),
+            ),
+        ),
+        (
+            "where_ne_f64_12",
+            (
+                np.array([1.0, 2.0, 3.0]),
+                np.array([[1.0], [3.0]]),
+                np.array([[10.0, 11.0, 12.0]]),
+                np.array([20.0, 21.0, 22.0]),
+            ),
+        ),
+        (
+            "where_lt_f64_21",
+            (
+                np.array([[1.0], [4.0]]),
+                np.array([2.0, 3.0, 4.0]),
+                np.array([10.0, 11.0, 12.0]),
+                np.array([[20.0], [21.0]]),
+            ),
+        ),
+        (
+            "where_le_f64_22",
+            (
+                np.array([[1.0], [4.0]]),
+                np.array([[2.0, 3.0, 4.0]]),
+                np.array([[10.0, 11.0, 12.0], [13.0, 14.0, 15.0]]),
+                np.array([[20.0, 21.0, 22.0]]),
+            ),
+        ),
+    ),
+)
+def test_compare_where_all_rank_pair_broadcasts(
+    project: CertifiedProject,
+    name: str,
+    args: tuple[np.ndarray, ...],
+) -> None:
+    """Rank 1/2 × rank 1/2 comparisons and three-way where broadcast natively."""
+    result = _require_native(project, name)(*args)
+    operations = {
+        "where_eq_f64_11": np.equal,
+        "where_ne_f64_12": np.not_equal,
+        "where_lt_f64_21": np.less,
+        "where_le_f64_22": np.less_equal,
+    }
+    expected = np.where(operations[name](args[0], args[1]), args[2], args[3])
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "operation"),
+    (
+        (
+            "where_eq_f64_11",
+            (
+                np.ones(2),
+                np.ones(3),
+                np.ones(3),
+                np.zeros(3),
+            ),
+            np.equal,
+        ),
+        (
+            "where_ne_f64_12",
+            (
+                np.ones(2),
+                np.ones((2, 3)),
+                np.ones((2, 3)),
+                np.zeros(3),
+            ),
+            np.not_equal,
+        ),
+        (
+            "where_lt_f64_21",
+            (
+                np.ones((2, 3)),
+                np.ones(2),
+                np.ones(3),
+                np.zeros((2, 3)),
+            ),
+            np.less,
+        ),
+        (
+            "where_le_f64_22",
+            (
+                np.ones((2, 3)),
+                np.ones((3, 2)),
+                np.ones((2, 3)),
+                np.zeros((2, 3)),
+            ),
+            np.less_equal,
+        ),
+    ),
+)
+def test_compare_where_all_rank_pair_mismatches(
+    project: CertifiedProject,
+    name: str,
+    args: tuple[np.ndarray, ...],
+    operation: Callable[..., object],
+) -> None:
+    """Every admitted static rank pair retains NumPy's incompatible-shape error."""
+    with pytest.raises(ValueError) as expected:
+        operation(args[0], args[1])
+    with pytest.raises(ValueError) as actual:
+        _require_native(project, name)(*args)
+    assert str(actual.value) == str(expected.value)
+
+
+def test_where_independent_three_way_shape_error(project: CertifiedProject) -> None:
+    """Compatible comparison operands do not bypass branch broadcast validation."""
+    left = np.array([1.0, 2.0])
+    right = np.array([1.0, 0.0])
+    yes = np.ones(3)
+    no = np.zeros(3)
+    with pytest.raises(ValueError) as expected:
+        np.where(left == right, yes, no)
+    with pytest.raises(ValueError) as actual:
+        _require_native(project, "where_eq_f64_11")(left, right, yes, no)
+    assert str(actual.value) == str(expected.value)
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    (
+        (
+            "where_eq_f64_11",
+            (
+                np.empty((0,), dtype=np.float64),
+                np.ones((1,), dtype=np.float64),
+                np.empty((0,), dtype=np.float64),
+                np.ones((1,), dtype=np.float64),
+            ),
+        ),
+        (
+            "where_le_f64_22",
+            (
+                np.empty((0, 3), dtype=np.float64),
+                np.ones((1, 3), dtype=np.float64),
+                np.empty((0, 1), dtype=np.float64),
+                np.ones((1, 3), dtype=np.float64),
+            ),
+        ),
+    ),
+)
+def test_compare_where_zero_sized_broadcasts(
+    project: CertifiedProject,
+    name: str,
+    args: tuple[np.ndarray, ...],
+) -> None:
+    """Length-one axes broadcast to zero axes exactly as NumPy does."""
+    operations = {
+        "where_eq_f64_11": np.equal,
+        "where_le_f64_22": np.less_equal,
+    }
+    expected = np.where(operations[name](args[0], args[1]), args[2], args[3])
+    result = _require_native(project, name)(*args)
+    assert result.shape == expected.shape
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("threshold", (1e40, -1e40, float("nan"), float("inf"), -0.0))
+def test_f32_weak_scalar_compare_and_where_special_values(
+    project: CertifiedProject,
+    threshold: float,
+) -> None:
+    """Rust's f64→f32 narrowing matches NumPy 2.4 weak-scalar comparisons."""
+    values = np.array(
+        [np.nan, -np.inf, -0.0, 0.0, 1.0, np.inf],
+        dtype=np.float32,
+    )
+    yes = np.array(
+        [0.0, -0.0, np.nan, np.inf, -np.inf, np.float32(7.0)],
+        dtype=np.float32,
+    )
+    no = np.array(
+        [-0.0, 0.0, np.float32(3.0), -np.inf, np.inf, np.nan],
+        dtype=np.float32,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        expected_gt = np.where(values > threshold, yes, no)
+        expected_ge = np.where(threshold >= values.reshape(2, 3), yes.reshape(2, 3), no.reshape(2, 3))
+        actual_gt = _require_native(project, "where_gt_f32_scalar")(
+            values,
+            threshold,
+            yes,
+            no,
+        )
+        actual_ge = _require_native(project, "where_scalar_ge_f32")(
+            threshold,
+            values.reshape(2, 3),
+            yes.reshape(2, 3),
+            no.reshape(2, 3),
+        )
+    np.testing.assert_array_equal(actual_gt.view(np.uint32), expected_gt.view(np.uint32))
+    np.testing.assert_array_equal(actual_ge.view(np.uint32), expected_ge.view(np.uint32))
+
+
+@pytest.mark.parametrize("scalar", (1e40, -1e40, float("nan"), float("inf"), -0.0))
+def test_f32_where_branch_weak_scalars_preserve_selected_bits(
+    project: CertifiedProject,
+    scalar: float,
+) -> None:
+    """Both scalar branch positions use NumPy 2.4's f64-to-f32 narrowing."""
+    values = np.array([-1.0, -0.0, 0.0, 1.0], dtype=np.float32)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        expected_as = np.where(values >= 0.0, values, scalar)
+        expected_sa = np.where(values >= 0.0, scalar, values)
+        actual_as = _require_native(project, "where_f32_array_scalar")(values, scalar)
+        actual_sa = _require_native(project, "where_f32_scalar_array")(scalar, values)
+    np.testing.assert_array_equal(actual_as.view(np.uint32), expected_as.view(np.uint32))
+    np.testing.assert_array_equal(actual_sa.view(np.uint32), expected_sa.view(np.uint32))
+
+
+@pytest.mark.parametrize(
+    "scalar",
+    (
+        np.finfo(np.float64).max,
+        -np.finfo(np.float64).max,
+        float("nan"),
+        float("inf"),
+        -0.0,
+    ),
+)
+def test_f64_where_branch_scalars_preserve_selected_bits(
+    project: CertifiedProject,
+    scalar: float,
+) -> None:
+    values = np.array([-1.0, -0.0, 0.0, 1.0], dtype=np.float64)
+    expected = np.where(values >= 0.0, values, scalar)
+    result = _require_native(project, "where_f64_array_scalar")(values, scalar)
+    np.testing.assert_array_equal(result.view(np.uint64), expected.view(np.uint64))
+
+
+@pytest.mark.parametrize("target", (-(2**63), -1, 2**63 - 1))
+def test_i64_compare_where_scalar_and_inputs_unchanged(
+    project: CertifiedProject,
+    target: int,
+) -> None:
+    values = np.array([-(2**63), -1, 0, 2**63 - 1], dtype=np.int64)
+    yes = np.array([11, 12, 13, 14], dtype=np.int64)
+    no = np.array([-11, -12, -13, -14], dtype=np.int64)
+    before = tuple(array.copy() for array in (values, yes, no))
+    result = _require_native(project, "where_eq_i64_scalar")(values, target, yes, no)
+    np.testing.assert_array_equal(result, np.where(values == target, yes, no))
+    for array, snapshot in zip((values, yes, no), before, strict=True):
+        np.testing.assert_array_equal(array, snapshot)
+
+
+@pytest.mark.parametrize("target", (-(2**63) - 1, 2**63))
+def test_i64_scalar_outside_core_boundary_is_a_contract_violation(
+    project: CertifiedProject,
+    target: int,
+) -> None:
+    """Python ``int`` lowers to Core i64; values outside it never reach the helper."""
+    values = np.array([-(2**63), -1, 0, 2**63 - 1], dtype=np.int64)
+    yes = np.array([11, 12, 13, 14], dtype=np.int64)
+    no = np.array([-11, -12, -13, -14], dtype=np.int64)
+    check = checker(
+        project,
+        "where_eq_i64_scalar",
+        equals=array_equals,
+        args_equals=array_equals,
+    )
+    native, _ = check._run("native", (values, target, yes, no))
+    fallback, _ = check._run("fallback", (values, target, yes, no))
+    assert native[0] == "raised"
+    assert isinstance(native[1], OverflowError)
+    assert fallback[0] == "returned"
+    np.testing.assert_array_equal(
+        fallback[1],
+        np.where(values == target, yes, no),
+    )

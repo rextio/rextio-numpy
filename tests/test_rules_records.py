@@ -20,6 +20,23 @@ def test_public_coverage_import() -> None:
         "numpy.mean",
         "numpy.max",
         "numpy.min",
+        "numpy.ndarray.dot",
+        "numpy.ndarray.sum",
+        "numpy.ndarray.mean",
+        "numpy.ndarray.max",
+        "numpy.ndarray.min",
+        "numpy.add",
+        "numpy.subtract",
+        "numpy.multiply",
+        "numpy.divide",
+        "numpy.negative",
+        "numpy.absolute",
+        "numpy.abs",
+        "numpy.square",
+        "numpy.logical_not",
+        "numpy.logical_and",
+        "numpy.logical_or",
+        "numpy.where",
     )
 
 
@@ -43,7 +60,7 @@ def test_numpy_rule_records_order_and_ids() -> None:
 def test_native_and_fallback_split() -> None:
     assert {r.outcome for r in NATIVE_RECORDS} == {"native"}
     assert all(r.verified is True for r in NATIVE_RECORDS)
-    assert {r.outcome for r in FALLBACK_RECORDS} == {"fallback"}
+    assert {r.outcome for r in FALLBACK_RECORDS} == {"fallback", "reject"}
     assert all(r.verified is None for r in FALLBACK_RECORDS)
 
 
@@ -51,16 +68,27 @@ def test_native_records_broadened_but_ids_stable() -> None:
     by_id = {r.id: r for r in NATIVE_RECORDS}
     assert set(by_id) == {
         "rextio-numpy/elementwise-float64",
+        "rextio-numpy/elementwise-ufunc-call",
         "rextio-numpy/dot-float64",
         "rextio-numpy/reduction-sum-mean",
+        "rextio-numpy/reduction-whole-i64-extrema",
         "rextio-numpy/reduction-axis",
         "rextio-numpy/elementwise-chain-fusion",
+        "rextio-numpy/unary-module",
+        "rextio-numpy/elementwise-compare",
+        "rextio-numpy/resident-logical-not",
+        "rextio-numpy/resident-logical-binary",
+        "rextio-numpy/where-three-argument",
     }
     elem = by_id["rextio-numpy/elementwise-float64"]
     assert elem.diagnostic_code == "RXTP-NUMPY-001"
     assert "rank 1 or 2" in elem.scope.pattern
     assert "int64" in elem.constraint
     assert "broadcast" in elem.constraint.lower()
+    ufunc = by_id["rextio-numpy/elementwise-ufunc-call"]
+    assert ufunc.diagnostic_code == "RXTP-NUMPY-007"
+    assert "numpy.add" in ufunc.scope.pattern
+    assert "out" in ufunc.constraint and "where" in ufunc.constraint
     dot = by_id["rextio-numpy/dot-float64"]
     assert dot.diagnostic_code == "RXTP-NUMPY-002"
     assert "2-D" in dot.scope.pattern or "2-D" in dot.constraint
@@ -75,10 +103,18 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "rejected" in red.constraint.lower() or "not claimed" in red.scope.pattern
     # Native rule must not advertise verified int64 mean.
     assert "int64 mean is float64" not in red.constraint
+    extrema = by_id["rextio-numpy/reduction-whole-i64-extrema"]
+    assert extrema.diagnostic_code == "RXTP-NUMPY-008"
+    assert "int64 rank-1/rank-2" in extrema.scope.pattern
+    assert "which has no identity" in extrema.constraint
+    assert "Float extrema remain" in extrema.constraint
     axis = by_id["rextio-numpy/reduction-axis"]
     assert axis.diagnostic_code == "RXTP-NUMPY-004"
     assert "axis=" in axis.scope.pattern
     assert "max" in axis.scope.pattern and "min" in axis.scope.pattern
+    assert "max/min on int64 ranks 1–2 only" in axis.constraint
+    assert "float extrema stay fallback" in axis.constraint
+    assert "Float extrema" in axis.guidance
     assert "RuntimeWarning" in axis.constraint
     assert "no identity" in axis.constraint
     assert axis.verified is True
@@ -88,12 +124,51 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "operand_mode" in fusion.scope.pattern or "leaves" in fusion.scope.pattern
     assert "wrapping" in fusion.constraint.lower()
     assert fusion.verified is True
+    unary = by_id["rextio-numpy/unary-module"]
+    assert unary.diagnostic_code == "RXTP-NUMPY-006"
+    assert "numpy.negative" in unary.scope.pattern
+    assert "wrapping" in unary.constraint
+    assert "out" in unary.constraint
+    logical_not = by_id["rextio-numpy/resident-logical-not"]
+    assert logical_not.diagnostic_code == "RXTP-NUMPY-015"
+    assert "resident bool" in logical_not.scope.pattern
+    logical_binary = by_id["rextio-numpy/resident-logical-binary"]
+    assert logical_binary.diagnostic_code == "RXTP-NUMPY-016"
+    assert "broadcast" in logical_binary.constraint.lower()
 
 
 def test_fallback_ndim_is_rank_gt_2() -> None:
     ndim = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-ndim")
     assert ndim.diagnostic_code == "RXTP-NUMPY-011"
     assert "more than 2" in ndim.scope.pattern
+
+
+def test_fallback_operand_rule_keeps_float_extrema_outside_native_surface() -> None:
+    record = next(
+        r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-operand-types"
+    )
+    assert "max/min cover int64 ranks 1–2 only" in record.constraint
+    assert "float extrema stay fallback" in record.constraint
+    assert "int64 for max/min" in record.guidance
+
+
+def test_ndarray_subclass_rule_is_runtime_rejection_not_static_fallback() -> None:
+    record = next(
+        r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/ndarray-subclass-boundary"
+    )
+    assert record.outcome == "reject"
+    assert record.diagnostic_code == "RXTP-NUMPY-013"
+    assert "runtime" in record.constraint
+    assert "not an automatic claim-time fallback" in record.constraint
+    assert "exact numpy.ndarray" in record.constraint
+
+
+def test_unsupported_api_records_remaining_conditional_exclusions() -> None:
+    record = next(r for r in FALLBACK_RECORDS if r.id == "rextio-numpy/unsupported-api")
+    assert "chained/identity/membership comparisons" in record.scope.pattern
+    assert "condition-only where" in record.scope.pattern
+    assert "API 1.5" in record.constraint
+    assert "keyword" in record.guidance
 
 
 def test_rust_snippets_package_public_api() -> None:
@@ -114,8 +189,10 @@ def test_rust_snippets_package_public_api() -> None:
     assert "wrapping_add" in rust_snippets.elementwise_aa_typed("add", "i64", 1, 1)
     assert "broadcast" in rust_snippets.broadcast_shape_helper()
     assert rust_snippets.axis_call_name("sum", "f64", 2, 1) == "__rxtnp_sum2_f64_axis1"
-    helpers = rust_snippets.axis_typed("max", "f64", 2, 0)
+    helpers = rust_snippets.axis_typed("max", "i64", 2, 0)
     joined = "\n".join(helpers)
-    assert "__rxtnp_max2_f64_axis0" in joined
+    assert "__rxtnp_max2_i64_axis0" in joined
     assert "maximum which has no identity" in joined
     assert rust_snippets.op_from_target("numpy.min") == "min"
+    assert rust_snippets.unary_call_name("square", "i64", 2) == "__rxtnp_square2_i64"
+    assert "wrapping_mul" in rust_snippets.unary_typed("square", "i64", 2)

@@ -11,7 +11,9 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         scope=RuleScope(
             kind="call",
             pattern=(
-                "covered numpy.dot/sum/mean/max/min call or elementwise +/-/*// binop "
+                "covered numpy.dot/sum/mean/max/min/unary module (including certified ndarray method) "
+                "call, exact numpy.add/subtract/multiply/divide call, or elementwise +/-/*// binop "
+                "or API-1.5 comparison/resident-logical/numpy.where conditional "
                 "whose resolved operand types are outside the float64/float32/int64 "
                 "rank-1/2 surface (including excluded reduction dtype cells)"
             ),
@@ -20,14 +22,22 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
             "A covered numpy operation whose operand types are known but outside the "
             "supported set is rejected here so the plugin's guidance is delivered. "
             "Elementwise covers same-dtype float64/float32/int64 arrays of rank 1 or 2 "
-            "plus matching float/int scalars. Whole-array and literal-axis sum cover "
+            "plus matching float/int scalars. Comparison results are resident bool "
+            "rank-1/rank-2 arrays; resident logical calls consume only such masks, "
+            "and three-argument where requires such a condition plus same-dtype numeric "
+            "branches with at least one array. Whole-array "
+            "and literal-axis sum cover "
             "float64/int64 ranks 1–2; mean covers float64 ranks 1–2 only (float32 "
-            "sum/mean and int64 mean are excluded). Literal-axis max/min cover "
-            "float64/int64 ranks 1–2 and float32 rank 2 only (rank-1 float32 max/min "
-            "excluded). 1-D dot covers same-dtype float64/int64 only (float32 dots "
+            "sum/mean and int64 mean are excluded). Whole-array and literal-axis "
+            "max/min cover int64 ranks 1–2 only; float extrema stay fallback because "
+            "NumPy NaN payload/sign "
+            "and signed-zero tie behavior varies by supported platform/SIMD profile. "
+            "1-D dot covers same-dtype float64/int64 only (float32 dots "
             "are excluded). Unresolved operands and wrong-arity/unsupported call "
-            "shapes (including bare max/min, non-literal axis, tuple axis, extra "
-            "kwargs) are NotCovered instead, so core's own diagnostic fires. Emitted "
+            "shapes (including float bare max/min, non-literal axis, tuple axis, extra "
+            "kwargs) are NotCovered instead, except exact arithmetic ufunc calls with "
+            "optional/extra arguments, which fail closed through this fallback "
+            "diagnostic. Emitted "
             "from both call and binop sites — the code is the operand-type rejection, "
             "not a dtype-annotation rule."
         ),
@@ -35,10 +45,10 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         diagnostic_code="RXTP-NUMPY-010",
         guidance=(
             "Cast operands to a supported dtype and rank at the boundary of the hot "
-            "path (float64/float32/int64 for elementwise; float64 for sum/mean and "
-            "float64/int64 for sum/dot/max/min — float32 sum/mean/dots, rank-1 float32 "
-            "max/min, and int64 mean stay on the fallback, so cast those to float64 if "
-            "native lowering is required), keep array dtypes uniform, or keep the "
+            "path (float64/float32/int64 for elementwise; float64/int64 for sum; "
+            "float64 for mean; float64/int64 for dot; and int64 for max/min). Float "
+            "extrema, float32 sum/mean/dots, and int64 mean stay on the fallback; keep "
+            "array dtypes uniform, or keep the "
             "function on the Python fallback."
         ),
         stability="experimental",
@@ -83,28 +93,66 @@ FALLBACK_RECORDS: tuple[RuleRecord, ...] = (
         stability="experimental",
     ),
     RuleRecord(
+        id="rextio-numpy/ndarray-subclass-boundary",
+        provider="rextio-numpy",
+        scope=RuleScope(
+            kind="type",
+            pattern=(
+                "numpy.ndarray subclass (including numpy.matrix or a custom "
+                "__array_ufunc__ override) passed to a plugin-typed native boundary"
+            ),
+        ),
+        constraint=(
+            "The annotation vocabulary is nominal and static analysis cannot distinguish "
+            "an exact base numpy.ndarray from a runtime subclass. Claims therefore remain "
+            "unchanged. Every materialized plugin-array parameter performs NumPy's exact "
+            "C-level ndarray type check before copying; a subclass deterministically raises "
+            "TypeError('rextio-numpy native boundary requires exact numpy.ndarray; ndarray "
+            "subclasses are unsupported') when the native route executes. This is a runtime "
+            "native-boundary rejection, not an automatic claim-time fallback. Exact base "
+            "ndarray views/strided arrays remain admitted."
+        ),
+        outcome="reject",
+        diagnostic_code="RXTP-NUMPY-013",
+        guidance=(
+            "Convert to an exact base array with numpy.asarray before entering the typed hot "
+            "path when subclass behavior is unnecessary. If matrix/subclass dispatch, "
+            "__array_ufunc__, or subok behavior is required, keep the enclosing function on "
+            "the Python fallback."
+        ),
+        stability="experimental",
+    ),
+    RuleRecord(
         id="rextio-numpy/unsupported-api",
         provider="rextio-numpy",
         scope=RuleScope(
             kind="call",
             pattern=(
-                "any numpy API outside the covered symbols (fancy indexing, method-form "
-                "reductions, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
-                "matmul/@, ufunc kwargs, random, linalg, amax/amin, ...)"
+                "any numpy API outside the covered symbols (fancy indexing, unsupported "
+                "method forms, non-literal/tuple/None axis, keepdims/out kwargs, 2-D "
+                "matmul/@, unsupported ufuncs or optional ufunc arguments, random, "
+                "linalg, amax/amin, chained/identity/membership comparisons, "
+                "condition-only where, logical calls over Python/materialized masks, "
+                "numpy.select, ...)"
             ),
         ),
         constraint=(
             "APIs outside the covered surface have no verified Rust lowering and keep the "
             "surrounding candidate on the Python fallback — Rextio never guesses. Literal "
             "single-axis sum/mean/max/min are covered under RXTP-NUMPY-004; other axis "
-            "forms remain fallback."
+            "forms remain fallback. Core/plugin API 1.5 admits only non-chained "
+            "==/!=/</<=/>/>= comparisons, exact resident-mask logical_not/logical_and/"
+            "logical_or, and exact three-argument "
+            "numpy.where within the separately documented numeric/resident-bool matrix."
         ),
         outcome="fallback",
         diagnostic_code="RXTP-NUMPY-019",
         guidance=(
             "Isolate covered array math into its own typed function and leave the rest of "
             "the NumPy usage on the fallback (or under Numba, which stays a valid choice for "
-            "kernels this plugin does not cover)."
+            "kernels this plugin does not cover). Keep chained, identity, membership, "
+            "condition-only, keyword, and dtype-coercing conditional forms outside "
+            "the native function."
         ),
         stability="experimental",
     ),

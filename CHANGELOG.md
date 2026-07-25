@@ -1,5 +1,92 @@
 # Changelog
 
+## 0.1.2 — 2026-07-26
+
+Public Alpha release on PyPI. The package requires
+**`rextio>=0.1.6,<0.2`**; its expanded resident comparison/mask/where surface
+does not broaden the explicitly retained fallback cases below.
+
+Requires **`rextio>=0.1.6,<0.2`** and advertises plugin API **1.5** for
+non-chained comparison claim sites and resident-result propagation. It does not
+advertise the optional standalone-artifact capability.
+
+- Adds exact two-positional/no-keyword `numpy.add`, `numpy.subtract`,
+  `numpy.multiply`, and `numpy.divide` call aliases over the existing
+  operator dtype/rank/broadcast matrix. Optional ufunc arguments (`out`,
+  `where`, `dtype`, `casting`, and all other extras), mixed dtypes, and
+  unsupported ranks remain fail-closed fallback.
+- Adds one positional signed-integer literal axis to the existing
+  `sum`/`mean`/`min`/`max` module and ndarray-method reduction matrix.
+  Dynamic, tuple, `None`, out-of-range, and additional option forms remain
+  fallback; lower time independently revalidates the positional type, literal,
+  arity, result type, and rendered-operand alignment.
+- Adds no-argument whole-array `numpy.max` / `numpy.min` and `a.max()` /
+  `a.min()` for int64 rank-1/rank-2 arrays. Empty arrays raise
+  NumPy-compatible `ValueError`; floating extrema remain fallback because
+  signed-zero and NaN selection varies across supported platform/SIMD
+  profiles.
+- Adds non-chained `==`, `!=`, `<`, `<=`, `>`, and `>=` over same-dtype
+  f64/f32/i64 rank-1/rank-2 arrays, including every rank pairing and matching
+  array↔scalar forms. Results are plugin-owned resident boolean arrays with no
+  annotation spellings and no Python boundary conversion, so source cannot
+  name or forge a condition type; returning one through an exported boundary
+  is rejected by Core with `RXT092`.
+- Adds exact resident-mask `numpy.logical_not`, `numpy.logical_and`, and
+  `numpy.logical_or`. They consume only plugin-owned rank-1/rank-2 comparison
+  or logical results; binary calls preserve NumPy rank-1/rank-2 broadcasting,
+  including zero axes. Masks remain result-only and cannot gain an annotation
+  spelling or cross a Python boundary.
+- Adds exact three-positional-argument `numpy.where(condition, x, y)` for a
+  resident comparison/logical condition and same-dtype numeric array branches, or one
+  array plus a matching scalar. Independent three-way broadcasting includes
+  zero axes and NumPy-compatible shape errors; condition-only, keyword,
+  two-scalar, and mixed-dtype forms remain fallback. Core-canonicalized import
+  aliases (`np.where`, `from numpy import where as choose`) remain supported;
+  runtime assignment/rebinding aliases stay fallback.
+- Certifies f32 weak Python scalars across huge finite values, NaN, infinities,
+  and signed zero for comparisons and both `where` scalar branch positions,
+  including selected-value bits. Integer scalar lanes inherit Core's signed-i64
+  boundary; out-of-range Python integers are documented boundary
+  type-contract violations and raise `OverflowError` before plugin lowering.
+- Adds certified ndarray method parity for `a.dot(b)`, whole-array
+  `a.sum()`/`a.mean()`, and literal-axis `a.sum/mean/max/min(axis=<int>)`, with
+  the exact existing dtype/rank/axis matrix. Core evaluates a receiver exactly
+  once before ordinary operands.
+- Adds exact unary module calls `numpy.negative`, `numpy.absolute`/
+  `numpy.abs`, and `numpy.square` for f64/f32/i64 rank-1/rank-2 arrays;
+  float signed-zero/NaN/infinity behavior and wrapping int64 edge cases are
+  covered.
+- Keeps rank-2 dot/matmul/`@`, reshape/view, dynamic/tuple axes, floating
+  extrema, float32
+  dot/sum/mean, int64 mean, unary method forms, and ufunc overrides (`out`,
+  `where`, dtype, etc.) on the Python fallback.
+- Hardens every plugin-array native boundary with an exact base
+  `numpy.ndarray` check. Nominal annotations cannot identify runtime subclasses,
+  so `matrix`, `memmap`, and custom `__array_ufunc__` subclasses now raise a
+  deterministic native-boundary `TypeError`; this is not an automatic static
+  fallback. Exact base-ndarray views remain supported.
+- Revalidates the certified dot and reduction dtype/rank matrices at lower
+  time, including dot RHS equality, so forged/corrupted claims fail closed.
+- Withdraws floating literal-axis `max`/`min` from native lowering. NumPy's
+  NaN payload/sign and signed-zero tie behavior varies across supported
+  platform/SIMD profiles; these routes now retain Python fallback. Int64
+  literal-axis extrema remain native.
+
+### Lower-time contract and CI hardening
+
+- Every native lowerer now independently fail-closes with `ValueError` when
+  its reconstructed `ClaimSite` / `LoweringContext` contract is inconsistent,
+  including route rule/result, direct-versus-leaves operands, types/arity, and
+  applicable literals, keywords, callables, expression, and receiver metadata.
+  The guards are covered under `python -O` as well as normal execution; an
+  omitted non-literal operand-literal tuple and Core's arity-matched nonliteral
+  placeholders remain valid representations.
+- Required CI installs the public Core **`rextio==0.1.6`** release, requires
+  host plugin API 1.5 or later, and runs the complete real-Cargo certification
+  suite without test selection; skipped certification cases fail the job.
+- The current tree collects **969** tests in total and **151** tests in the
+  real-Cargo certification module.
+
 ## 0.1.1 — 2026-07-14
 
 Released cut for package version **0.1.1**, tagged and uploaded to PyPI on
@@ -50,12 +137,14 @@ one per lowerer (`tests/test_lower_binops.py`,
 
 ### Verified suite totals (this branch)
 
-Repository evidence via `pytest --collect-only` on this tree:
+Repository evidence on this tree:
 
-- **661** collected tests total
-- **115** collected real-Cargo certification cases in
-  `tests/test_certification_real_cargo.py` (cargo-gated; may also skip via
-  dependency `importorskip` conditions such as NumPy/Hypothesis)
+- **743** collected tests total from
+  `.venv/bin/python -m pytest --collect-only -q`
+- **119** collected real-Cargo certification cases from
+  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
+  (cargo-gated; may also skip via dependency `importorskip` conditions such as
+  NumPy/Hypothesis)
 
 ### Rank-2 matmul decision
 
