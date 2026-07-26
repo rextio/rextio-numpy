@@ -17,13 +17,33 @@ claim, lower, rules, or plugin types, and it **makes no published speed claim**.
 
 | id | Boundary path |
 |----|----------------|
-| `owned_topy` | Exact ndarray check + **two owned input copies** + owned Rust `Array1` result + **`ToPyArray`** |
-| `borrowed_topy` | Exact ndarray check + **borrowed `PyReadonlyArray` views** + owned Rust result + **`ToPyArray`** |
-| `direct_sink` | Exact ndarray check + borrowed views + **fill one NumPy-owned output buffer** returned unchanged |
+| `owned_topy` | Exact ndarray check + **two owned input copies** + zero-init owned Rust `Array1` + shared `fill_add_views` + **`ToPyArray`** |
+| `borrowed_topy` | Exact ndarray check + **borrowed `PyReadonlyArray` views** + zero-init owned Rust `Array1` + shared `fill_add_views` + **`ToPyArray`** |
+| `direct_sink` | Exact ndarray check + borrowed views + zero-init **NumPy-owned** sink + shared `fill_add_views`, returned unchanged |
 | `python_ref` | Ordinary NumPy `a + b` (reference lane only) |
+
+**Shared arithmetic kernel:** after each Rust strategy performs only its
+required boundary and output allocation steps, all three call the same
+`fill_add_views` helper with identical element order (equal-length Zip;
+length-1 broadcast manual loops). There is no alternate ndarray arithmetic
+or `mapv` kernel. This isolates allocation policy from kernel implementation;
+timings remain **fixed-order unpaired local diagnostics**, not causal speedups.
 
 **Forbidden:** `IntoPyArray` (would transfer Rust ownership and break ordinary
 `OWNDATA` / `base is None` / in-place resize observables).
+
+### Output zero-initialization (all three Rust strategies)
+
+Each Rust path allocates a zero-initialized output buffer before fill:
+
+- `owned_topy` / `borrowed_topy`: `Array1::zeros(n)` then fill via contiguous
+  mutable slice
+- `direct_sink`: `PyArray::zeros` then fill the NumPy-owned sink
+
+Zero-initialization is an **extra store pass** over N elements before the fill
+overwrite. That traffic is not a second logical N-sized allocation, but it can
+affect wall time versus an uninit+fill path. Aligning zero-store policy across
+strategies avoids confounding allocation comparisons with init policy.
 
 ### Direct sink ownership contract
 
@@ -34,10 +54,7 @@ The direct-sink result must be:
 - ordinary in-place `resize` when this NumPy build allows it on a fresh owned array
 - every element initialized before return
 
-Implementation: allocate with `PyArray::zeros` (safe NumPy-owned buffer). The
-zero-initialization is an **extra store pass** over N elements before the fill
-overwrite. That traffic is not a second logical N-sized allocation, but it can
-affect wall time versus an uninit+fill path. **Never** `IntoPyArray`.
+**Never** `IntoPyArray`.
 
 Hard semantic gates (all strategies including `python_ref`): OWNDATA true and
 `base is None` on every accepted result; when this NumPy build supports
@@ -56,10 +73,11 @@ Documented formulas (logical N-sized float64 buffers only):
 | `direct_sink` | 1 | `1 * N * 8` |
 | `python_ref` | 1 | `1 * N * 8` (typical result) |
 
-**Caveats:** allocator internals, SIMD temporaries, and zero-initialization
-may differ from logical accounting. Logical counts are **not** RSS or
-allocator-trace truth. Strategy timing is **fixed-order and unpaired**;
-cache, thermal, allocator, and order bias can affect relative times. Recorded
+**Caveats:** allocator internals and zero-initialization may differ from
+logical accounting. Logical counts are **not** RSS or allocator-trace truth.
+Arithmetic kernel and element order are shared across the three Rust
+strategies; strategy timing is still **fixed-order and unpaired** — cache,
+thermal, allocator, and order bias can affect relative times. Recorded
 thread environment is **requested configuration**, not proof of effective
 library thread state (especially if NumPy was already imported). Timing is
 diagnostic only — **no speedup claim**.

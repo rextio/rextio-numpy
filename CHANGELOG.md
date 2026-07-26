@@ -44,8 +44,13 @@ broadening.
   borrowed views + direct fill of a NumPy-owned output buffer) plus a Python
   NumPy reference lane. The candidate deliberately never uses
   ``IntoPyArray``.
+- All three Rust strategies execute one shared ``fill_add_views`` arithmetic
+  kernel with identical element order after only their required boundary and
+  output allocation steps; output buffers are zero-initialized before fill on
+  every Rust path. This isolates allocation policy from kernel implementation.
+  Timings remain fixed-order unpaired local diagnostics only.
 - Documents logical N-sized allocation counts/bytes with explicit formulas
-  and may record calibrated local wall times. Allocator internals, SIMD, and
+  and may record calibrated local wall times. Allocator internals and
   zero-initialization may differ from logical accounting. **No measured
   results are committed and no speedup claim is made.**
 - Does **not** change production ``BoundaryConversion``, claim, lower, rules,

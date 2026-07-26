@@ -43,10 +43,13 @@ claims.
 `benchmarks/boundary_allocation_poc/` is an isolated F64 rank-1
 boundary-allocation PoC that compares owned-copy+`ToPyArray`,
 borrowed-view+`ToPyArray`, and direct NumPy-owned sink fill strategies for
-elementwise add. It does **not** change production `BoundaryConversion` or
-lowering, forbids `IntoPyArray`, records logical allocation formulas plus
-local wall times only, and **must not** be cited as a published speedup or
-support claim. See that directory’s README for build/run instructions.
+elementwise add. The three Rust strategies share one deterministic arithmetic
+fill kernel and element order after their distinct boundary/output allocation
+steps; timings remain fixed-order unpaired local diagnostics only. It does
+**not** change production `BoundaryConversion` or lowering, forbids
+`IntoPyArray`, records logical allocation formulas plus local wall times only,
+and **must not** be cited as a published speedup or support claim. See that
+directory’s README for build/run instructions.
 
 **Dependency:** requires **`rextio>=0.1.6,<0.2`**. NumPy is deliberately **not**
 a runtime dependency of this package — only the user-facing

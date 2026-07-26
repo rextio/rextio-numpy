@@ -1,8 +1,10 @@
 """Preregistered constants for the boundary-allocation PoC.
 
-Logical allocation accounting is documented here. Allocator internals, SIMD
-kernel choice, and zero-initialization cost may differ from logical counts;
-do not treat logical bytes as measured RSS or allocator-trace truth.
+Logical allocation accounting is documented here. Allocator internals and
+zero-initialization cost may differ from logical counts; do not treat logical
+bytes as measured RSS or allocator-trace truth. Arithmetic kernel and element
+order are shared across the three Rust strategies (``fill_add_views``); timings
+remain fixed-order unpaired local diagnostics only.
 """
 
 from __future__ import annotations
@@ -97,11 +99,14 @@ THREAD_ENV: Final[dict[str, str]] = {
 #
 # Caveats (must appear in reports):
 # - Allocator internals may coalesce, over-allocate, or reuse arenas.
-# - SIMD / pairwise kernels may use stack or small temporary buffers.
-# - ``direct_sink`` uses ``PyArray::zeros`` for a safe NumPy-owned buffer: the
-#   zero-initialization is an extra store pass over N elements before the
-#   fill overwrite. It is not an extra logical N-sized allocation, but it is
-#   real memory traffic and can affect wall time vs an uninit+fill path.
+# - All three Rust strategies share one ``fill_add_views`` arithmetic kernel
+#   and element order after their distinct boundary/output allocation steps.
+# - Output buffers are zero-initialized before fill on all three Rust paths
+#   (``Array1::zeros`` for owned/borrowed ToPyArray strategies;
+#   ``PyArray::zeros`` for direct_sink). Zero-initialization is an extra store
+#   pass over N elements before the fill overwrite. It is not an extra logical
+#   N-sized allocation, but it is real memory traffic and can affect wall time
+#   vs an uninit+fill path.
 # - Strided inputs still pay full N for each logical ``to_owned`` copy, but
 #   the resulting Rust layout is unspecified.
 # - Length-1 broadcast: N is the *result* length; a length-1 leaf copy is
@@ -111,13 +116,13 @@ THREAD_ENV: Final[dict[str, str]] = {
 
 LOGICAL_ALLOC_FORMULAS: Final[dict[StrategyId, str]] = {
     "owned_topy": (
-        "equal-length contiguous: 2×to_owned(N) + 1×Array1(N) + 1×ToPyArray(N) = 4×N×8 bytes"
+        "equal-length contiguous: 2×to_owned(N) + 1×Array1_zeros(N) + 1×ToPyArray(N) = 4×N×8 bytes"
     ),
     "borrowed_topy": (
-        "equal-length contiguous: 0×input_copy + 1×Array1(N) + 1×ToPyArray(N) = 2×N×8 bytes"
+        "equal-length contiguous: 0×input_copy + 1×Array1_zeros(N) + 1×ToPyArray(N) = 2×N×8 bytes"
     ),
     "direct_sink": (
-        "equal-length contiguous: 0×input_copy + 1×NumPy_owned(N) = 1×N×8 bytes"
+        "equal-length contiguous: 0×input_copy + 1×NumPy_owned_zeros(N) = 1×N×8 bytes"
     ),
     "python_ref": (
         "equal-length contiguous: typical NumPy result allocation = 1×N×8 bytes (reference)"
@@ -133,11 +138,16 @@ LOGICAL_N_ALLOCS_EQUAL_CONTIG: Final[dict[StrategyId, int]] = {
 
 HONESTY_CAVEATS: Final[tuple[str, ...]] = (
     "Logical allocation counts are intentional buffer counts, not allocator traces.",
-    "Allocator internals, SIMD temporaries, and zero-initialization may differ "
-    "from logical accounting.",
-    "direct_sink uses PyArray::zeros: zero-initialization adds a store pass "
-    "over the output buffer before fill; that traffic is not a second logical "
-    "N-sized allocation but can affect wall time.",
+    "Allocator internals and zero-initialization may differ from logical accounting.",
+    "All three Rust strategies execute one shared fill_add_views arithmetic "
+    "kernel with identical element order after only their required boundary "
+    "and output allocation steps; timings remain fixed-order unpaired local "
+    "diagnostics and do not isolate kernel vs allocation effects beyond that.",
+    "Every Rust strategy zero-initializes its output buffer before fill "
+    "(Array1::zeros for owned_topy/borrowed_topy; PyArray::zeros for "
+    "direct_sink): zero-initialization adds a store pass over the output "
+    "buffer before fill; that traffic is not a second logical N-sized "
+    "allocation but can affect wall time.",
     "Strategy timing is fixed-order and unpaired (strategies run sequentially "
     "in a declared order on shared inputs). Cache warm-up, thermal throttling, "
     "allocator reuse, and order bias can affect relative wall times; do not "

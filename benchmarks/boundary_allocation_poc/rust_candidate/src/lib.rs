@@ -7,10 +7,20 @@
 //! - exact `numpy.ndarray` check via `is_exact_instance_of::<PyArray1<f64>>`
 //! - reject ndarray subclasses with the product-matching TypeError text
 //!
+//! Shared arithmetic kernel (all strategies):
+//! - after each strategy performs only its required boundary / output allocation
+//!   steps, every path calls the same `fill_add_views` with identical element
+//!   order (equal-length Zip; length-1 broadcast manual loops)
+//! - output buffers are zero-initialized before fill so zero-store policy is
+//!   explicit and aligned across strategies (not a second logical N-sized alloc)
+//!
 //! Strategies:
-//! 1. `add_owned_topy` — two owned input copies + owned Rust output + `ToPyArray`
-//! 2. `add_borrowed_topy` — borrowed `PyReadonlyArray` views + owned Rust output + `ToPyArray`
-//! 3. `add_direct_sink` — borrowed views + fill a NumPy-owned output buffer, return unchanged
+//! 1. `add_owned_topy` — two owned input copies + owned Rust zeros output + fill
+//!    + `ToPyArray`
+//! 2. `add_borrowed_topy` — borrowed `PyReadonlyArray` views + owned Rust zeros
+//!    output + fill + `ToPyArray`
+//! 3. `add_direct_sink` — borrowed views + NumPy-owned zeros sink + fill, return
+//!    unchanged
 //!
 //! **Never** uses `IntoPyArray` (would transfer Rust ownership and break ordinary
 //! resize / OWNDATA observables).
@@ -50,23 +60,12 @@ fn broadcast_len(a_len: usize, b_len: usize) -> PyResult<usize> {
     )))
 }
 
-/// Elementwise add into a newly allocated owned `Array1<f64>` from two views.
-fn add_views_owned(a: ArrayView1<'_, f64>, b: ArrayView1<'_, f64>) -> PyResult<Array1<f64>> {
-    let _n = broadcast_len(a.len(), b.len())?;
-    if a.len() == b.len() {
-        // Equal-length path (including both length-0 and both length-1).
-        return Ok(&a + &b);
-    }
-    if a.len() == 1 {
-        let s = a[0];
-        return Ok(b.mapv(|x| s + x));
-    }
-    // b.len() == 1 (guaranteed by broadcast_len)
-    let s = b[0];
-    Ok(a.mapv(|x| x + s))
-}
-
-/// Fill *out* (length n) from broadcast-compatible views. Every element written.
+/// Shared deterministic elementwise-add fill kernel used by every strategy.
+///
+/// Writes every element of *out* (length n) from broadcast-compatible views in
+/// a fixed element order: equal-length uses Zip over output then a then b;
+/// length-1 broadcast uses a manual index loop. No ndarray arithmetic / mapv
+/// alternate kernel exists in this crate.
 fn fill_add_views(out: &mut [f64], a: ArrayView1<'_, f64>, b: ArrayView1<'_, f64>) -> PyResult<()> {
     let n = broadcast_len(a.len(), b.len())?;
     if out.len() != n {
@@ -99,10 +98,20 @@ fn fill_add_views(out: &mut [f64], a: ArrayView1<'_, f64>, b: ArrayView1<'_, f64
     Ok(())
 }
 
+/// Contiguous mutable slice of a zero-initialized owned Rust `Array1` result.
+fn owned_zeros_slice_mut(out: &mut Array1<f64>) -> PyResult<&mut [f64]> {
+    out.as_slice_mut().ok_or_else(|| {
+        PyValueError::new_err("boundary-allocation-poc: owned Rust zeros output not contiguous")
+    })
+}
+
 /// Strategy 1: current product-style boundary (owned copies + ToPyArray).
 ///
 /// Logical N-sized allocations (equal-length contiguous, output length N):
 ///   2 input `to_owned` + 1 Rust result + 1 `ToPyArray` Python buffer = **4**.
+///
+/// Arithmetic: allocate zero-initialized owned Rust output, fill via shared
+/// `fill_add_views`, then `ToPyArray` (never IntoPyArray).
 #[pyfunction]
 fn add_owned_topy<'py>(
     py: Python<'py>,
@@ -113,7 +122,15 @@ fn add_owned_topy<'py>(
     require_exact_ndarray1(&*b)?;
     let a_owned: Array1<f64> = a.as_array().to_owned();
     let b_owned: Array1<f64> = b.as_array().to_owned();
-    let out = add_views_owned(a_owned.view(), b_owned.view())?;
+    let n = broadcast_len(a_owned.len(), b_owned.len())?;
+    // Zero-init owned Rust output (aligned zero-store policy with direct_sink).
+    // Extra store pass over N elements before fill overwrite; not a second
+    // logical N-sized allocation.
+    let mut out = Array1::<f64>::zeros(n);
+    {
+        let slice = owned_zeros_slice_mut(&mut out)?;
+        fill_add_views(slice, a_owned.view(), b_owned.view())?;
+    }
     // Explicit ToPyArray UFCS (never IntoPyArray).
     Ok(ToPyArray::to_pyarray(&out, py))
 }
@@ -122,6 +139,9 @@ fn add_owned_topy<'py>(
 ///
 /// Logical N-sized allocations (equal-length contiguous, output length N):
 ///   0 input copies + 1 Rust result + 1 `ToPyArray` Python buffer = **2**.
+///
+/// Arithmetic: same zero-initialized owned Rust output + shared `fill_add_views`
+/// as strategy 1 (only input ownership differs).
 #[pyfunction]
 fn add_borrowed_topy<'py>(
     py: Python<'py>,
@@ -132,7 +152,12 @@ fn add_borrowed_topy<'py>(
     require_exact_ndarray1(&*b)?;
     let a_view = a.as_array();
     let b_view = b.as_array();
-    let out = add_views_owned(a_view, b_view)?;
+    let n = broadcast_len(a_view.len(), b_view.len())?;
+    let mut out = Array1::<f64>::zeros(n);
+    {
+        let slice = owned_zeros_slice_mut(&mut out)?;
+        fill_add_views(slice, a_view, b_view)?;
+    }
     Ok(ToPyArray::to_pyarray(&out, py))
 }
 
@@ -147,7 +172,8 @@ fn add_borrowed_topy<'py>(
 /// - ordinary in-place `resize` when NumPy allows it on a fresh owned array
 /// - every element initialized before return (no uninit escape)
 ///
-/// Deliberately avoids `IntoPyArray` (Rust-owned base breaks resize).
+/// Arithmetic: NumPy-owned zeros sink + the same shared `fill_add_views` kernel
+/// as the ToPyArray strategies. Deliberately avoids `IntoPyArray`.
 #[pyfunction]
 fn add_direct_sink<'py>(
     py: Python<'py>,
@@ -163,8 +189,10 @@ fn add_direct_sink<'py>(
     // NumPy-owned allocation (Python heap). Prefer `zeros` over `new` so
     // partial failure paths never observe uninit. Zero-initialization is an
     // extra store pass over N elements before the fill overwrite below; it is
-    // not a second logical N-sized allocation, but it is real memory traffic.
-    // Every element is still overwritten before return. Never use IntoPyArray.
+    // not a second logical N-sized allocation, but it is real memory traffic
+    // and is intentionally aligned with the owned Rust zeros path in the
+    // ToPyArray strategies. Every element is still overwritten before return.
+    // Never use IntoPyArray.
     let out = PyArray1::<f64>::zeros(py, n, false);
     {
         let mut rw = out.readwrite();

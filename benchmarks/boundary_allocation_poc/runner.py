@@ -320,8 +320,10 @@ def _markdown_report(report: dict[str, Any]) -> str:
         lines.append("")
     lines.append(
         "Do not treat ratios between strategies as a published speedup. "
-        "Allocator internals, SIMD, and zero-initialization may differ from "
-        "logical accounting."
+        "Arithmetic kernel and element order are shared across Rust "
+        "strategies; allocator internals and zero-initialization may still "
+        "differ from logical accounting. Timings are fixed-order unpaired "
+        "local diagnostics only."
     )
     lines.append("")
     return "\n".join(lines)

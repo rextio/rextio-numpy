@@ -82,9 +82,12 @@ class TestProtocol:
     def test_honesty_caveats_mention_allocator_and_no_speedup(self) -> None:
         blob = " ".join(HONESTY_CAVEATS).lower()
         assert "allocator" in blob
-        assert "simd" in blob or "zero-initialization" in blob
+        assert "zero-initialization" in blob or "zero-initializes" in blob
         assert "speedup" in blob or "speed" in blob
         assert "intopyarray" in blob
+        # Shared kernel honesty (benchmark-validity: allocation vs arithmetic).
+        assert "fill_add_views" in blob
+        assert "shared" in blob and "element order" in blob
         # Fixed-order / unpaired timing and thread-env honesty (review finding 4).
         assert "fixed-order" in blob
         assert "unpaired" in blob
@@ -93,7 +96,10 @@ class TestProtocol:
         assert "order bias" in blob
         assert "requested configuration" in blob
         assert "already imported" in blob
+        # Zero-init is common to all three Rust strategies (not direct_sink-only).
         assert "zeros" in blob and "store pass" in blob
+        assert "array1::zeros" in blob
+        assert "pyarray::zeros" in blob
 
     def test_protocol_manifest_flags(self) -> None:
         m = protocol_manifest()
@@ -132,10 +138,74 @@ class TestCargoTomlStatic:
         assert "add_owned_topy" in lib_rs
         assert "add_borrowed_topy" in lib_rs
         assert "add_direct_sink" in lib_rs
-        # Safe zeros-based direct sink with documented zero-init store pass.
+        # Zero-init output on all three strategies (aligned store policy).
+        assert "Array1::<f64>::zeros" in lib_rs
         assert "PyArray1::<f64>::zeros" in lib_rs
         assert "store pass" in lib_rs.lower() or "extra store" in lib_rs.lower()
         assert (RUST_CANDIDATE_DIR / ".cargo" / "config.toml").is_file()
+
+
+class TestSharedFillKernelStructural:
+    """Benchmark-validity gate: one arithmetic kernel for all Rust strategies.
+
+    owned_topy / borrowed_topy must not keep ndarray ``+`` / ``mapv`` paths that
+    bypass ``fill_add_views`` while direct_sink uses Zip/manual loops.
+    """
+
+    def _lib_rs(self) -> str:
+        return (RUST_CANDIDATE_DIR / "src" / "lib.rs").read_text(encoding="utf-8")
+
+    def test_single_fill_add_views_definition(self) -> None:
+        import re
+
+        lib_rs = self._lib_rs()
+        defs = re.findall(
+            r"^\s*fn\s+fill_add_views\s*\(",
+            lib_rs,
+            flags=re.MULTILINE,
+        )
+        assert len(defs) == 1, f"expected exactly one fill_add_views definition, got {len(defs)}"
+
+    def test_every_exported_strategy_calls_fill_add_views(self) -> None:
+        lib_rs = self._lib_rs()
+        # Count the call token only (trailing '('). Doc/module comments mention
+        # fill_add_views in backticks without '(', so they cannot inflate this.
+        # Exactly four: one definition (fn fill_add_views(...)) + three strategy
+        # call sites. A comment-only mention must not satisfy this gate.
+        token = "fill_add_views("
+        assert lib_rs.count(token) == 4, (
+            f"expected exactly 4 fill_add_views( occurrences "
+            f"(1 def + 3 calls), got {lib_rs.count(token)}"
+        )
+        # Exact call forms (actual Rust spacing/syntax in lib.rs).
+        owned_call = "fill_add_views(slice, a_owned.view(), b_owned.view())"
+        borrow_or_sink_call = "fill_add_views(slice, a_view, b_view)"
+        assert lib_rs.count(owned_call) == 1, (
+            "owned_topy must call fill_add_views(slice, a_owned.view(), "
+            "b_owned.view()) exactly once"
+        )
+        assert lib_rs.count(borrow_or_sink_call) == 2, (
+            "borrowed_topy and direct_sink must each call "
+            "fill_add_views(slice, a_view, b_view) (exactly two total)"
+        )
+        # Three exact call forms + one definition consume all four tokens.
+        assert lib_rs.count(owned_call) + lib_rs.count(borrow_or_sink_call) == 3
+
+    def test_no_alternate_arithmetic_or_mapv_kernel(self) -> None:
+        lib_rs = self._lib_rs()
+        assert "add_views_owned" not in lib_rs
+        assert ".mapv(" not in lib_rs
+        assert "mapv(" not in lib_rs
+        # Forbid owned-array / operator-add kernel forms used previously.
+        for banned in (
+            "&a + &b",
+            "&a_owned + &b_owned",
+            "Ok(&a + &b)",
+            "return Ok(&a + &b)",
+            "a.mapv",
+            "b.mapv",
+        ):
+            assert banned not in lib_rs
 
 
 class TestCandidateHelpers:
@@ -470,6 +540,9 @@ class TestRealCargoBoundedSmoke:
         lib_rs = (RUST_CANDIDATE_DIR / "src" / "lib.rs").read_text(encoding="utf-8")
         assert "into_pyarray" not in lib_rs
         assert "PyArray1::<f64>::zeros" in lib_rs
+        assert "Array1::<f64>::zeros" in lib_rs
+        assert "fill_add_views(" in lib_rs
+        assert ".mapv(" not in lib_rs
         # Direct sink ownership on a real build.
         from benchmarks.boundary_allocation_poc.candidate import ensure_importable
         from benchmarks.boundary_allocation_poc.candidate import CandidateArtifact as CA
@@ -503,6 +576,44 @@ class TestRealCargoBoundedSmoke:
         assert out.base is None
         np.testing.assert_array_equal(out, a + b)
         assert_ownership(mod.add_direct_sink(a, b), label="real_direct_sink")
+
+        # Runtime value parity across all three strategies + NumPy reference
+        # (shared fill kernel must not diverge by allocation policy).
+        ref = a + b
+        outs = {
+            "owned_topy": mod.add_owned_topy(a, b),
+            "borrowed_topy": mod.add_borrowed_topy(a, b),
+            "direct_sink": mod.add_direct_sink(a, b),
+        }
+        for sid, arr in outs.items():
+            np.testing.assert_array_equal(arr, ref, err_msg=f"{sid} vs numpy")
+        np.testing.assert_array_equal(outs["owned_topy"], outs["borrowed_topy"])
+        np.testing.assert_array_equal(outs["borrowed_topy"], outs["direct_sink"])
+        # Ownership gates need a single live reference (may resize).
+        assert_ownership(mod.add_owned_topy(a, b), label="parity_owned_topy")
+        assert_ownership(mod.add_borrowed_topy(a, b), label="parity_borrowed_topy")
+        assert_ownership(mod.add_direct_sink(a, b), label="parity_direct_sink")
+
+        # Broadcast / strided / NaN-Inf parity under shared kernel.
+        a1 = np.array([2.0], dtype=np.float64)
+        b_n = np.array([1.0, 3.0, 5.0], dtype=np.float64)
+        ref_bc = a1 + b_n
+        for name in ("add_owned_topy", "add_borrowed_topy", "add_direct_sink"):
+            np.testing.assert_array_equal(getattr(mod, name)(a1, b_n), ref_bc)
+            np.testing.assert_array_equal(getattr(mod, name)(b_n, a1), ref_bc)
+        base = np.arange(0.0, 12.0, dtype=np.float64)
+        a_str = base[::2]
+        b_str = base[1 : 1 + 2 * a_str.shape[0] : 2]
+        assert a_str.shape == b_str.shape
+        ref_st = a_str + b_str
+        for name in ("add_owned_topy", "add_borrowed_topy", "add_direct_sink"):
+            np.testing.assert_array_equal(getattr(mod, name)(a_str, b_str), ref_st)
+        a_nan = np.array([np.nan, 1.0, np.inf, -np.inf], dtype=np.float64)
+        b_nan = np.array([0.0, np.nan, 1.0, 2.0], dtype=np.float64)
+        ref_nan = a_nan + b_nan
+        for name in ("add_owned_topy", "add_borrowed_topy", "add_direct_sink"):
+            np.testing.assert_array_equal(getattr(mod, name)(a_nan, b_nan), ref_nan)
+
         # Subclass either position for every real Rust strategy.
 
         class Sub(np.ndarray):
