@@ -11,12 +11,20 @@ broadening.
 ### Fusion contiguous equal-shape fast path
 
 - Fused elementwise chain helpers (``__rxtnp_echain_*``) may take a **rank-1
-  or rank-2 equal-shape standard-layout (C-order) fast path** that loads via
-  ``as_slice`` after shape validation when every leaf already matches the
-  final shape in standard layout at helper entry. The **generic** path
-  handles leaves that remain non-standard-layout at helper entry and all
-  broadcast cases (including length-1, zero-size, and mixed rank), with the
-  same trailing-space ``ValueError`` messages and evaluation order.
+  or rank-2 equal-shape standard-layout (C-order) fast path** that is
+  **decided and entered before** any LTR postorder ``__rxtnp_broadcast_shape``
+  ``Vec`` work when every leaf is the same rank as the result, all leaf
+  shapes are equal, and every leaf is standard layout at helper entry (loads
+  via ``as_slice``). The **generic** path retains LTR postorder broadcast
+  validation and handles leaves that remain non-standard-layout at helper
+  entry and all broadcast cases (including length-1, zero-size, and mixed
+  rank), with the same trailing-space ``ValueError`` messages, exception
+  type, error ordering, and evaluation order. Mixed-rank trees emit only the
+  generic path.
+- When lower-time leaf operand names prove repeated bindings (for example
+  ``(a + b) * (a - b)``), the helper may take one parameter per unique name
+  and reuse element loads; alias patterns are encoded in the helper name so
+  structural signatures cannot collide across different alias maps.
 - Boundary input conversion still uses ``as_array().to_owned()``: an owned
   Rust copy for the native frame. That does **not** guarantee every input
   becomes C-contiguous (contiguous input layout may be preserved;
@@ -28,12 +36,36 @@ broadening.
   layout-gated correctness-preserving shortcut only — not a published speed
   claim and not an unsafe reinterpretation of F-order storage.
 
+### Experimental boundary-allocation PoC harness (research-only)
+
+- Adds an isolated harness under ``benchmarks/boundary_allocation_poc/`` that
+  compares three F64 rank-1 elementwise-add boundary strategies (owned input
+  copies + ``ToPyArray``; borrowed ``PyReadonlyArray`` views + ``ToPyArray``;
+  borrowed views + direct fill of a NumPy-owned output buffer) plus a Python
+  NumPy reference lane. The candidate deliberately never uses
+  ``IntoPyArray``.
+- All three Rust strategies execute one shared ``fill_add_views`` arithmetic
+  kernel with identical element order after only their required boundary and
+  output allocation steps; output buffers are zero-initialized before fill on
+  every Rust path. This isolates allocation policy from kernel implementation.
+  Timings remain fixed-order unpaired local diagnostics only.
+- Documents logical N-sized allocation counts/bytes with explicit formulas
+  and may record calibrated local wall times. Allocator internals and
+  zero-initialization may differ from logical accounting. **No measured
+  results are committed and no speedup claim is made.**
+- Does **not** change production ``BoundaryConversion``, claim, lower, rules,
+  or certified surface. Direct-sink ownership must keep ordinary NumPy
+  observables (exact ``ndarray``, ``OWNDATA``, ``base is None``, in-place
+  resize when supported).
+
 ### Explicit non-claims (unchanged product posture)
 
 - Rank-2 ``dot`` / matmul / ``@`` remain **NO-GO / fallback-retained** and are
   not support or performance claims for this candidate.
 - Certified surface, fail-closed lower-time ``ValueError`` guards, and the
   accepted missing-``RuntimeWarning`` divergence are unchanged from 0.1.2.
+- The boundary-allocation PoC harness is research-only and is not a product
+  performance or support claim.
 
 ## 0.1.2 — 2026-07-26
 

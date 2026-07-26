@@ -77,7 +77,11 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     # Re-check dense leaf indexes against the frozen tree.
     _assert_leaf_indexes(claimed.expression, match.leaf_count)
 
-    from rextio_numpy.rust_snippets.fusion import build_tree_plan, fusion_call_name
+    from rextio_numpy.rust_snippets.fusion import (
+        build_tree_plan,
+        fusion_call_name,
+        leaf_alias_map,
+    )
 
     tree_plan = build_tree_plan(claimed.expression)
     if len(tree_plan) != match.binop_count:
@@ -86,8 +90,16 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             f"{len(tree_plan)} != binop_count {match.binop_count}"
         )
 
-    name = fusion_call_name(match.signature)
-    args = ", ".join(f"&{leaf}" for leaf in ctx.leaf_operands)
+    alias = leaf_alias_map(ctx.leaf_operands, n_leaves=match.leaf_count)
+    # One argument per unique lower-time operand name (static identity).
+    unique_args: list[str] = []
+    seen: set[str] = set()
+    for leaf in ctx.leaf_operands:
+        if leaf not in seen:
+            seen.add(leaf)
+            unique_args.append(leaf)
+    name = fusion_call_name(match.signature, alias)
+    args = ", ".join(f"&{leaf}" for leaf in unique_args)
     helpers = rust_snippets.fusion_helpers_bundle(
         signature=match.signature,
         dtype=match.dtype,
@@ -95,6 +107,7 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         leaf_ranks=match.leaf_ranks,
         expression_ops_postorder=match.postorder_ops,
         tree_plan=tree_plan,
+        leaf_operands=ctx.leaf_operands,
     )
     return LoweredExpr(
         rust=f"{name}({args})?",
