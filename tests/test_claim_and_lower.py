@@ -243,7 +243,8 @@ def test_lower_dot() -> None:
     assert len(lowered.helpers) == 1
     helper = lowered.helpers[0]
     assert helper.startswith(
-        "fn __rxtnp_dot1(a: &numpy::ndarray::Array1<f64>, b: &numpy::ndarray::Array1<f64>) -> pyo3::PyResult<f64>"
+        "fn __rxtnp_dot1<'py>(a: &numpy::PyReadonlyArray1<'py, f64>, "
+        "b: &numpy::PyReadonlyArray1<'py, f64>) -> pyo3::PyResult<f64>"
     )
     assert "not aligned: {} (dim 0) != {} (dim 0)" in helper
     assert "pyo3::exceptions::PyValueError::new_err" in helper
@@ -261,7 +262,8 @@ def test_lower_reductions(target: str, helper_name: str, body: str) -> None:
     assert lowered.rust == f"{helper_name}(&values)?"
     assert len(lowered.helpers) == 1
     assert (
-        f"fn {helper_name}(a: &numpy::ndarray::Array1<f64>) -> pyo3::PyResult<f64>"
+        f"fn {helper_name}<'py>(a: &numpy::PyReadonlyArray1<'py, f64>) "
+        "-> pyo3::PyResult<f64>"
         in lowered.helpers[0]
     )
     assert body in lowered.helpers[0]
@@ -273,11 +275,12 @@ def test_lower_reductions(target: str, helper_name: str, body: str) -> None:
 )
 def test_lower_binop_array_array(op: str, name: str, symbol: str) -> None:
     lowered = PLUGIN.lower(claimed(site("binop", op, (K, K))), ctx("a", "b"))
-    assert lowered.rust == f"__rxtnp_{name}1_aa(&a, &b)?"
-    helper = lowered.helpers[0]
-    assert f"fn __rxtnp_{name}1_aa(" in helper
+    assert lowered.rust == f"__rxtnp_{name}1_aa(py, &a, &b)?"
+    helper = lowered.helpers[-1]
+    assert f"fn __rxtnp_{name}1_aa<'py>(" in helper
     assert "operands could not be broadcast together with shapes ({},) ({},) " in helper
-    assert f"Ok(a {symbol} b)" in helper
+    assert f"out[i] = x {symbol} y;" in helper
+    assert "__rxtnp_f64_1d_output(py, n" in helper
 
 
 @pytest.mark.parametrize(
@@ -286,12 +289,16 @@ def test_lower_binop_array_array(op: str, name: str, symbol: str) -> None:
 )
 def test_lower_binop_array_scalar(op: str, name: str, symbol: str) -> None:
     lowered = PLUGIN.lower(claimed(site("binop", op, (K, "float"))), ctx("a", "s"))
-    assert lowered.rust == f"__rxtnp_{name}1_as(&a, s)?"
-    helper = lowered.helpers[0]
-    assert f"fn __rxtnp_{name}1_as(a: &numpy::ndarray::Array1<f64>, s: f64)" in helper
+    assert lowered.rust == f"__rxtnp_{name}1_as(py, &a, s)?"
+    helper = lowered.helpers[-1]
+    assert (
+        f"fn __rxtnp_{name}1_as<'py>(py: pyo3::Python<'py>, "
+        "a: &numpy::PyReadonlyArray1<'py, f64>, s: f64)"
+        in helper
+    )
     # No shape check on the scalar form.
     assert "broadcast" not in helper
-    assert f"Ok(a.mapv(|x| x {symbol} s))" in helper
+    assert f"*value = x {symbol} s;" in helper
 
 
 @pytest.mark.parametrize(
@@ -300,11 +307,14 @@ def test_lower_binop_array_scalar(op: str, name: str, symbol: str) -> None:
 )
 def test_lower_binop_scalar_array(op: str, name: str, symbol: str) -> None:
     lowered = PLUGIN.lower(claimed(site("binop", op, ("float", K))), ctx("s", "a"))
-    assert lowered.rust == f"__rxtnp_{name}1_sa(s, &a)?"
-    helper = lowered.helpers[0]
-    assert f"fn __rxtnp_{name}1_sa(s: f64, a: &numpy::ndarray::Array1<f64>)" in helper
-    # mapv keeps the scalar as the LEFT operand for sub/div.
-    assert f"Ok(a.mapv(|x| s {symbol} x))" in helper
+    assert lowered.rust == f"__rxtnp_{name}1_sa(py, s, &a)?"
+    helper = lowered.helpers[-1]
+    assert (
+        f"fn __rxtnp_{name}1_sa<'py>(py: pyo3::Python<'py>, s: f64, "
+        "a: &numpy::PyReadonlyArray1<'py, f64>)"
+        in helper
+    )
+    assert f"*value = s {symbol} x;" in helper
 
 
 def test_lower_wave1_helpers_are_fallible() -> None:
@@ -341,7 +351,7 @@ def test_lower_literal_axis_encodes_normalized_axis() -> None:
         claimed(site("call", "numpy.sum", (F64_2D,), keywords=axis_kw(-1))),
         ctx("mat"),
     )
-    assert lowered.rust == "__rxtnp_sum2_f64_axis1(&mat)?"
+    assert lowered.rust == "__rxtnp_sum2_f64_axis1(py, &mat)?"
     assert "Axis(1)" in "\n".join(lowered.helpers)
     assert "__rxtnp_numpy_pairwise_sum_f64" in "\n".join(lowered.helpers)
 

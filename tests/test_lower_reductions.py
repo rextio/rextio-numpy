@@ -210,7 +210,7 @@ def test_try_lower_axis_rank1_sum_encodes_normalized_axis() -> None:
     ("target", "operand_type", "axis", "expected"),
     [
         ("numpy.sum", F64_1D, -1, "__rxtnp_sum1_f64_axis0(&values)?"),
-        ("numpy.mean", F64_2D, 1, "__rxtnp_mean2_f64_axis1(&values)?"),
+        ("numpy.mean", F64_2D, 1, "__rxtnp_mean2_f64_axis1(py, &values)?"),
         ("numpy.max", I64_1D, 0, "__rxtnp_max1_i64_axis0(&values)?"),
         ("numpy.min", I64_2D, -2, "__rxtnp_min2_i64_axis0(&values)?"),
     ],
@@ -258,10 +258,11 @@ def test_try_lower_method_positional_axis() -> None:
 def test_try_lower_axis_rank2_sum_axis0_and_axis1() -> None:
     lo0 = try_lower(site("numpy.sum", (F64_2D,), keywords=axis_kw(0)), ctx("a"))
     assert lo0 is not None
-    assert lo0.rust == "__rxtnp_sum2_f64_axis0(&a)?"
+    assert lo0.rust == "__rxtnp_sum2_f64_axis0(py, &a)?"
     text0 = "\n".join(lo0.helpers)
     assert "__rxtnp_numpy_pairwise_sum_f64" in text0
-    assert "Array1<f64>" in text0
+    assert "PyReadonlyArray1<'py, f64>" in text0
+    assert "PyArray1::<f64>::zeros" in text0
     assert "nrows" in text0
     # Unit-stride → pairwise; non-unit → sequential (NumPy layout match).
     assert "sequential_sum" in text0
@@ -269,7 +270,7 @@ def test_try_lower_axis_rank2_sum_axis0_and_axis1() -> None:
 
     lo1 = try_lower(site("numpy.sum", (F64_2D,), keywords=axis_kw(-1)), ctx("a"))
     assert lo1 is not None
-    assert lo1.rust == "__rxtnp_sum2_f64_axis1(&a)?"
+    assert lo1.rust == "__rxtnp_sum2_f64_axis1(py, &a)?"
     text1 = "\n".join(lo1.helpers)
     assert "__rxtnp_numpy_pairwise_sum_f64" in text1
     assert "ncols" in text1

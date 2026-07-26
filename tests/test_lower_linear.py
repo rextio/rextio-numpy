@@ -45,7 +45,8 @@ def test_try_lower_dot_f64() -> None:
     assert lowered is not None
     assert lowered.rust == "__rxtnp_dot1(&a, &b)?"
     assert lowered.helpers[0].startswith(
-        "fn __rxtnp_dot1(a: &numpy::ndarray::Array1<f64>, b: &numpy::ndarray::Array1<f64>)"
+        "fn __rxtnp_dot1<'py>(a: &numpy::PyReadonlyArray1<'py, f64>, "
+        "b: &numpy::PyReadonlyArray1<'py, f64>)"
     )
     assert "not aligned: {} (dim 0) != {} (dim 0)" in lowered.helpers[0]
 

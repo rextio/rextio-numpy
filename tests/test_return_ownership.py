@@ -1,8 +1,7 @@
-"""Boundary return conversion: ordinary NumPy ToPyArray materialization.
+"""Boundary return conversion and ordinary NumPy ownership.
 
-Static checks that every supported array BoundaryConversion and generated
-Rust use ``ToPyArray::to_pyarray`` (not ``IntoPyArray``), preserving ordinary
-NumPy result ownership semantics.
+F64_1D keeps a read-only Python owner internally and allocates its result
+directly. Other arrays retain ``ToPyArray``. No lane uses ``IntoPyArray``.
 """
 
 from __future__ import annotations
@@ -34,12 +33,29 @@ class FakeEntryPoint:
 
 
 _RETURN_EXPR = "numpy::ToPyArray::to_pyarray(&{value}, py)"
+_F64_1D_RETURN_EXPR = "__rxtnp_release_f64_1d({value})?"
 _BLOCKED_OWNERSHIP_TRANSFER = "numpy::IntoPyArray::into_pyarray({value}, py)"
 
 
-def test_all_array_boundaries_use_to_pyarray_not_into_pyarray() -> None:
-    """Every supported array materialization uses ordinary ToPyArray returns."""
-    keys = (F64_1D, F64_2D, F32_1D, F32_2D, I64_1D, I64_2D)
+def test_f64_1d_boundary_is_borrowed_input_and_direct_owned_output() -> None:
+    """The bounded lane neither copies its input nor transfers Rust ownership."""
+    pt = plugin_type(F64_1D)
+    conv = pt.conversion
+    assert conv is not None
+    assert conv.return_expr == _F64_1D_RETURN_EXPR
+    assert "to_owned()" not in conv.param_expr
+    support = "\n".join(pt.helpers)
+    assert "PyArray1::<f64>::zeros(py, len, false)" in support
+    assert "try_readwrite" in support
+    assert "try_into_readonly" in support
+    assert "drop(value);" in support
+    assert "IntoPyArray" not in support
+    assert "ToPyArray" not in support
+
+
+def test_other_array_boundaries_retain_to_pyarray_not_into_pyarray() -> None:
+    """Unmigrated ranks/dtypes keep their byte-compatible owned-copy path."""
+    keys = (F64_2D, F32_1D, F32_2D, I64_1D, I64_2D)
     for key in keys:
         conv = plugin_type(key).conversion
         assert conv is not None
@@ -54,10 +70,13 @@ def test_all_array_boundaries_use_to_pyarray_not_into_pyarray() -> None:
 
 
 def test_return_expr_is_str_format_safe() -> None:
-    """return_expr must be a str.format template with only {value}."""
+    """Both return expressions are str.format templates with only {value}."""
     rendered = _RETURN_EXPR.format(value="out")
     assert rendered == "numpy::ToPyArray::to_pyarray(&out, py)"
     assert "{" not in rendered and "}" not in rendered
+    direct = _F64_1D_RETURN_EXPR.format(value="out")
+    assert direct == "__rxtnp_release_f64_1d(out)?"
+    assert "{" not in direct and "}" not in direct
 
 
 def _type_maps() -> PluginTypeMaps:
@@ -70,6 +89,8 @@ def _type_maps() -> PluginTypeMaps:
                 key=pt.key,
                 native_rust=pt.rust_type,
                 resident=True,
+                uses=pt.uses,
+                helpers=pt.helpers,
             )
         else:
             rxt = RxtPluginType(
@@ -79,6 +100,8 @@ def _type_maps() -> PluginTypeMaps:
                 param_expr=conversion.param_expr,
                 return_rust=conversion.return_rust,
                 return_expr=conversion.return_expr,
+                uses=pt.uses,
+                helpers=pt.helpers,
             )
         by_key[pt.key] = rxt
         for spelling in pt.annotations:
@@ -99,8 +122,8 @@ def _write_module(tmp_path: Path, body: str) -> Path:
     return root
 
 
-def test_generated_rust_uses_to_pyarray_for_array_return(tmp_path: Path) -> None:
-    """Codegen embeds ToPyArray on array-returning functions."""
+def test_generated_rust_uses_direct_sink_for_f64_1d_return(tmp_path: Path) -> None:
+    """Codegen embeds the borrowed/direct F64_1D path end to end."""
     pytest.importorskip("numpy")
     root = _write_module(
         tmp_path,
@@ -129,9 +152,13 @@ def add(a: F64Arr1, b: F64Arr1) -> F64Arr1:
         plugin_providers={"rextio-numpy": RextioNumpyPlugin()},
         plugin_types_by_key=_type_maps().by_key,
     )
-    assert "ToPyArray::to_pyarray" in source
+    assert "PyReadonlyArray1<'py, f64>" in source
+    assert "PyArray1::<f64>::zeros(py" in source
+    assert "__rxtnp_release_f64_1d(" in source
+    assert "drop(value);" in source
+    assert "ToPyArray::to_pyarray" not in source
     assert "IntoPyArray::into_pyarray" not in source
-    assert "to_owned()" in source
+    assert "to_owned()" not in source
     assert "is_exact_instance_of" in source
 
 
@@ -180,4 +207,6 @@ def test_fusion_helper_retains_generic_broadcast_after_fast_gate() -> None:
     assert "unsafe" not in helper
     # Fast path precedes generic LTR broadcast-shape Vec work.
     assert helper.index("is_standard_layout()") < helper.index("__rxtnp_broadcast_shape")
-    assert helper.index("from_shape_fn") < helper.index("__rxtnp_broadcast_shape")
+    assert helper.index("__rxtnp_f64_1d_output") < helper.index(
+        "__rxtnp_broadcast_shape"
+    )
