@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased — 0.1.3 candidate
+
+Unreleased candidate work toward package version **0.1.3**. Not tagged, not
+uploaded to PyPI, and not a publication claim. Latest published cut remains
+**0.1.2** (2026-07-26). Requires the same **`rextio>=0.1.6,<0.2`** / plugin
+API **1.5** surface as 0.1.2; no Core change and no certified-surface
+broadening.
+
+### Array return ownership transfer
+
+- Plugin-typed array **returns** use rust-numpy
+  ``numpy::IntoPyArray::into_pyarray({value}, py)`` so an owned
+  ``ndarray::Array{1,2}<T>`` buffer is transferred into a NumPy array without
+  a second elementwise copy on the return path. Covers every supported
+  f64/f32/i64 rank-1/rank-2 array result materialization that previously used
+  ``ToPyArray::to_pyarray(&value, py)``.
+- **Inputs still copy** at the native boundary
+  (``as_array().to_owned()`` after the exact base-``ndarray`` check). Strided
+  and non-contiguous inputs remain supported by that copy. Do **not** claim
+  general zero-copy, input residency, or that Python and Rust share buffers
+  for parameters.
+- Ownership/lifetime coverage: returned arrays remain valid after Rust locals
+  drop; mutating a returned result array does not mutate the caller's input
+  (input was copied).
+
+### Fusion contiguous equal-shape fast path
+
+- Fused elementwise chain helpers (``__rxtnp_echain_*``) may take a **rank-1
+  or rank-2 equal-shape standard-layout (C-contiguous) fast path** that loads
+  via ``as_slice`` after shape validation. Broadcast, length-1, zero-size,
+  mixed-rank, and non-standard-layout/strided cases keep the existing generic
+  ``broadcast`` + ``from_shape_fn`` path with the same trailing-space
+  ``ValueError`` messages and evaluation order.
+- The fast path is a layout-gated correctness-preserving shortcut only — not
+  a published speed claim and not an unsafe reinterpretation of F-order or
+  strided storage.
+
+### Explicit non-claims (unchanged product posture)
+
+- Rank-2 ``dot`` / matmul / ``@`` remain **NO-GO / fallback-retained** and are
+  not support or performance claims for this candidate.
+- Certified surface, fail-closed lower-time ``ValueError`` guards, and the
+  accepted missing-``RuntimeWarning`` divergence are unchanged from 0.1.2.
+
 ## 0.1.2 — 2026-07-26
 
 Public Alpha release on PyPI. The package requires
