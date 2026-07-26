@@ -100,6 +100,11 @@ class TestProtocol:
         assert "zeros" in blob and "store pass" in blob
         assert "array1::zeros" in blob
         assert "pyarray::zeros" in blob
+        # The PoC's owned lane is now a historical baseline, not a description
+        # of the current product F64 rank-1 boundary.
+        assert "historical owned-copy" in blob
+        assert "current product f64 rank-1" in blob
+        assert "production boundaryconversion remains owned-copy" not in blob
 
     def test_protocol_manifest_flags(self) -> None:
         m = protocol_manifest()
