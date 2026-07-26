@@ -17,8 +17,16 @@ Mean is (compatible sum) / length. Empty sum is 0.0; empty mean is nan
 
 from __future__ import annotations
 
+from rextio_numpy.rust_snippets.array_repr import (
+    F64_1D_OUTPUT_HELPER_NAME,
+    array_rust_type,
+    f64_1d_output_helper,
+    lifetime_decl,
+    readonly_view_line,
+)
+
 _ARR = {
-    ("f64", 1): "numpy::ndarray::Array1<f64>",
+    ("f64", 1): array_rust_type("f64", 1),
     ("f64", 2): "numpy::ndarray::Array2<f64>",
     ("f32", 1): "numpy::ndarray::Array1<f32>",
     ("f32", 2): "numpy::ndarray::Array2<f32>",
@@ -73,7 +81,12 @@ def sum_typed(dtype: str, rank: int) -> str:
         body = "    Ok(a.sum())\n"
         ret = "f64"
 
-    return f"fn {name}(a: &{arr}) -> pyo3::PyResult<{ret}> {{\n{body}}}"
+    lifetime = lifetime_decl((dtype, rank))
+    view_line = readonly_view_line("a", dtype, rank)
+    return (
+        f"fn {name}{lifetime}(a: &{arr}) -> pyo3::PyResult<{ret}> {{\n"
+        f"{view_line}{body}}}"
+    )
 
 
 def mean_typed(dtype: str, rank: int) -> str:
@@ -101,7 +114,12 @@ def mean_typed(dtype: str, rank: int) -> str:
     else:
         body = "    Ok(a.mean().unwrap_or(f64::NAN))\n"
 
-    return f"fn {name}(a: &{arr}) -> pyo3::PyResult<f64> {{\n{body}}}"
+    lifetime = lifetime_decl((dtype, rank))
+    view_line = readonly_view_line("a", dtype, rank)
+    return (
+        f"fn {name}{lifetime}(a: &{arr}) -> pyo3::PyResult<f64> {{\n"
+        f"{view_line}{body}}}"
+    )
 
 
 def sum_call_name(dtype: str, rank: int) -> str:
@@ -408,33 +426,43 @@ def _rank2_f64_lane_sum(axis: int) -> str:
         return (
             "    let nrows = a.nrows();\n"
             "    let ncols = a.ncols();\n"
-            "    let mut out = numpy::ndarray::Array1::<f64>::zeros(ncols);\n"
             "    let fast = a.stride_of(numpy::ndarray::Axis(0)) == 1;\n"
-            "    for j in 0..ncols {\n"
-            "        let s = if fast {\n"
-            "            __rxtnp_numpy_pairwise_sum_f64_strided(nrows, &|i| a[[i, j]])\n"
-            "        } else {\n"
-            "            __rxtnp_numpy_sequential_sum_f64(nrows, &|i| a[[i, j]])\n"
-            "        };\n"
-            "        out[j] = s;\n"
-            "    }\n"
-            "    Ok(out)\n"
+            f"    {F64_1D_OUTPUT_HELPER_NAME}(py, ncols, |out| {{\n"
+            "        for j in 0..ncols {\n"
+            "            let s = if fast {\n"
+            "                __rxtnp_numpy_pairwise_sum_f64_strided(\n"
+            "                    nrows, &|i| a[[i, j]],\n"
+            "                )\n"
+            "            } else {\n"
+            "                __rxtnp_numpy_sequential_sum_f64(\n"
+            "                    nrows, &|i| a[[i, j]],\n"
+            "                )\n"
+            "            };\n"
+            "            out[j] = s;\n"
+            "        }\n"
+            "        Ok(())\n"
+            "    })\n"
         )
     # axis == 1: reduce cols → one value per row. Fast when row stride is 1 (C).
     return (
         "    let nrows = a.nrows();\n"
         "    let ncols = a.ncols();\n"
-        "    let mut out = numpy::ndarray::Array1::<f64>::zeros(nrows);\n"
         "    let fast = a.stride_of(numpy::ndarray::Axis(1)) == 1;\n"
-        "    for i in 0..nrows {\n"
-        "        let s = if fast {\n"
-        "            __rxtnp_numpy_pairwise_sum_f64_strided(ncols, &|j| a[[i, j]])\n"
-        "        } else {\n"
-        "            __rxtnp_numpy_sequential_sum_f64(ncols, &|j| a[[i, j]])\n"
-        "        };\n"
-        "        out[i] = s;\n"
-        "    }\n"
-        "    Ok(out)\n"
+        f"    {F64_1D_OUTPUT_HELPER_NAME}(py, nrows, |out| {{\n"
+        "        for i in 0..nrows {\n"
+        "            let s = if fast {\n"
+        "                __rxtnp_numpy_pairwise_sum_f64_strided(\n"
+        "                    ncols, &|j| a[[i, j]],\n"
+        "                )\n"
+        "            } else {\n"
+        "                __rxtnp_numpy_sequential_sum_f64(\n"
+        "                    ncols, &|j| a[[i, j]],\n"
+        "                )\n"
+        "            };\n"
+        "            out[i] = s;\n"
+        "        }\n"
+        "        Ok(())\n"
+        "    })\n"
     )
 
 
@@ -444,40 +472,52 @@ def _rank2_f64_lane_mean(axis: int) -> str:
         return (
             "    let nrows = a.nrows();\n"
             "    let ncols = a.ncols();\n"
-            "    if nrows == 0 {\n"
-            "        return Ok(numpy::ndarray::Array1::from_elem(ncols, f64::NAN));\n"
-            "    }\n"
-            "    let mut out = numpy::ndarray::Array1::<f64>::zeros(ncols);\n"
             "    let fast = a.stride_of(numpy::ndarray::Axis(0)) == 1;\n"
-            "    let denom = nrows as f64;\n"
-            "    for j in 0..ncols {\n"
-            "        let s = if fast {\n"
-            "            __rxtnp_numpy_pairwise_sum_f64_strided(nrows, &|i| a[[i, j]])\n"
-            "        } else {\n"
-            "            __rxtnp_numpy_sequential_sum_f64(nrows, &|i| a[[i, j]])\n"
-            "        };\n"
-            "        out[j] = s / denom;\n"
-            "    }\n"
-            "    Ok(out)\n"
+            f"    {F64_1D_OUTPUT_HELPER_NAME}(py, ncols, |out| {{\n"
+            "        if nrows == 0 {\n"
+            "            out.fill(f64::NAN);\n"
+            "            return Ok(());\n"
+            "        }\n"
+            "        let denom = nrows as f64;\n"
+            "        for j in 0..ncols {\n"
+            "            let s = if fast {\n"
+            "                __rxtnp_numpy_pairwise_sum_f64_strided(\n"
+            "                    nrows, &|i| a[[i, j]],\n"
+            "                )\n"
+            "            } else {\n"
+            "                __rxtnp_numpy_sequential_sum_f64(\n"
+            "                    nrows, &|i| a[[i, j]],\n"
+            "                )\n"
+            "            };\n"
+            "            out[j] = s / denom;\n"
+            "        }\n"
+            "        Ok(())\n"
+            "    })\n"
         )
     return (
         "    let nrows = a.nrows();\n"
         "    let ncols = a.ncols();\n"
-        "    if ncols == 0 {\n"
-        "        return Ok(numpy::ndarray::Array1::from_elem(nrows, f64::NAN));\n"
-        "    }\n"
-        "    let mut out = numpy::ndarray::Array1::<f64>::zeros(nrows);\n"
         "    let fast = a.stride_of(numpy::ndarray::Axis(1)) == 1;\n"
-        "    let denom = ncols as f64;\n"
-        "    for i in 0..nrows {\n"
-        "        let s = if fast {\n"
-        "            __rxtnp_numpy_pairwise_sum_f64_strided(ncols, &|j| a[[i, j]])\n"
-        "        } else {\n"
-        "            __rxtnp_numpy_sequential_sum_f64(ncols, &|j| a[[i, j]])\n"
-        "        };\n"
-        "        out[i] = s / denom;\n"
-        "    }\n"
-        "    Ok(out)\n"
+        f"    {F64_1D_OUTPUT_HELPER_NAME}(py, nrows, |out| {{\n"
+        "        if ncols == 0 {\n"
+        "            out.fill(f64::NAN);\n"
+        "            return Ok(());\n"
+        "        }\n"
+        "        let denom = ncols as f64;\n"
+        "        for i in 0..nrows {\n"
+        "            let s = if fast {\n"
+        "                __rxtnp_numpy_pairwise_sum_f64_strided(\n"
+        "                    ncols, &|j| a[[i, j]],\n"
+        "                )\n"
+        "            } else {\n"
+        "                __rxtnp_numpy_sequential_sum_f64(\n"
+        "                    ncols, &|j| a[[i, j]],\n"
+        "                )\n"
+        "            };\n"
+        "            out[i] = s / denom;\n"
+        "        }\n"
+        "        Ok(())\n"
+        "    })\n"
     )
 
 
@@ -570,6 +610,40 @@ def _rank2_extrema_body(op: str, dtype: str, axis: int) -> tuple[str, str, tuple
 
     pair = _float_pairwise_helper(dtype, op)
     pair_name = f"__rxtnp_numpy_{op}_{dtype}"
+    if dtype == "f64":
+        if axis == 0:
+            body = (
+                f"    if {empty_check} {{\n"
+                f"{_empty_extrema_err(op)}"
+                f"    }}\n"
+                f"    {F64_1D_OUTPUT_HELPER_NAME}(py, {out_len}, |out| {{\n"
+                f"        for j in 0..a.ncols() {{\n"
+                f"            let mut acc = a[[0, j]];\n"
+                f"            for i in 1..a.nrows() {{\n"
+                f"                acc = {pair_name}(acc, a[[i, j]]);\n"
+                f"            }}\n"
+                f"            out[j] = acc;\n"
+                f"        }}\n"
+                f"        Ok(())\n"
+                f"    }})\n"
+            )
+        else:
+            body = (
+                f"    if {empty_check} {{\n"
+                f"{_empty_extrema_err(op)}"
+                f"    }}\n"
+                f"    {F64_1D_OUTPUT_HELPER_NAME}(py, {out_len}, |out| {{\n"
+                f"        for i in 0..a.nrows() {{\n"
+                f"            let mut acc = a[[i, 0]];\n"
+                f"            for j in 1..a.ncols() {{\n"
+                f"                acc = {pair_name}(acc, a[[i, j]]);\n"
+                f"            }}\n"
+                f"            out[i] = acc;\n"
+                f"        }}\n"
+                f"        Ok(())\n"
+                f"    }})\n"
+            )
+        return body, ret, (pair,)
     if axis == 0:
         body = (
             f"    if {empty_check} {{\n"
@@ -612,22 +686,39 @@ def axis_typed(op: str, dtype: str, rank: int, axis: int) -> tuple[str, ...]:
     """
     name = axis_call_name(op, dtype, rank, axis)
     arr = _ARR[(dtype, rank)]
+    python_output = dtype == "f64" and rank == 2
+    lifetime = lifetime_decl((dtype, rank), force=python_output)
+    py_param = "py: pyo3::Python<'py>, " if python_output else ""
+    view_line = readonly_view_line("a", dtype, rank)
+    output_support = (f64_1d_output_helper(),) if python_output else ()
     if rank == 1:
         body, ret, extras = _rank1_axis_body(op, dtype)
-        main = f"fn {name}(a: &{arr}) -> pyo3::PyResult<{ret}> {{\n{body}}}"
-        return (*extras, main)
+        main = (
+            f"fn {name}{lifetime}(a: &{arr}) -> pyo3::PyResult<{ret}> {{\n"
+            f"{view_line}{body}}}"
+        )
+        return (*output_support, *extras, main)
     # rank == 2
     if op == "sum":
         body, ret, extras = _rank2_sum_body(dtype, axis)
-        main = f"fn {name}(a: &{arr}) -> pyo3::PyResult<{ret}> {{\n{body}}}"
-        return (*extras, main)
+        main = (
+            f"fn {name}{lifetime}({py_param}a: &{arr}) -> pyo3::PyResult<{ret}> {{\n"
+            f"{view_line}{body}}}"
+        )
+        return (*output_support, *extras, main)
     if op == "mean":
         body, ret, extras = _rank2_mean_body(axis)
-        main = f"fn {name}(a: &{arr}) -> pyo3::PyResult<{ret}> {{\n{body}}}"
-        return (*extras, main)
+        main = (
+            f"fn {name}{lifetime}({py_param}a: &{arr}) -> pyo3::PyResult<{ret}> {{\n"
+            f"{view_line}{body}}}"
+        )
+        return (*output_support, *extras, main)
     body, ret, extras = _rank2_extrema_body(op, dtype, axis)
-    main = f"fn {name}(a: &{arr}) -> pyo3::PyResult<{ret}> {{\n{body}}}"
-    return (*extras, main)
+    main = (
+        f"fn {name}{lifetime}({py_param}a: &{arr}) -> pyo3::PyResult<{ret}> {{\n"
+        f"{view_line}{body}}}"
+    )
+    return (*output_support, *extras, main)
 
 
 def op_from_target(target: str) -> str:

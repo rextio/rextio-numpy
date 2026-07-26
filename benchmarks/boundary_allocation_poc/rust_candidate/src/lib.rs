@@ -1,7 +1,8 @@
 //! Standalone research candidate for F64 rank-1 NumPy boundary-allocation PoC.
 //!
 //! Compares three elementwise-add strategies. None of these are product rules;
-//! production BoundaryConversion / lowering is not modified by this crate.
+//! `owned_topy` is the historical owned-boundary baseline, while the current
+//! product F64 rank-1 lane separately follows the borrowed/direct-output shape.
 //!
 //! Shared boundary gates (all strategies):
 //! - exact `numpy.ndarray` check via `is_exact_instance_of::<PyArray1<f64>>`
@@ -105,7 +106,7 @@ fn owned_zeros_slice_mut(out: &mut Array1<f64>) -> PyResult<&mut [f64]> {
     })
 }
 
-/// Strategy 1: current product-style boundary (owned copies + ToPyArray).
+/// Strategy 1: historical owned-boundary baseline (copies + ToPyArray).
 ///
 /// Logical N-sized allocations (equal-length contiguous, output length N):
 ///   2 input `to_owned` + 1 Rust result + 1 `ToPyArray` Python buffer = **4**.

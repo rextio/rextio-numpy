@@ -157,8 +157,9 @@ HONESTY_CAVEATS: Final[tuple[str, ...]] = (
     "NumPy or a BLAS was already imported before those variables were set.",
     "This harness records local wall times for comparison only; it makes no "
     "published speedup claim and must not be cited as product performance.",
-    "Production BoundaryConversion remains owned-copy + ToPyArray; this PoC "
-    "does not change claim/lower/plugin behavior.",
+    "owned_topy records the historical owned-copy + ToPyArray baseline; the "
+    "current product F64 rank-1 lane separately follows the borrowed/direct-"
+    "output shape, and this harness does not implement claim/lower behavior.",
     "IntoPyArray is forbidden in the candidate (breaks ordinary resize / ownership).",
 )
 

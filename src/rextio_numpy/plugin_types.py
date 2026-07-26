@@ -20,6 +20,12 @@ from rextio_numpy.diagnostics import (
     I64_1D,
     I64_2D,
 )
+from rextio_numpy.rust_snippets.array_repr import (
+    F64_1D_RETURN_HELPER_NAME,
+    F64_1D_RUST,
+    f64_1d_output_helper,
+    f64_1d_return_helper,
+)
 
 # rust-numpy 0.29 element type tokens used in ArrayN / PyArrayN paths.
 _RUST_ELEM = {
@@ -34,29 +40,34 @@ def _boundary(rank: int, elem: str) -> BoundaryConversion:
 
     ``PyReadonlyArray`` deliberately accepts ndarray subclasses. Those carry
     observable method/ufunc dispatch (``matrix`` shape rules,
-    ``__array_ufunc__``, ``__array_priority__``), which the owned ndarray copy
-    cannot preserve. The conversion therefore checks NumPy's C-level exact
-    array predicate before materializing. This is a deterministic native
-    boundary rejection, not a static claim-time fallback.
+    ``__array_ufunc__``, ``__array_priority__``), which the certified native
+    semantics do not preserve. The conversion therefore checks NumPy's C-level
+    exact array predicate before entering either representation. This is a
+    deterministic native boundary rejection, not a static claim-time fallback.
 
-    Parameters materialize an owned Rust copy via ``as_array().to_owned()``.
-    That is an owned buffer for the native frame; it does **not** guarantee
-    every input becomes C-contiguous (contiguous input layout may be
-    preserved; non-contiguous copy layout is unspecified). Array results use
-    ``ToPyArray::to_pyarray`` so returned NumPy arrays keep ordinary NumPy
-    ownership observables (``OWNDATA``, ``base is None``, resize behavior).
+    ``F64_1D`` keeps the read-only ``PyReadonlyArray`` wrapper as its native
+    representation. Its helpers borrow arbitrary-stride views and allocate
+    fresh NumPy-owned outputs directly. Other dtype/rank combinations retain
+    the historical owned ``ndarray`` copy and ``ToPyArray`` return path.
     """
     rust_elem = _RUST_ELEM[elem]
     exact_type = f"numpy::PyArray{rank}<{rust_elem}>"
-    param_expr = (
+    exact_check = (
         "{{ "
         f"if !{{param}}.is_exact_instance_of::<{exact_type}>() {{{{ "
         "return Err(pyo3::exceptions::PyTypeError::new_err("
         '"rextio-numpy native boundary requires exact numpy.ndarray; '
         'ndarray subclasses are unsupported")); '
         "}} "
-        "{param}.as_array().to_owned() }}"
     )
+    if elem == "f64" and rank == 1:
+        return BoundaryConversion(
+            param_rust="numpy::PyReadonlyArray1<'py, f64>",
+            param_expr=exact_check + "{param}" + " }}",
+            return_rust="pyo3::Bound<'py, numpy::PyArray1<f64>>",
+            return_expr=f"{F64_1D_RETURN_HELPER_NAME}({{value}})?",
+        )
+    param_expr = exact_check + "{param}.as_array().to_owned() }}"
     return BoundaryConversion(
         param_rust=f"numpy::PyReadonlyArray{rank}<'py, {rust_elem}>",
         param_expr=param_expr,
@@ -75,11 +86,17 @@ def _array_type(
 ) -> PluginType:
     """Build one array PluginType with Array{rank}<elem> native representation."""
     rust_elem = _RUST_ELEM[elem]
+    python_backed = elem == "f64" and rank == 1
     return PluginType(
         key=key,
         annotations=(f"rextio_numpy.types.{annotation}",),
-        rust_type=f"numpy::ndarray::Array{rank}<{rust_elem}>",
+        rust_type=F64_1D_RUST if python_backed else f"numpy::ndarray::Array{rank}<{rust_elem}>",
         conversion=_boundary(rank, elem),
+        helpers=(
+            (f64_1d_output_helper(), f64_1d_return_helper())
+            if python_backed
+            else ()
+        ),
     )
 
 

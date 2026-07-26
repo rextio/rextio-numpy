@@ -32,10 +32,16 @@ the result, shapes are equal, and every leaf is standard (C) layout at helper
 entry. The generic path retains LTR broadcast validation and handles
 non-standard-layout leaves and broadcast cases, with the same errors and
 evaluation order. Statically proven repeated leaf names may share one helper
-parameter and reuse loads. Boundary inputs still use `as_array().to_owned()`
-(an owned Rust copy; not a guarantee that every input becomes C-contiguous).
-Array returns continue to use `numpy::ToPyArray::to_pyarray` so results keep
-ordinary NumPy ownership semantics. This is **not** a published speed claim.
+parameter and reuse loads.
+
+The `F64Arr1` / `rextio-numpy/f64-1d` lane now keeps exact base-ndarray inputs
+as read-only `PyReadonlyArray1<f64>` borrows instead of materializing owned
+Rust copies. Rank-1 float64 array results are filled completely in a fresh,
+zero-initialized NumPy-owned `PyArray1<f64>` sink; the native write/read borrow
+is released before that owner is returned. Every other dtype/rank retains the
+historical `as_array().to_owned()` input and
+`numpy::ToPyArray::to_pyarray` output path. No lane uses `IntoPyArray`.
+This is an allocation-structure change, **not** a published speed claim.
 Rank-2 dot/matmul/`@` remain **fallback-retained** and are not performance
 claims.
 
@@ -45,11 +51,12 @@ boundary-allocation PoC that compares owned-copy+`ToPyArray`,
 borrowed-view+`ToPyArray`, and direct NumPy-owned sink fill strategies for
 elementwise add. The three Rust strategies share one deterministic arithmetic
 fill kernel and element order after their distinct boundary/output allocation
-steps; timings remain fixed-order unpaired local diagnostics only. It does
-**not** change production `BoundaryConversion` or lowering, forbids
-`IntoPyArray`, records logical allocation formulas plus local wall times only,
-and **must not** be cited as a published speedup or support claim. See that
-directory’s README for build/run instructions.
+steps; `owned_topy` is the historical owned-boundary baseline, while the
+current product's `F64_1D` representation follows the borrowed/direct-output
+shape. The harness remains isolated research tooling, forbids `IntoPyArray`,
+records logical allocation formulas plus local wall times only, and **must
+not** be cited as a published speedup or support claim. See that directory’s
+README for build/run instructions.
 
 **Dependency:** requires **`rextio>=0.1.6,<0.2`**. NumPy is deliberately **not**
 a runtime dependency of this package — only the user-facing
@@ -84,28 +91,30 @@ consumed inside generated native code.
 The annotations are nominal, so static analysis cannot tell an exact
 `numpy.ndarray` from `numpy.matrix`, `numpy.memmap`, or a custom ndarray
 subclass. Every plugin-typed native parameter therefore applies NumPy's exact
-C-level ndarray check before materializing an owned Rust copy
-(`as_array().to_owned()`). If the native route is executed with a subclass, it
-deterministically raises:
+C-level ndarray check before entering its native representation. If the native
+route is executed with a subclass, it deterministically raises:
 
 ```text
 TypeError: rextio-numpy native boundary requires exact numpy.ndarray; ndarray subclasses are unsupported
 ```
 
 This is a runtime native-boundary rejection, not an automatic static fallback.
-Exact base-ndarray views and strided arrays remain supported as **inputs**
-(still converted via `to_owned()` at the boundary). That owned copy is for
-the native frame; it does **not** guarantee every input becomes C-contiguous
+Exact base-ndarray views and positive/negative-stride arrays remain supported
+as **inputs**. `F64Arr1` preserves a read-only borrow of that arbitrary-stride
+view for the native frame. Every other dtype/rank still materializes
+`as_array().to_owned()`; that copy does **not** guarantee C-contiguous layout
 (contiguous input layout may be preserved; non-contiguous copy layout is
 unspecified). Convert with `numpy.asarray` before the typed hot path when
 subclass behavior is irrelevant; when `matrix`, `__array_ufunc__`,
 `__array_priority__`, or other subclass/subok semantics matter, keep the
 enclosing function on Python fallback.
 
-**Returns (array results):** plugin-typed array returns use rust-numpy
-`ToPyArray::to_pyarray` so the result is a normal NumPy-owned array
-(ordinary `OWNDATA` / `base is None` / resize observables), matching the
-fallback leg's ownership model.
+**Returns (array results):** `F64Arr1` producers completely fill a fresh
+NumPy-owned sink and release all native borrows before returning it. Other
+plugin-typed arrays use rust-numpy `ToPyArray::to_pyarray`. Both paths return a
+normal NumPy-owned array with ordinary `OWNDATA` / `base is None` / resize
+observables, matching the fallback leg's ownership model. `IntoPyArray` is
+never used.
 
 ### Native surface (verified)
 
@@ -339,12 +348,13 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 On this tree:
 
-- `.venv/bin/python -m pytest --collect-only -q` reports **971** collected tests total.
+- `.venv/bin/python -m pytest --collect-only -q` reports **1004** collected tests total.
 - The focused collection command
-  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **154** real-Cargo certification cases.
+  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py tests/test_f64_1d_output_helper_real_cargo.py --collect-only -q`
+  reports **158** required real-Cargo cases (157 certification cases plus the
+  output-helper failure/borrow-release case).
 
-Those 154 cases are **cargo-gated** and may also skip via dependency
+Those 158 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material
 test changes; do not treat these numbers as a product API.
 

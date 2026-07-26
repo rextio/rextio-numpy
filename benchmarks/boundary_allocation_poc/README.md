@@ -2,8 +2,10 @@
 
 Standalone, research-only harness. Compares **three** boundary strategies for
 float64 rank-1 elementwise add (`a + b`) plus an optional **Python/NumPy
-reference lane**. It does **not** modify production `BoundaryConversion`,
-claim, lower, rules, or plugin types, and it **makes no published speed claim**.
+reference lane**. `owned_topy` is the historical owned-boundary baseline; the
+current product's F64 rank-1 lane separately uses the borrowed/direct-output
+shape represented by `direct_sink`. The harness itself remains isolated from
+product claim/lower/rule code and **makes no published speed claim**.
 
 ## Isolation
 
@@ -17,7 +19,7 @@ claim, lower, rules, or plugin types, and it **makes no published speed claim**.
 
 | id | Boundary path |
 |----|----------------|
-| `owned_topy` | Exact ndarray check + **two owned input copies** + zero-init owned Rust `Array1` + shared `fill_add_views` + **`ToPyArray`** |
+| `owned_topy` | Historical baseline: exact ndarray check + **two owned input copies** + zero-init owned Rust `Array1` + shared `fill_add_views` + **`ToPyArray`** |
 | `borrowed_topy` | Exact ndarray check + **borrowed `PyReadonlyArray` views** + zero-init owned Rust `Array1` + shared `fill_add_views` + **`ToPyArray`** |
 | `direct_sink` | Exact ndarray check + borrowed views + zero-init **NumPy-owned** sink + shared `fill_add_views`, returned unchanged |
 | `python_ref` | Ordinary NumPy `a + b` (reference lane only) |
@@ -146,7 +148,9 @@ when `cargo` is absent.
 
 ## Explicit non-claims
 
-- Not a change to production boundary conversion or certified surface.
+- The harness itself is not a production boundary implementation or a
+  certified-surface change; the product F64 rank-1 change is documented in the
+  repository README and changelog.
 - Not a published speedup or “zero-copy product path” claim.
 - Not BLAS / SIMD performance evidence.
 - Fixed-order unpaired strategy timings are not causal speedups.

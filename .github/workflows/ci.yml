@@ -66,5 +66,8 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest -ra tests/test_certification_real_cargo.py | tee pytest-output.txt
+          python -m pytest -ra \
+            tests/test_certification_real_cargo.py \
+            tests/test_f64_1d_output_helper_real_cargo.py \
+            | tee pytest-output.txt
           ! grep -Eq '[0-9]+ skipped' pytest-output.txt

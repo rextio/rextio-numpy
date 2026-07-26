@@ -1,7 +1,9 @@
 """Experimental F64 rank-1 NumPy boundary-allocation PoC harness.
 
-Research-only. Does not modify production BoundaryConversion, claim, lower,
-or plugin types. Makes no published speed claim.
+Research-only. ``owned_topy`` is the historical owned-boundary baseline; the
+current product F64 rank-1 lane separately follows the borrowed/direct-output
+shape. This harness does not implement product claims or make a published
+speed claim.
 
 See ``benchmarks/boundary_allocation_poc/README.md``.
 """

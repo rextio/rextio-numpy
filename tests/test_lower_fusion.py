@@ -76,12 +76,14 @@ def test_try_lower_emits_one_fused_helper_call() -> None:
 
     alias = leaf_alias_map(("a", "b", "a", "b"), n_leaves=4)
     name = rust_snippets.fusion_call_name(match.signature, alias)
-    assert lowered.rust == f"{name}(&a, &b)?"
+    assert lowered.rust == f"{name}(py, &a, &b)?"
     text = "\n".join(lowered.helpers)
     assert f"fn {name}" in text
-    # Fast path + generic path each allocate once via from_shape_fn (runtime
-    # takes exactly one branch; no Zip / map_collect).
-    assert text.count("from_shape_fn") == 2
+    # Fast and generic paths both route through one shared NumPy-owned sink;
+    # runtime takes exactly one branch.
+    assert text.count("PyArray1::<f64>::zeros") == 1
+    assert lowered.helpers[-1].count("__rxtnp_f64_1d_output") == 2
+    assert "from_shape_fn" not in lowered.helpers[-1]
     assert "is_standard_layout()" in text
     assert "as_slice()" in text
     assert "Zip::" not in text
@@ -107,7 +109,8 @@ def test_helper_has_zero_intermediate_ndarray_allocations() -> None:
     # Owned intermediate arrays would look like these patterns.
     assert "to_owned()" not in helper
     assert "Array::zeros" not in helper
-    assert helper.count("from_shape_fn") == 2
+    assert helper.count("__rxtnp_f64_1d_output") == 2
+    assert "from_shape_fn" not in helper
     assert "Zip::" not in helper
     # Scalar temps for internal nodes (2 of 3 binops bind temps; root returns).
     # Both paths emit the same AST-order temps.
@@ -115,7 +118,7 @@ def test_helper_has_zero_intermediate_ndarray_allocations() -> None:
     assert helper.count("let t1") >= 1
 
 
-def test_nine_leaf_helper_uses_from_shape_fn_not_zip() -> None:
+def test_nine_leaf_helper_uses_direct_sink_not_zip() -> None:
     """8-binop / 9-leaf trees must not depend on Zip arity (max 6 producers)."""
     expr: ClaimExpr = leaf(0, F64_1D)
     for i in range(8):
@@ -128,7 +131,8 @@ def test_nine_leaf_helper_uses_from_shape_fn_not_zip() -> None:
     lowered = try_lower(fusion_site(expr), leaves_ctx(*names))
     assert lowered is not None
     helper = lowered.helpers[-1]
-    assert "from_shape_fn" in helper
+    assert "__rxtnp_f64_1d_output" in helper
+    assert "from_shape_fn" not in helper
     assert "Zip::" not in helper
     # Generic path broadcasts once per unique parameter (9 distinct names).
     assert helper.count("let v") == 9 or helper.count("broadcast(dim)") == 9
@@ -169,25 +173,27 @@ def test_mixed_rank_result() -> None:
 
 
 def test_equal_shape_fast_path_before_broadcast_shape_vec() -> None:
-    """Equal-shape gate + fast from_shape_fn appear before broadcast-shape Vec work."""
+    """Equal-shape gate + direct sink appear before broadcast-shape Vec work."""
     expr = multi_op_expr()
     helper = try_lower(fusion_site(expr), leaves_ctx("a", "b", "a", "b")).helpers[-1]  # type: ignore[union-attr]
     # Fast path is decided and can return before any __rxtnp_broadcast_shape call.
     assert helper.index("is_standard_layout()") < helper.index("__rxtnp_broadcast_shape")
-    assert helper.index("from_shape_fn") < helper.index("__rxtnp_broadcast_shape")
-    # Generic path retains LTR broadcast validation then a second from_shape_fn.
+    assert helper.index("__rxtnp_f64_1d_output") < helper.index(
+        "__rxtnp_broadcast_shape"
+    )
+    # Generic path retains LTR broadcast validation then a second sink call.
     assert helper.index("__rxtnp_broadcast_shape") < helper.index(".broadcast(dim)")
-    assert helper.index(".broadcast(dim)") < helper.rindex("from_shape_fn")
-    assert helper.count("from_shape_fn") == 2
+    assert helper.index(".broadcast(dim)") < helper.rindex("__rxtnp_f64_1d_output")
+    assert helper.count("__rxtnp_f64_1d_output") == 2
 
 
 def test_generic_path_retains_ltr_broadcast_validation() -> None:
     """Non-fast fallthrough keeps postorder broadcast_shape before generic alloc."""
     expr = multi_op_expr()
     helper = try_lower(fusion_site(expr), leaves_ctx("a", "b", "c", "d")).helpers[-1]  # type: ignore[union-attr]
-    # After the fast gate, LTR shape lets still precede the generic from_shape_fn.
+    # After the fast gate, LTR shape lets still precede the generic sink.
     generic_region = helper.split("__rxtnp_broadcast_shape", 1)[1]
-    assert "from_shape_fn" in generic_region
+    assert "__rxtnp_f64_1d_output" in generic_region
     assert helper.count("__rxtnp_broadcast_shape") == 3  # three binops
     assert "operands could not be broadcast together with shapes" in helper
 
@@ -254,7 +260,7 @@ def test_repeated_leaf_names_dedup_params_and_loads() -> None:
     # Two unique parameters only.
     assert "a0:" in helper and "a1:" in helper
     assert "a2:" not in helper
-    assert "&left, &right)?" in lowered.rust
+    assert "py, &left, &right)?" in lowered.rust
     assert "&left, &right, &left, &right)" not in lowered.rust
     # Loads for occurrences 2/3 reuse x0/x1 (both paths).
     assert "let x0 =" in helper

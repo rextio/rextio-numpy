@@ -14,7 +14,7 @@ from rextio_numpy.claim.reductions import (
     _whole_array_result_type,
     normalize_axis,
 )
-from rextio_numpy.diagnostics import array_meta
+from rextio_numpy.diagnostics import F64_1D, array_meta
 from rextio_numpy.lower.contracts import (
     require_direct_context,
     require_no_hidden_site_metadata,
@@ -187,7 +187,8 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     op = op_from_target(target)
     name = axis_call_name(op, dtype, rank, axis)
     helpers = axis_typed(op, dtype, rank, axis)
+    call_prefix = "py, " if claimed.result_type == F64_1D else ""
     return LoweredExpr(
-        rust=f"{name}(&{operand_expr})?",
+        rust=f"{name}({call_prefix}&{operand_expr})?",
         helpers=helpers,
     )

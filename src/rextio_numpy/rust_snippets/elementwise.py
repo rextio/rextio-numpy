@@ -17,10 +17,18 @@ wraparound is matched even under debug Cargo builds.
 
 from __future__ import annotations
 
+from rextio_numpy.rust_snippets.array_repr import (
+    F64_1D_OUTPUT_HELPER_NAME,
+    array_rust_type,
+    is_python_backed,
+    lifetime_decl,
+    readonly_view_line,
+)
+
 # Elementwise op name -> the Rust operator token used in the helper body.
 OP_SYMBOLS: dict[str, str] = {"add": "+", "sub": "-", "mul": "*", "div": "/"}
 
-_ARR1_F64 = "numpy::ndarray::Array1<f64>"
+_ARR1_F64 = array_rust_type("f64", 1)
 _ARR2_F64 = "numpy::ndarray::Array2<f64>"
 
 _DTYPE_RUST = {"f64": "f64", "f32": "f32", "i64": "i64"}
@@ -78,7 +86,7 @@ def shared_broadcast_helpers() -> tuple[str, str]:
 
 
 def _arr(rank: int, dtype: str) -> str:
-    return f"numpy::ndarray::Array{rank}<{_DTYPE_RUST[dtype]}>"
+    return array_rust_type(dtype, rank)
 
 
 def _ix(rank: int) -> str:
@@ -126,47 +134,68 @@ def elementwise_aa(op: str) -> str:
     preserving operand order for the non-commutative operators), and any
     other length mismatch raises NumPy's broadcast ValueError.
     """
-    symbol = OP_SYMBOLS[op]
+    expr = _float_bin(op, "x", "y")
     return (
-        f"fn __rxtnp_{op}1_aa(a: &{_ARR1_F64}, b: &{_ARR1_F64}) -> pyo3::PyResult<{_ARR1_F64}> {{\n"
-        "    if a.len() == b.len() {\n"
-        f"        return Ok(a {symbol} b);\n"
-        "    }\n"
-        "    if a.len() == 1 {\n"
-        "        // broadcast: s comes from `a`, so it is the LEFT operand\n"
-        "        let s = a[0];\n"
-        f"        return Ok(b.mapv(|x| s {symbol} x));\n"
-        "    }\n"
-        "    if b.len() == 1 {\n"
-        "        // broadcast: s comes from `b`, so it is the RIGHT operand\n"
-        "        // (operand order matters for the non-commutative - and /)\n"
-        "        let s = b[0];\n"
-        f"        return Ok(a.mapv(|x| x {symbol} s));\n"
-        "    }\n"
-        "    Err(pyo3::exceptions::PyValueError::new_err(format!(\n"
-        '        "operands could not be broadcast together with shapes ({},) ({},) ",\n'
-        "        a.len(), b.len()\n"
-        "    )))\n"
+        f"fn __rxtnp_{op}1_aa<'py>(py: pyo3::Python<'py>, "
+        f"a: &{_ARR1_F64}, b: &{_ARR1_F64}) -> pyo3::PyResult<{_ARR1_F64}> {{\n"
+        "    let a = a.as_array();\n"
+        "    let b = b.as_array();\n"
+        "    let n = if a.len() == b.len() {\n"
+        "        a.len()\n"
+        "    } else if a.len() == 1 {\n"
+        "        b.len()\n"
+        "    } else if b.len() == 1 {\n"
+        "        a.len()\n"
+        "    } else {\n"
+        "        return Err(pyo3::exceptions::PyValueError::new_err(format!(\n"
+        '            "operands could not be broadcast together with shapes ({},) ({},) ",\n'
+        "            a.len(), b.len()\n"
+        "        )));\n"
+        "    };\n"
+        f"    {F64_1D_OUTPUT_HELPER_NAME}(py, n, |out| {{\n"
+        "        for i in 0..n {\n"
+        "            let x = if a.len() == 1 { a[0] } else { a[i] };\n"
+        "            let y = if b.len() == 1 { b[0] } else { b[i] };\n"
+        f"            out[i] = {expr};\n"
+        "        }\n"
+        "        Ok(())\n"
+        "    })\n"
         "}"
     )
 
 
 def elementwise_as(op: str) -> str:
     """Return the array-scalar elementwise helper for f64 rank-1 ``op``."""
-    symbol = OP_SYMBOLS[op]
+    expr = _float_bin(op, "x", "s")
     return (
-        f"fn __rxtnp_{op}1_as(a: &{_ARR1_F64}, s: f64) -> pyo3::PyResult<{_ARR1_F64}> {{\n"
-        f"    Ok(a.mapv(|x| x {symbol} s))\n"
+        f"fn __rxtnp_{op}1_as<'py>(py: pyo3::Python<'py>, "
+        f"a: &{_ARR1_F64}, s: f64) -> pyo3::PyResult<{_ARR1_F64}> {{\n"
+        "    let a = a.as_array();\n"
+        f"    {F64_1D_OUTPUT_HELPER_NAME}(py, a.len(), |out| {{\n"
+        "        for (i, value) in out.iter_mut().enumerate() {\n"
+        "            let x = a[i];\n"
+        f"            *value = {expr};\n"
+        "        }\n"
+        "        Ok(())\n"
+        "    })\n"
         "}"
     )
 
 
 def elementwise_sa(op: str) -> str:
     """Return the scalar-array elementwise helper for f64 rank-1 ``op``."""
-    symbol = OP_SYMBOLS[op]
+    expr = _float_bin(op, "s", "x")
     return (
-        f"fn __rxtnp_{op}1_sa(s: f64, a: &{_ARR1_F64}) -> pyo3::PyResult<{_ARR1_F64}> {{\n"
-        f"    Ok(a.mapv(|x| s {symbol} x))\n"
+        f"fn __rxtnp_{op}1_sa<'py>(py: pyo3::Python<'py>, "
+        f"s: f64, a: &{_ARR1_F64}) -> pyo3::PyResult<{_ARR1_F64}> {{\n"
+        "    let a = a.as_array();\n"
+        f"    {F64_1D_OUTPUT_HELPER_NAME}(py, a.len(), |out| {{\n"
+        "        for (i, value) in out.iter_mut().enumerate() {\n"
+        "            let x = a[i];\n"
+        f"            *value = {expr};\n"
+        "        }\n"
+        "        Ok(())\n"
+        "    })\n"
         "}"
     )
 
@@ -192,8 +221,40 @@ def elementwise_aa_typed(op: str, dtype: str, left_rank: int, right_rank: int) -
     out_ty = _arr(result_rank, result_dtype)
     name = f"__rxtnp_{op}{left_rank}{right_rank}_aa_{dtype}"
     expr = _map_expr(dtype, op, "x", "y")
+    python_output = is_python_backed(result_dtype, result_rank)
+    lifetime = lifetime_decl(
+        (dtype, left_rank),
+        (dtype, right_rank),
+        (result_dtype, result_rank),
+    )
+    py_param = "py: pyo3::Python<'py>, " if python_output else ""
+    view_lines = (
+        readonly_view_line("a", dtype, left_rank)
+        + readonly_view_line("b", dtype, right_rank)
+    )
+    if python_output:
+        output = (
+            f"    {F64_1D_OUTPUT_HELPER_NAME}(py, shape[0], |out| {{\n"
+            "        for i in 0..shape[0] {\n"
+            "            let x = a_b[i];\n"
+            "            let y = b_b[i];\n"
+            f"            out[i] = {expr};\n"
+            "        }\n"
+            "        Ok(())\n"
+            "    })\n"
+        )
+    else:
+        output = (
+            f"    let out = numpy::ndarray::Zip::from(&a_b).and(&b_b)"
+            f".map_collect(|&x, &y| {expr});\n"
+            f"    Ok(out.into_dimensionality::<{_ix(result_rank)}>().expect(\n"
+            '        "rextio-numpy: broadcast rank mismatch"\n'
+            "    ))\n"
+        )
     return (
-        f"fn {name}(a: &{left_ty}, b: &{right_ty}) -> pyo3::PyResult<{out_ty}> {{\n"
+        f"fn {name}{lifetime}({py_param}a: &{left_ty}, b: &{right_ty}) "
+        f"-> pyo3::PyResult<{out_ty}> {{\n"
+        f"{view_lines}"
         "    let shape = __rxtnp_broadcast_shape(a.shape(), b.shape())?;\n"
         "    let a_b = a.broadcast(shape.as_slice()).ok_or_else(|| {\n"
         "        pyo3::exceptions::PyValueError::new_err(format!(\n"
@@ -207,11 +268,7 @@ def elementwise_aa_typed(op: str, dtype: str, left_rank: int, right_rank: int) -
         "            __rxtnp_fmt_shape(a.shape()), __rxtnp_fmt_shape(b.shape())\n"
         "        ))\n"
         "    })?;\n"
-        f"    let out = numpy::ndarray::Zip::from(&a_b).and(&b_b)"
-        f".map_collect(|&x, &y| {expr});\n"
-        f"    Ok(out.into_dimensionality::<{_ix(result_rank)}>().expect(\n"
-        '        "rextio-numpy: broadcast rank mismatch"\n'
-        "    ))\n"
+        f"{output}"
         "}"
     )
 
@@ -225,6 +282,7 @@ def elementwise_as_typed(op: str, dtype: str, rank: int) -> str:
     arr_ty = _arr(rank, dtype)
     out_ty = _arr(rank, result_dtype)
     name = f"__rxtnp_{op}{rank}_as_{dtype}"
+    python_output = is_python_backed(result_dtype, rank)
 
     # Python float scalars arrive as f64; narrow to f32 for float32 arrays.
     if dtype == "f32":
@@ -248,10 +306,27 @@ def elementwise_as_typed(op: str, dtype: str, rank: int) -> str:
         symbol = OP_SYMBOLS[op]
         expr = f"x {symbol} {body_s}"
 
+    lifetime = lifetime_decl((dtype, rank), (result_dtype, rank))
+    py_param = "py: pyo3::Python<'py>, " if python_output else ""
+    view_line = readonly_view_line("a", dtype, rank)
+    if python_output:
+        body = (
+            f"    {F64_1D_OUTPUT_HELPER_NAME}(py, a.len(), |out| {{\n"
+            "        for (i, value) in out.iter_mut().enumerate() {\n"
+            "            let x = a[i];\n"
+            f"            *value = {expr};\n"
+            "        }\n"
+            "        Ok(())\n"
+            "    })\n"
+        )
+    else:
+        body = f"    Ok(a.mapv(|x| {expr}))\n"
     return (
-        f"fn {name}(a: &{arr_ty}, s: {param_s}) -> pyo3::PyResult<{out_ty}> {{\n"
+        f"fn {name}{lifetime}({py_param}a: &{arr_ty}, s: {param_s}) "
+        f"-> pyo3::PyResult<{out_ty}> {{\n"
+        f"{view_line}"
         f"{cast_line}"
-        f"    Ok(a.mapv(|x| {expr}))\n"
+        f"{body}"
         "}"
     )
 
@@ -265,6 +340,7 @@ def elementwise_sa_typed(op: str, dtype: str, rank: int) -> str:
     arr_ty = _arr(rank, dtype)
     out_ty = _arr(rank, result_dtype)
     name = f"__rxtnp_{op}{rank}_sa_{dtype}"
+    python_output = is_python_backed(result_dtype, rank)
 
     if dtype == "f32":
         cast_line = "    let s = s as f32;\n"
@@ -287,10 +363,27 @@ def elementwise_sa_typed(op: str, dtype: str, rank: int) -> str:
         symbol = OP_SYMBOLS[op]
         expr = f"{body_s} {symbol} x"
 
+    lifetime = lifetime_decl((dtype, rank), (result_dtype, rank))
+    py_param = "py: pyo3::Python<'py>, " if python_output else ""
+    view_line = readonly_view_line("a", dtype, rank)
+    if python_output:
+        body = (
+            f"    {F64_1D_OUTPUT_HELPER_NAME}(py, a.len(), |out| {{\n"
+            "        for (i, value) in out.iter_mut().enumerate() {\n"
+            "            let x = a[i];\n"
+            f"            *value = {expr};\n"
+            "        }\n"
+            "        Ok(())\n"
+            "    })\n"
+        )
+    else:
+        body = f"    Ok(a.mapv(|x| {expr}))\n"
     return (
-        f"fn {name}(s: {param_s}, a: &{arr_ty}) -> pyo3::PyResult<{out_ty}> {{\n"
+        f"fn {name}{lifetime}({py_param}s: {param_s}, a: &{arr_ty}) "
+        f"-> pyo3::PyResult<{out_ty}> {{\n"
+        f"{view_line}"
         f"{cast_line}"
-        f"    Ok(a.mapv(|x| {expr}))\n"
+        f"{body}"
         "}"
     )
 

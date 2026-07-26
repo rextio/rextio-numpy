@@ -82,7 +82,7 @@ def test_exact_ufunc_calls_claim_and_lower(
         site(target, (F64_1D, F64_1D), result_type=expected_type),
         ctx("a", "b"),
     )
-    assert lowered.rust == f"__rxtnp_{helper}1_aa(&a, &b)?"
+    assert lowered.rust == f"__rxtnp_{helper}1_aa(py, &a, &b)?"
 
 
 @pytest.mark.parametrize("target", sorted(UFUNC_CALL_NAMES))

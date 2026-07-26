@@ -6,7 +6,7 @@ from rextio.plugins.api import ClaimSite, LoweredExpr, LoweringContext
 
 from rextio_numpy import rust_snippets
 from rextio_numpy.claim.unary import _RULE
-from rextio_numpy.diagnostics import array_meta
+from rextio_numpy.diagnostics import F64_1D, array_meta
 from rextio_numpy.lower.contracts import (
     require_direct_context,
     require_no_hidden_site_metadata,
@@ -61,4 +61,10 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     require_result_type(claimed, operand, "unary")
     name = rust_snippets.unary_call_name(op, dtype, rank)
     helper = rust_snippets.unary_typed(op, dtype, rank)
-    return LoweredExpr(rust=f"{name}(&{ctx.operands[0]})?", helpers=(helper,))
+    python_output = claimed.result_type == F64_1D
+    call_prefix = "py, " if python_output else ""
+    support = rust_snippets.f64_1d_output_support() if python_output else ()
+    return LoweredExpr(
+        rust=f"{name}({call_prefix}&{ctx.operands[0]})?",
+        helpers=(*support, helper),
+    )

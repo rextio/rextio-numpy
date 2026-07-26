@@ -12,7 +12,7 @@ from rextio_numpy.claim.binops import (
     _ELEMENTWISE_UFUNC_RULE,
     _result_array_type,
 )
-from rextio_numpy.diagnostics import SCALAR_FOR_DTYPE, array_meta, is_array_type
+from rextio_numpy.diagnostics import F64_1D, SCALAR_FOR_DTYPE, array_meta, is_array_type
 from rextio_numpy.lower.contracts import (
     require_direct_context,
     require_no_hidden_site_metadata,
@@ -60,6 +60,11 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             f"got {len(ctx.operands)}"
         )
     first, second = ctx.operands
+    python_output = claimed.result_type == F64_1D
+    call_prefix = "py, " if python_output else ""
+    output_support = (
+        rust_snippets.f64_1d_output_support() if python_output else ()
+    )
 
     # Fail closed on malformed lower-time metadata rather than emitting
     # incorrect elementwise code (asserts are stripped under PYTHONOPTIMIZE=1).
@@ -91,11 +96,15 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         helper = rust_snippets.elementwise_aa_typed(op, dtype, left_rank, right_rank)
         helpers: tuple[str, ...]
         if dtype == "f64" and left_rank == 1 and right_rank == 1:
-            helpers = (helper,)
+            helpers = (*output_support, helper)
         else:
-            helpers = (*rust_snippets.shared_broadcast_helpers(), helper)
+            helpers = (
+                *output_support,
+                *rust_snippets.shared_broadcast_helpers(),
+                helper,
+            )
         return LoweredExpr(
-            rust=f"{name}(&{first}, &{second})?",
+            rust=f"{name}({call_prefix}&{first}, &{second})?",
             helpers=helpers,
         )
 
@@ -119,8 +128,8 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         name = rust_snippets.elementwise_call_name_as(op, dtype, rank)
         helper = rust_snippets.elementwise_as_typed(op, dtype, rank)
         return LoweredExpr(
-            rust=f"{name}(&{first}, {second})?",
-            helpers=(helper,),
+            rust=f"{name}({call_prefix}&{first}, {second})?",
+            helpers=(*output_support, helper),
         )
 
     if right is None:
@@ -142,8 +151,8 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
     name = rust_snippets.elementwise_call_name_sa(op, dtype, rank)
     helper = rust_snippets.elementwise_sa_typed(op, dtype, rank)
     return LoweredExpr(
-        rust=f"{name}({first}, &{second})?",
-        helpers=(helper,),
+        rust=f"{name}({call_prefix}{first}, &{second})?",
+        helpers=(*output_support, helper),
     )
 
 

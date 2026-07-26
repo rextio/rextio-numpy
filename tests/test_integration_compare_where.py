@@ -184,7 +184,7 @@ def test_api_15_compare_result_flows_into_where_and_codegen(tmp_path: Path) -> N
         plugin_types_by_key=type_maps.by_key,
     )
     assert "__rxtnp_cmp_gt1_as_f64(&values, 0.0)?" in source
-    assert "__rxtnp_where111_aa_f64(&" in source
+    assert "__rxtnp_where111_aa_f64(py, &" in source
     assert "Array1<bool>" in source
 
     composed = _function(analysis, "choose_composed_masks")

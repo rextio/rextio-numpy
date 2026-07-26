@@ -27,6 +27,18 @@ a *second* incompatible copy when cargo resolves rust-numpy's ndarray range
 
 from __future__ import annotations
 
+from rextio_numpy.rust_snippets.array_repr import (
+    F64_1D_OUTPUT_HELPER_NAME,
+    F64_1D_RETURN_HELPER_NAME,
+    F64_1D_RUST,
+    array_rust_type,
+    f64_1d_output_helper,
+    f64_1d_output_support,
+    f64_1d_return_helper,
+    is_python_backed,
+    lifetime_decl,
+    readonly_view_line,
+)
 from rextio_numpy.rust_snippets.elementwise import (
     OP_SYMBOLS,
     broadcast_shape_helper,
@@ -89,8 +101,12 @@ from rextio_numpy.rust_snippets.where import (
 )
 
 __all__ = [
+    "F64_1D_OUTPUT_HELPER_NAME",
+    "F64_1D_RETURN_HELPER_NAME",
+    "F64_1D_RUST",
     "OP_SYMBOLS",
     "COMPARE_SYMBOLS",
+    "array_rust_type",
     "axis_call_name",
     "axis_typed",
     "broadcast_shape_helper",
@@ -116,6 +132,9 @@ __all__ = [
     "elementwise_sa_typed",
     "extrema_call_name",
     "extrema_typed",
+    "f64_1d_output_helper",
+    "f64_1d_output_support",
+    "f64_1d_return_helper",
     "fmt_shape_helper",
     "fusion_call_name",
     "fusion_helper",
@@ -127,6 +146,8 @@ __all__ = [
     "logical_binary_typed",
     "logical_not_call_name",
     "logical_not_typed",
+    "is_python_backed",
+    "lifetime_decl",
     "op_from_target",
     "shared_broadcast_helpers",
     "sum1",
@@ -134,6 +155,7 @@ __all__ = [
     "sum_typed",
     "unary_call_name",
     "unary_typed",
+    "readonly_view_line",
     "where_aa_typed",
     "where_as_typed",
     "where_call_name_aa",

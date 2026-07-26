@@ -94,17 +94,20 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
     # Identity with the feature-owned registry (no duplicate unit coverage).
     assert loaded == PLUGIN_TYPES
 
-    # Wave-0 F64 rank-1 compatibility surface remains first and unchanged.
+    # F64 rank-1 remains first but now keeps Python-owned read-only backing.
     f64_r1 = loaded[0]
     assert f64_r1.key == "rextio-numpy/f64-1d"
     assert f64_r1.annotations == ("rextio_numpy.types.F64Arr1",)
-    assert f64_r1.rust_type == "numpy::ndarray::Array1<f64>"
+    assert f64_r1.rust_type == "numpy::PyReadonlyArray1<'py, f64>"
     conversion = f64_r1.conversion
     assert conversion.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
     assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conversion.param_expr
     assert "ndarray subclasses are unsupported" in conversion.param_expr
     assert conversion.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
-    assert conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+    assert conversion.return_expr == "__rxtnp_release_f64_1d({value})?"
+    assert "to_owned()" not in conversion.param_expr
+    assert any("PyArray1::<f64>::zeros" in helper for helper in f64_r1.helpers)
+    assert any("drop(value);" in helper for helper in f64_r1.helpers)
 
     by_key = {pt.key: pt for pt in loaded}
     for key in ("rextio-numpy/bool-1d", "rextio-numpy/bool-2d"):

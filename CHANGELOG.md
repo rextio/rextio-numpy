@@ -8,6 +8,28 @@ uploaded to PyPI, and not a publication claim. Latest published cut remains
 API **1.5** surface as 0.1.2; no Core change and no certified-surface
 broadening.
 
+### F64 rank-1 borrowed/direct-output boundary
+
+- Changes only ``rextio-numpy/f64-1d`` to retain exact base-ndarray inputs as
+  read-only ``PyReadonlyArray1<f64>`` wrappers through the generated native
+  frame. Arbitrary positive/negative strides, read-only inputs, same-object
+  aliases, and overlapping views remain supported without an
+  ``as_array().to_owned()`` boundary materialization.
+- F64 rank-1 producers allocate one fresh zero-initialized NumPy-owned
+  ``PyArray1<f64>`` sink, obtain a scoped write borrow, completely fill its
+  contiguous slice, freeze it to a read-only native wrapper, then drop that
+  borrow before returning the Python owner. A fill error returns no array.
+- Keeps exact-base-``numpy.ndarray`` rejection for subclasses in every
+  argument position. Returned arrays retain ordinary NumPy ownership
+  observables (``OWNDATA``, ``base is None``, supported in-place resize).
+- Other dtype/rank combinations retain the historical owned
+  ``ndarray::ArrayN`` input plus ``ToPyArray`` return path. Resident boolean
+  intermediates remain plugin-owned Rust arrays. No lane uses
+  ``IntoPyArray``.
+- Adds generated-source, real-Cargo, alias/stride/subclass, failure-path, and
+  ownership regressions. This is an allocation-structure change only; no
+  speedup or general zero-copy claim is made.
+
 ### Fusion contiguous equal-shape fast path
 
 - Fused elementwise chain helpers (``__rxtnp_echain_*``) may take a **rank-1
@@ -25,16 +47,11 @@ broadening.
   ``(a + b) * (a - b)``), the helper may take one parameter per unique name
   and reuse element loads; alias patterns are encoded in the helper name so
   structural signatures cannot collide across different alias maps.
-- Boundary input conversion still uses ``as_array().to_owned()``: an owned
-  Rust copy for the native frame. That does **not** guarantee every input
-  becomes C-contiguous (contiguous input layout may be preserved;
-  non-contiguous copy layout is unspecified). Do not claim that every strided
-  Python input stays on the generic path, or that every ``to_owned`` copy is
-  C-contiguous.
-- Array results continue to use ``numpy::ToPyArray::to_pyarray`` so returned
-  NumPy arrays keep ordinary NumPy ownership observables. The fast path is a
-  layout-gated correctness-preserving shortcut only — not a published speed
-  claim and not an unsafe reinterpretation of F-order storage.
+- The F64 rank-1 representation follows the borrowed/direct-output boundary
+  above; every other fusion dtype/rank keeps the historical owned-copy /
+  ``ToPyArray`` path. The fast path is a layout-gated
+  correctness-preserving shortcut only — not a published speed claim and not
+  an unsafe reinterpretation of F-order storage.
 
 ### Experimental boundary-allocation PoC harness (research-only)
 
@@ -53,8 +70,10 @@ broadening.
   and may record calibrated local wall times. Allocator internals and
   zero-initialization may differ from logical accounting. **No measured
   results are committed and no speedup claim is made.**
-- Does **not** change production ``BoundaryConversion``, claim, lower, rules,
-  or certified surface. Direct-sink ownership must keep ordinary NumPy
+- The harness itself remains isolated from product claim/lower/rule code.
+  ``owned_topy`` now serves as the historical owned-boundary baseline; the
+  product's F64 rank-1 lane separately adopts the borrowed/direct-output
+  representation above. Direct-sink ownership must keep ordinary NumPy
   observables (exact ``ndarray``, ``OWNDATA``, ``base is None``, in-place
   resize when supported).
 
