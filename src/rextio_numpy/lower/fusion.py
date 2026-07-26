@@ -99,7 +99,9 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             seen.add(leaf)
             unique_args.append(leaf)
     name = fusion_call_name(match.signature, alias)
-    args = ", ".join(f"&{leaf}" for leaf in unique_args)
+    python_output = match.dtype == "f64" and match.result_rank == 1
+    call_args = [*(["py"] if python_output else []), *(f"&{leaf}" for leaf in unique_args)]
+    args = ", ".join(call_args)
     helpers = rust_snippets.fusion_helpers_bundle(
         signature=match.signature,
         dtype=match.dtype,

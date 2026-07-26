@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from rextio_numpy.rust_snippets.array_repr import (
+    F64_1D_OUTPUT_HELPER_NAME,
+    array_rust_type,
+    is_python_backed,
+    lifetime_decl,
+    readonly_view_line,
+)
+
 _DTYPE_RUST = {"f64": "f64", "f32": "f32", "i64": "i64"}
 
 
 def _arr(rank: int, elem: str) -> str:
+    if elem == "f64":
+        return array_rust_type("f64", rank)
     return f"numpy::ndarray::Array{rank}<{elem}>"
 
 
@@ -84,10 +94,39 @@ def where_aa_typed(
     elem = _DTYPE_RUST[dtype]
     result_rank = max(condition_rank, yes_rank, no_rank)
     name = where_call_name_aa(condition_rank, dtype, yes_rank, no_rank)
+    python_output = is_python_backed(dtype, result_rank)
+    lifetime = lifetime_decl(
+        (dtype, yes_rank),
+        (dtype, no_rank),
+        (dtype, result_rank),
+    )
+    py_param = "py: pyo3::Python<'py>, " if python_output else ""
+    view_lines = (
+        readonly_view_line("yes", dtype, yes_rank)
+        + readonly_view_line("no", dtype, no_rank)
+    )
+    if python_output:
+        output = (
+            f"    {F64_1D_OUTPUT_HELPER_NAME}(py, shape[0], |out| {{\n"
+            "        for i in 0..shape[0] {\n"
+            "            out[i] = if condition_b[i] { yes_b[i] } else { no_b[i] };\n"
+            "        }\n"
+            "        Ok(())\n"
+            "    })\n"
+        )
+    else:
+        output = (
+            "    let out = numpy::ndarray::Zip::from(&condition_b).and(&yes_b).and(&no_b)"
+            ".map_collect(|mask, yes, no| if *mask { *yes } else { *no });\n"
+            f"    Ok(out.into_dimensionality::<{_ix(result_rank)}>().expect(\n"
+            '        "rextio-numpy: where broadcast rank mismatch"\n'
+            "    ))\n"
+        )
     return (
-        f"fn {name}(condition: &{_arr(condition_rank, 'bool')}, "
+        f"fn {name}{lifetime}({py_param}condition: &{_arr(condition_rank, 'bool')}, "
         f"yes: &{_arr(yes_rank, elem)}, no: &{_arr(no_rank, elem)}) "
         f"-> pyo3::PyResult<{_arr(result_rank, elem)}> {{\n"
+        f"{view_lines}"
         "    let shape = __rxtnp_broadcast_shape3("
         "condition.shape(), yes.shape(), no.shape())?;\n"
         "    let condition_b = condition.broadcast(shape.as_slice()).ok_or_else(|| "
@@ -96,11 +135,7 @@ def where_aa_typed(
         "pyo3::exceptions::PyValueError::new_err(\"yes broadcast failed\"))?;\n"
         "    let no_b = no.broadcast(shape.as_slice()).ok_or_else(|| "
         "pyo3::exceptions::PyValueError::new_err(\"no broadcast failed\"))?;\n"
-        "    let out = numpy::ndarray::Zip::from(&condition_b).and(&yes_b).and(&no_b)"
-        ".map_collect(|mask, yes, no| if *mask { *yes } else { *no });\n"
-        f"    Ok(out.into_dimensionality::<{_ix(result_rank)}>().expect(\n"
-        '        "rextio-numpy: where broadcast rank mismatch"\n'
-        "    ))\n"
+        f"{output}"
         "}"
     )
 
@@ -111,10 +146,32 @@ def where_as_typed(condition_rank: int, dtype: str, yes_rank: int) -> str:
     result_rank = max(condition_rank, yes_rank)
     scalar_type, cast_line, scalar = _scalar(dtype, "no")
     name = where_call_name_as(condition_rank, dtype, yes_rank)
+    python_output = is_python_backed(dtype, result_rank)
+    lifetime = lifetime_decl((dtype, yes_rank), (dtype, result_rank))
+    py_param = "py: pyo3::Python<'py>, " if python_output else ""
+    view_line = readonly_view_line("yes", dtype, yes_rank)
+    if python_output:
+        output = (
+            f"    {F64_1D_OUTPUT_HELPER_NAME}(py, shape[0], |out| {{\n"
+            "        for i in 0..shape[0] {\n"
+            f"            out[i] = if condition_b[i] {{ yes_b[i] }} else {{ {scalar} }};\n"
+            "        }\n"
+            "        Ok(())\n"
+            "    })\n"
+        )
+    else:
+        output = (
+            "    let out = numpy::ndarray::Zip::from(&condition_b).and(&yes_b)"
+            f".map_collect(|mask, yes| if *mask {{ *yes }} else {{ {scalar} }});\n"
+            f"    Ok(out.into_dimensionality::<{_ix(result_rank)}>().expect(\n"
+            '        "rextio-numpy: where broadcast rank mismatch"\n'
+            "    ))\n"
+        )
     return (
-        f"fn {name}(condition: &{_arr(condition_rank, 'bool')}, "
+        f"fn {name}{lifetime}({py_param}condition: &{_arr(condition_rank, 'bool')}, "
         f"yes: &{_arr(yes_rank, elem)}, no: {scalar_type}) "
         f"-> pyo3::PyResult<{_arr(result_rank, elem)}> {{\n"
+        f"{view_line}"
         f"{cast_line}"
         "    let shape = __rxtnp_broadcast_shape3("
         "condition.shape(), yes.shape(), &[])?;\n"
@@ -122,11 +179,7 @@ def where_as_typed(condition_rank: int, dtype: str, yes_rank: int) -> str:
         "pyo3::exceptions::PyValueError::new_err(\"condition broadcast failed\"))?;\n"
         "    let yes_b = yes.broadcast(shape.as_slice()).ok_or_else(|| "
         "pyo3::exceptions::PyValueError::new_err(\"yes broadcast failed\"))?;\n"
-        "    let out = numpy::ndarray::Zip::from(&condition_b).and(&yes_b)"
-        f".map_collect(|mask, yes| if *mask {{ *yes }} else {{ {scalar} }});\n"
-        f"    Ok(out.into_dimensionality::<{_ix(result_rank)}>().expect(\n"
-        '        "rextio-numpy: where broadcast rank mismatch"\n'
-        "    ))\n"
+        f"{output}"
         "}"
     )
 
@@ -137,10 +190,32 @@ def where_sa_typed(condition_rank: int, dtype: str, no_rank: int) -> str:
     result_rank = max(condition_rank, no_rank)
     scalar_type, cast_line, scalar = _scalar(dtype, "yes")
     name = where_call_name_sa(condition_rank, dtype, no_rank)
+    python_output = is_python_backed(dtype, result_rank)
+    lifetime = lifetime_decl((dtype, no_rank), (dtype, result_rank))
+    py_param = "py: pyo3::Python<'py>, " if python_output else ""
+    view_line = readonly_view_line("no", dtype, no_rank)
+    if python_output:
+        output = (
+            f"    {F64_1D_OUTPUT_HELPER_NAME}(py, shape[0], |out| {{\n"
+            "        for i in 0..shape[0] {\n"
+            f"            out[i] = if condition_b[i] {{ {scalar} }} else {{ no_b[i] }};\n"
+            "        }\n"
+            "        Ok(())\n"
+            "    })\n"
+        )
+    else:
+        output = (
+            "    let out = numpy::ndarray::Zip::from(&condition_b).and(&no_b)"
+            f".map_collect(|mask, no| if *mask {{ {scalar} }} else {{ *no }});\n"
+            f"    Ok(out.into_dimensionality::<{_ix(result_rank)}>().expect(\n"
+            '        "rextio-numpy: where broadcast rank mismatch"\n'
+            "    ))\n"
+        )
     return (
-        f"fn {name}(condition: &{_arr(condition_rank, 'bool')}, "
+        f"fn {name}{lifetime}({py_param}condition: &{_arr(condition_rank, 'bool')}, "
         f"yes: {scalar_type}, no: &{_arr(no_rank, elem)}) "
         f"-> pyo3::PyResult<{_arr(result_rank, elem)}> {{\n"
+        f"{view_line}"
         f"{cast_line}"
         "    let shape = __rxtnp_broadcast_shape3("
         "condition.shape(), &[], no.shape())?;\n"
@@ -148,11 +223,7 @@ def where_sa_typed(condition_rank: int, dtype: str, no_rank: int) -> str:
         "pyo3::exceptions::PyValueError::new_err(\"condition broadcast failed\"))?;\n"
         "    let no_b = no.broadcast(shape.as_slice()).ok_or_else(|| "
         "pyo3::exceptions::PyValueError::new_err(\"no broadcast failed\"))?;\n"
-        "    let out = numpy::ndarray::Zip::from(&condition_b).and(&no_b)"
-        f".map_collect(|mask, no| if *mask {{ {scalar} }} else {{ *no }});\n"
-        f"    Ok(out.into_dimensionality::<{_ix(result_rank)}>().expect(\n"
-        '        "rextio-numpy: where broadcast rank mismatch"\n'
-        "    ))\n"
+        f"{output}"
         "}"
     )
 

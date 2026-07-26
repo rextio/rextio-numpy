@@ -6,10 +6,12 @@ Generates one helper per (tree, dtype, rank[, leaf-alias]) signature:
    equal-shape standard-layout (C-order) fast path that is decided and entered
    *before* any LTR postorder ``__rxtnp_broadcast_shape`` ``Vec`` work: require
    equal leaf shapes and ``is_standard_layout``, load via ``as_slice``, and fill
-   one output with ``from_shape_fn``. This is a safe, layout-gated shortcut only
-   (not a speed claim). Boundary ``to_owned()`` does not guarantee every
-   Python input becomes C-contiguous, so non-standard-layout leaves at helper
-   entry still take the generic path. Mixed-rank trees never emit this gate.
+   one output. F64 rank-1 fills a fresh NumPy-owned sink directly; other lanes
+   use ``from_shape_fn``. This is a safe, layout-gated shortcut only (not a
+   speed claim). F64 rank-1 preserves the Python view's layout, while other
+   boundary ``to_owned()`` conversions do not guarantee C-contiguous layout;
+   non-standard-layout leaves at helper entry therefore still take the generic
+   path. Mixed-rank trees never emit this gate.
 2. Otherwise (and on fast-path fallthrough) the generic path validates broadcast
    shapes for each internal binop in left-to-right postorder (same order as
    NumPy evaluation), raising NumPy's trailing-space ValueError on the first
@@ -33,12 +35,19 @@ from __future__ import annotations
 from typing import TypeAlias
 
 from rextio_numpy.claim.fusion import OP_NAMES
+from rextio_numpy.rust_snippets.array_repr import (
+    F64_1D_OUTPUT_HELPER_NAME,
+    array_rust_type,
+    f64_1d_output_helper,
+    is_python_backed,
+    lifetime_decl,
+    readonly_view_line,
+)
 from rextio_numpy.rust_snippets.elementwise import (
     _WRAP_OP,
     shared_broadcast_helpers,
 )
 
-_DTYPE_RUST = {"f64": "f64", "f32": "f32", "i64": "i64"}
 _OP_SYMBOL = {"+": "+", "-": "-", "*": "*", "/": "/"}
 
 # Side of a tree-plan node: leaf occurrence or intermediate temp index.
@@ -123,12 +132,19 @@ def fusion_helper(
     # Unique parameter slots in first-occurrence order.
     unique_idxs = tuple(dict.fromkeys(alias))
     name = fusion_call_name(signature, alias)
-    rust_ty = _DTYPE_RUST[dtype]
     params = ", ".join(
-        f"a{p}: &numpy::ndarray::Array{leaf_ranks[occ]}<{rust_ty}>"
+        f"a{p}: &{array_rust_type(dtype, leaf_ranks[occ])}"
         for p, occ in enumerate(unique_idxs)
     )
-    out_ty = f"numpy::ndarray::Array{result_rank}<{rust_ty}>"
+    out_ty = array_rust_type(dtype, result_rank)
+    python_output = is_python_backed(dtype, result_rank)
+    helper_types = tuple((dtype, leaf_ranks[occ]) for occ in unique_idxs)
+    lifetime = lifetime_decl(*helper_types, (dtype, result_rank))
+    py_param = "py: pyo3::Python<'py>, " if python_output else ""
+    view_lines = "".join(
+        readonly_view_line(f"a{p}", dtype, leaf_ranks[occ])
+        for p, occ in enumerate(unique_idxs)
+    )
 
     # occurrence i -> parameter slot p (a{p})
     occ_to_param = {occ: p for p, occ in enumerate(unique_idxs)}
@@ -150,6 +166,20 @@ def fusion_helper(
     # Fast path closure body is nested deeper than the generic path.
     body_arith_fast = "\n".join(f"                {line}" for line in arith_core)
     body_arith_generic = "\n".join(f"        {line}" for line in arith_core)
+    direct_prefix = arith_core[:-1]
+    direct_result = arith_core[-1]
+    body_arith_fast_direct = "\n".join(
+        [
+            *(f"                    {line}" for line in direct_prefix),
+            f"                    out[i] = {direct_result};",
+        ]
+    )
+    body_arith_generic_direct = "\n".join(
+        [
+            *(f"            {line}" for line in direct_prefix),
+            f"            out[i] = {direct_result};",
+        ]
+    )
 
     # Equal-shape fast path is only emitted when every leaf rank equals the
     # result rank (mixed-rank trees cannot be exact equal-shape).
@@ -187,20 +217,35 @@ def fusion_helper(
             f"    }})?;"
             for p in range(n_params)
         ]
-        generic_loads = _emit_loads(
-            n_leaves=n_leaves,
-            param_of=param_of,
-            load_expr=lambda p: f"v{p}[i]",
-            indent="        ",
-        )
-        generic_header = "    let out = numpy::ndarray::Array1::from_shape_fn(dim, |i| {"
-        generic_tail = ("    });", "    Ok(out)")
+        if python_output:
+            generic_loads = _emit_loads(
+                n_leaves=n_leaves,
+                param_of=param_of,
+                load_expr=lambda p: f"v{p}[i]",
+                indent="            ",
+            )
+            generic_header = (
+                f"    {F64_1D_OUTPUT_HELPER_NAME}(py, {out_shape}[0], |out| {{\n"
+                "        for i in 0..out.len() {"
+            )
+            generic_tail = ("        }\n        Ok(())", "    })")
+        else:
+            generic_loads = _emit_loads(
+                n_leaves=n_leaves,
+                param_of=param_of,
+                load_expr=lambda p: f"v{p}[i]",
+                indent="        ",
+            )
+            generic_header = "    let out = numpy::ndarray::Array1::from_shape_fn(dim, |i| {"
+            generic_tail = ("    });", "    Ok(out)")
         fast_body = (
             _emit_fast_path_rank1(
                 n_params=n_params,
                 n_leaves=n_leaves,
                 param_of=param_of,
                 body_arith_fast=body_arith_fast,
+                body_arith_fast_direct=body_arith_fast_direct,
+                python_output=python_output,
             )
             if emit_fast
             else ""
@@ -246,8 +291,10 @@ def fusion_helper(
         )
 
     lines = [
-        f"fn {name}({params}) -> pyo3::PyResult<{out_ty}> {{",
+        f"fn {name}{lifetime}({py_param}{params}) -> pyo3::PyResult<{out_ty}> {{",
     ]
+    if view_lines:
+        lines.append(view_lines.rstrip())
     if fast_body:
         lines.append(fast_body)
     lines.extend(shape_lines)
@@ -255,7 +302,7 @@ def fusion_helper(
     lines.extend(broadcast_lines)
     lines.append(generic_header)
     lines.append(generic_loads)
-    lines.append(body_arith_generic)
+    lines.append(body_arith_generic_direct if python_output else body_arith_generic)
     lines.extend(generic_tail)
     lines.append("}")
     # Silence unused: expression_ops_postorder is validated by caller.
@@ -283,7 +330,12 @@ def fusion_helpers_bundle(
         tree_plan=tree_plan,
         leaf_operands=leaf_operands,
     )
-    return (*shared_broadcast_helpers(), helper)
+    output_support = (
+        (f64_1d_output_helper(),)
+        if is_python_backed(dtype, result_rank)
+        else ()
+    )
+    return (*output_support, *shared_broadcast_helpers(), helper)
 
 
 def build_tree_plan(expression: object) -> list[TreeStep]:
@@ -328,6 +380,8 @@ def _emit_fast_path_rank1(
     n_leaves: int,
     param_of: list[int],
     body_arith_fast: str,
+    body_arith_fast_direct: str,
+    python_output: bool,
 ) -> str:
     """Equal-shape standard-layout rank-1 gate placed before broadcast Vec work."""
     if n_params == 0:
@@ -346,6 +400,22 @@ def _emit_fast_path_rank1(
         load_expr=lambda p: f"sl{p}[i]",
         indent="                ",
     )
+    if python_output:
+        return (
+            f"    // Equal-shape standard-layout fast path (before broadcast-shape Vec work).\n"
+            f"    if {gate} {{\n"
+            f"        if let ({slice_pats}) = ({slice_tuple}) {{\n"
+            f"            return {F64_1D_OUTPUT_HELPER_NAME}("
+            f"py, a0.shape()[0], |out| {{\n"
+            f"                for i in 0..out.len() {{\n"
+            f"{fast_loads}\n"
+            f"{body_arith_fast_direct}\n"
+            f"                }}\n"
+            f"                Ok(())\n"
+            f"            }});\n"
+            f"        }}\n"
+            f"    }}"
+        )
     return (
         f"    // Equal-shape standard-layout fast path (before broadcast-shape Vec work).\n"
         f"    if {gate} {{\n"

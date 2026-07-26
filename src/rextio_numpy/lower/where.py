@@ -7,6 +7,7 @@ from rextio.plugins.api import ClaimSite, LoweredExpr, LoweringContext
 from rextio_numpy import rust_snippets
 from rextio_numpy.claim.where import WHERE_RULE, WHERE_TARGET, _branch_contract
 from rextio_numpy.diagnostics import (
+    F64_1D,
     SCALAR_FOR_DTYPE,
     array_meta,
     bool_rank,
@@ -71,6 +72,11 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         lane,
     )
     condition, yes, no = ctx.operands
+    python_output = claimed.result_type == F64_1D
+    call_prefix = "py, " if python_output else ""
+    output_support = (
+        rust_snippets.f64_1d_output_support() if python_output else ()
+    )
     common_helpers = (
         rust_snippets.fmt_shape_helper(),
         rust_snippets.broadcast_shape3_helper(),
@@ -96,8 +102,8 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             no_meta[1],
         )
         return LoweredExpr(
-            rust=f"{name}(&{condition}, &{yes}, &{no})?",
-            helpers=(*common_helpers, helper),
+            rust=f"{name}({call_prefix}&{condition}, &{yes}, &{no})?",
+            helpers=(*output_support, *common_helpers, helper),
         )
 
     if is_array_type(yes_type):
@@ -112,8 +118,9 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
             yes_meta[1],
         )
         return LoweredExpr(
-            rust=f"{name}(&{condition}, &{yes}, {no})?",
+            rust=f"{name}({call_prefix}&{condition}, &{yes}, {no})?",
             helpers=(
+                *output_support,
                 *common_helpers,
                 rust_snippets.where_as_typed(condition_rank, dtype, yes_meta[1]),
             ),
@@ -126,8 +133,9 @@ def try_lower(claimed: ClaimSite, ctx: LoweringContext) -> LoweredExpr | None:
         )
     name = rust_snippets.where_call_name_sa(condition_rank, dtype, no_meta[1])
     return LoweredExpr(
-        rust=f"{name}(&{condition}, {yes}, &{no})?",
+        rust=f"{name}({call_prefix}&{condition}, {yes}, &{no})?",
         helpers=(
+            *output_support,
             *common_helpers,
             rust_snippets.where_sa_typed(condition_rank, dtype, no_meta[1]),
         ),

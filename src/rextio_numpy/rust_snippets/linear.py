@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+from rextio_numpy.rust_snippets.array_repr import (
+    array_rust_type,
+    lifetime_decl,
+    readonly_view_line,
+)
+
 _ARR1 = {
-    "f64": "numpy::ndarray::Array1<f64>",
+    "f64": array_rust_type("f64", 1),
     "f32": "numpy::ndarray::Array1<f32>",
     "i64": "numpy::ndarray::Array1<i64>",
 }
@@ -26,7 +32,7 @@ def dot_typed(dtype: str) -> str:
     ret = _DOT_RET[dtype]
     if dtype == "f64":
         name = "__rxtnp_dot1"
-        body = "    Ok(a.dot(b))\n"
+        body = "    Ok(a.dot(&b))\n"
     elif dtype == "f32":
         name = "__rxtnp_dot1_f32"
         # Accumulate in f32 then widen so values match NumPy float32 dots.
@@ -46,8 +52,14 @@ def dot_typed(dtype: str) -> str:
             "    }\n"
             "    Ok(acc)\n"
         )
+    lifetime = lifetime_decl((dtype, 1))
+    view_lines = (
+        readonly_view_line("a", dtype, 1)
+        + readonly_view_line("b", dtype, 1)
+    )
     return (
-        f"fn {name}(a: &{arr}, b: &{arr}) -> pyo3::PyResult<{ret}> {{\n"
+        f"fn {name}{lifetime}(a: &{arr}, b: &{arr}) -> pyo3::PyResult<{ret}> {{\n"
+        f"{view_lines}"
         "    if a.len() != b.len() {\n"
         "        return Err(pyo3::exceptions::PyValueError::new_err(format!(\n"
         '            "shapes ({},) and ({},) not aligned: {} (dim 0) != {} (dim 0)",\n'
