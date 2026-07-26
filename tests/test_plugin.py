@@ -104,7 +104,7 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
     assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conversion.param_expr
     assert "ndarray subclasses are unsupported" in conversion.param_expr
     assert conversion.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
-    assert conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+    assert conversion.return_expr == "numpy::IntoPyArray::into_pyarray({value}, py)"
 
     by_key = {pt.key: pt for pt in loaded}
     for key in ("rextio-numpy/bool-1d", "rextio-numpy/bool-2d"):
@@ -132,7 +132,7 @@ def test_core_loader_registers_the_type_vocabulary() -> None:
             in pt.conversion.param_expr
         )
         assert "ndarray subclasses are unsupported" in pt.conversion.param_expr
-        assert pt.conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+        assert pt.conversion.return_expr == "numpy::IntoPyArray::into_pyarray({value}, py)"
 
 
 def test_core_loader_registers_the_pinned_crates() -> None:

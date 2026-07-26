@@ -63,7 +63,7 @@ def test_f64_1d_matches_wave0_boundary() -> None:
     assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conv.param_expr
     assert "requires exact numpy.ndarray" in conv.param_expr
     assert conv.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
-    assert conv.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+    assert conv.return_expr == "numpy::IntoPyArray::into_pyarray({value}, py)"
 
 
 def test_all_rank_dtype_conversions() -> None:
@@ -86,4 +86,7 @@ def test_all_rank_dtype_conversions() -> None:
             in pt.conversion.param_expr
         )
         assert "ndarray subclasses are unsupported" in pt.conversion.param_expr
-        assert pt.conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+        assert pt.conversion.return_expr == "numpy::IntoPyArray::into_pyarray({value}, py)"
+        # Inputs still copy; returns transfer owned buffers (not &borrow copy).
+        assert "to_owned()" in pt.conversion.param_expr
+        assert "&{value}" not in pt.conversion.return_expr

@@ -460,10 +460,14 @@ NATIVE_RECORDS: tuple[RuleRecord, ...] = (
             "LTR postorder as NumPy, before allocation/arithmetic, so the first "
             "mismatch and exact trailing-space ValueError shape message match "
             "existing behavior (including zero dimensions). After validation, "
-            "only leaf views are broadcast; exactly one output ndarray is "
-            "allocated and filled in one data pass (zero intermediate "
-            "ndarrays/collections); zero-sized results are supported. Inputs "
-            "are not mutated. Native elementwise continues to omit NumPy "
+            "when every leaf already matches the final shape in standard (C) "
+            "layout the helper may load via contiguous slices; otherwise leaf "
+            "views are broadcast as before. Either path allocates exactly one "
+            "output ndarray and fills it in one data pass (zero intermediate "
+            "ndarrays/collections); zero-sized results are supported. The "
+            "contiguous path is a layout-gated correctness-preserving shortcut, "
+            "not a general zero-copy or residency claim. Inputs are not "
+            "mutated. Native elementwise continues to omit NumPy "
             "RuntimeWarnings (documented divergence)."
         ),
         outcome="native",

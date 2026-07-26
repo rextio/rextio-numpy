@@ -75,7 +75,7 @@ def test_type_vocabulary_surface_via_plugin_still_wave0() -> None:
     assert rendered.startswith("{ if !values.is_exact_instance_of")
     assert rendered.endswith("values.as_array().to_owned() }")
     assert conv.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
-    assert conv.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+    assert conv.return_expr == "numpy::IntoPyArray::into_pyarray({value}, py)"
 
 
 def test_feature_owned_registry_is_complete() -> None:

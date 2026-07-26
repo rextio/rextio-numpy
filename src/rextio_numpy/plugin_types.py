@@ -38,6 +38,13 @@ def _boundary(rank: int, elem: str) -> BoundaryConversion:
     cannot preserve. The conversion therefore checks NumPy's C-level exact
     array predicate before materializing. This is a deterministic native
     boundary rejection, not a static claim-time fallback.
+
+    Parameters still materialize an owned contiguous Rust copy
+    (``as_array().to_owned()``). Array results transfer ownership of that
+    owned ``ndarray`` buffer into a NumPy array via ``IntoPyArray`` (no
+    second elementwise copy on the return path). This is not a general
+    zero-copy or residency claim: Python inputs are still copied, and
+    returns only avoid re-copying an already-owned Rust buffer.
     """
     rust_elem = _RUST_ELEM[elem]
     exact_type = f"numpy::PyArray{rank}<{rust_elem}>"
@@ -54,7 +61,9 @@ def _boundary(rank: int, elem: str) -> BoundaryConversion:
         param_rust=f"numpy::PyReadonlyArray{rank}<'py, {rust_elem}>",
         param_expr=param_expr,
         return_rust=f"pyo3::Bound<'py, numpy::PyArray{rank}<{rust_elem}>>",
-        return_expr="numpy::ToPyArray::to_pyarray(&{value}, py)",
+        # IntoPyArray consumes the owned ArrayN and hands its buffer to NumPy
+        # (rust-numpy 0.29). Prefer UFCS so generated code needs no prelude use.
+        return_expr="numpy::IntoPyArray::into_pyarray({value}, py)",
     )
 
 

@@ -19,9 +19,11 @@ no validation. Its value is static: the Rextio analyzer resolves a parameter
 or return annotated ``F64Arr1`` to the plugin type ``rextio-numpy/f64-1d``,
 which makes the function a native candidate whose array arguments cross the
 boundary as read-only float64 1-D arrays. Non-contiguous (strided) views are
-accepted — the conversion materializes an owned contiguous copy at the
-boundary (certified; spec section 4). A wrong dtype or rank raises the PyO3
-conversion error in native mode.
+accepted — the **input** conversion materializes an owned contiguous copy at
+the boundary (certified; still a copy, not zero-copy residency). Array
+**returns** transfer ownership of the owned Rust buffer into a NumPy array
+via rust-numpy ``IntoPyArray`` (no second elementwise copy on the return
+path). A wrong dtype or rank raises the PyO3 conversion error in native mode.
 """
 
 F64Arr2 = numpy.ndarray

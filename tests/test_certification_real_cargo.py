@@ -2047,7 +2047,7 @@ def test_wave2_fusion_hypothesis_i64(project: CertifiedProject, a, b) -> None:
 
 
 def test_wave2_fusion_helper_allocation_evidence() -> None:
-    """Generated helper text: one from_shape_fn pass, zero intermediate ndarrays, no Zip."""
+    """Generated helper: fast+generic from_shape_fn, zero intermediate ndarrays, no Zip."""
     from rextio.plugins.api import ClaimExpr
     from rextio_numpy.claim.fusion import try_match
     from rextio_numpy.rust_snippets.fusion import build_tree_plan, fusion_helper
@@ -2089,14 +2089,17 @@ def test_wave2_fusion_helper_allocation_evidence() -> None:
         expression_ops_postorder=match.postorder_ops,
         tree_plan=build_tree_plan(expr),
     )
-    assert helper.count("from_shape_fn") == 1
+    # Fast path + generic path each have one from_shape_fn; runtime takes one.
+    assert helper.count("from_shape_fn") == 2
+    assert "is_standard_layout()" in helper
+    assert "as_slice()" in helper
     assert "Zip::" not in helper
     assert "map_collect" not in helper
     assert "to_owned()" not in helper
     assert "Array::zeros" not in helper
-    # Broadcast views only for leaves (one per leaf).
+    # Broadcast views only on the generic path (one per leaf).
     assert helper.count(".broadcast(") == match.leaf_count
-    # Scalar temps for internal non-root nodes.
+    # Scalar temps for internal non-root nodes (emitted on both paths).
     assert "let t0" in helper and "let t1" in helper
 
 
@@ -2478,3 +2481,187 @@ def test_i64_scalar_outside_core_boundary_is_a_contract_violation(
         fallback[1],
         np.where(values == target, yes, no),
     )
+
+
+# ---------------------------------------------------------------------------
+# 0.1.3 candidate: return ownership + fusion layout regressions
+# ---------------------------------------------------------------------------
+
+
+def test_returned_array_valid_after_rust_locals_drop(project: CertifiedProject) -> None:
+    """Python owns the returned buffer after the native frame returns.
+
+    IntoPyArray transfers the owned Rust Array buffer into NumPy; the result
+    must remain readable and writable after inputs are dropped and GC runs.
+    This is ownership transfer of an already-owned buffer — not input zero-copy.
+    """
+    import gc
+
+    add = _require_native(project, "add")
+    a = np.array([1.0, -2.5, 3.25, 0.5], dtype=np.float64)
+    b = np.array([4.0, 0.125, -6.5, 2.0], dtype=np.float64)
+    expected = a + b
+    result = add(a, b)
+    del a, b
+    gc.collect()
+    # Allocate noise that would clobber freed buffers if ownership were wrong.
+    noise = [np.full(1024, float(i), dtype=np.float64) for i in range(32)]
+    del noise
+    gc.collect()
+    np.testing.assert_array_equal(result, expected)
+    assert result.dtype == np.float64
+    result[0] = -99.0
+    assert result[0] == -99.0
+
+
+def test_returned_array_does_not_alias_caller_input(
+    project: CertifiedProject,
+) -> None:
+    """Input conversion copies; mutating the returned array cannot mutate inputs.
+
+    ``return a`` identity remains Core-fallback (not natively served). Elementwise
+    results still prove the input-copy + return-transfer boundary: out and the
+    caller's operands are independent storage.
+    """
+    add = _require_native(project, "add")
+    a = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    b = np.array([4.0, 5.0, 6.0], dtype=np.float64)
+    out = add(a, b)
+    np.testing.assert_array_equal(out, a + b)
+    out[0] = 42.0
+    assert a[0] == 1.0
+    assert b[0] == 4.0
+    a[1] = -7.0
+    assert out[1] == 7.0  # 2+5; independent of a mutation
+
+
+@pytest.mark.parametrize(
+    "name,a,b",
+    [
+        (
+            "add",
+            np.array([1.0, 2.0, 3.0], dtype=np.float64),
+            np.array([4.0, 5.0, 6.0], dtype=np.float64),
+        ),
+        (
+            "add_f32_1d",
+            np.array([1.0, 2.0], dtype=np.float32),
+            np.array([3.0, 4.0], dtype=np.float32),
+        ),
+        (
+            "add_i64_1d",
+            np.array([1, -2, 3], dtype=np.int64),
+            np.array([4, 5, -6], dtype=np.int64),
+        ),
+        (
+            "add_f64_2d",
+            np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64),
+            np.array([[0.5, 1.5], [-1.0, 2.0]], dtype=np.float64),
+        ),
+        (
+            "add_f32_2d",
+            np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+            np.array([[0.5, 1.5], [-1.0, 2.0]], dtype=np.float32),
+        ),
+        (
+            "add_i64_2d",
+            np.array([[1, 2], [3, 4]], dtype=np.int64),
+            np.array([[5, -6], [7, 8]], dtype=np.int64),
+        ),
+    ],
+)
+def test_array_return_ownership_all_supported_dtypes_ranks(
+    project: CertifiedProject,
+    name: str,
+    a: np.ndarray,
+    b: np.ndarray,
+) -> None:
+    """f64/f32/i64 × rank-1/2 return paths keep valid Python-owned storage."""
+    import gc
+
+    check = _require_native(project, name)
+    expected = a + b
+    result = check(a, b)
+    del a, b
+    gc.collect()
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_fusion_return_ownership_and_equal_shape_contiguous(
+    project: CertifiedProject,
+) -> None:
+    """Fused equal-shape C-contiguous path: values + post-return ownership."""
+    import gc
+
+    check = _require_native(project, "fuse_multi_op")
+    a = np.array([1.0, -2.5, 3.25, 0.5], dtype=np.float64)
+    b = np.array([4.0, 0.125, -6.5, 2.0], dtype=np.float64)
+    assert a.flags["C_CONTIGUOUS"] and b.flags["C_CONTIGUOUS"]
+    expected = (a + b) * (a - b)
+    result = check(a, b)
+    del a, b
+    gc.collect()
+    np.testing.assert_array_equal(result, expected)
+    result[1] = 0.0
+    assert result[1] == 0.0
+
+
+def test_fusion_rank2_equal_shape_and_broadcast_regressions(
+    project: CertifiedProject,
+) -> None:
+    """Rank-2 equal-shape fast path and mixed-rank broadcast still match NumPy."""
+    r2 = _require_native(project, "fuse_rank2")
+    mixed = _require_native(project, "fuse_mixed_rank")
+    a2 = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+    b2 = np.array([[0.5, 1.5], [-1.0, 2.0]], dtype=np.float64)
+    assert a2.flags["C_CONTIGUOUS"] and b2.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(r2(a2, b2), (a2 + b2) * (a2 - b2))
+
+    # Length-1 broadcast (generic path): must still match and raise correctly.
+    a1 = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    b_row = np.array([[10.0, 20.0, 30.0]], dtype=np.float64)
+    np.testing.assert_array_equal(mixed(a1, b_row), (a1 + b_row) * (a1 - b_row))
+
+    # F-contiguous equal-shape inputs: not standard-layout for the fast path;
+    # generic path must still match (boundary copies, but layout after to_owned
+    # is C; still exercise rank-2 equal-shape).
+    f_a = np.asfortranarray(a2)
+    f_b = np.asfortranarray(b2)
+    assert f_a.flags["F_CONTIGUOUS"] and not f_a.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(r2(f_a, f_b), (f_a + f_b) * (f_a - f_b))
+
+
+def test_fusion_strided_and_broadcast_mismatch_still_exact(
+    project: CertifiedProject,
+) -> None:
+    """Strided fusion inputs and broadcast errors remain NumPy-equivalent."""
+    # Strided equal-length leaves (value correctness after boundary copy).
+    check = checker(
+        project,
+        "fuse_multi_op",
+        equals=array_equals,
+        args_equals=array_equals,
+        copy_args=_stride_preserving_copy,
+    )
+    base_a = np.array([1.0, 99.0, 2.0, 99.0, 3.0, 99.0], dtype=np.float64)
+    base_b = np.array([4.0, 99.0, 5.0, 99.0, 6.0, 99.0], dtype=np.float64)
+    a = base_a[::2]
+    b = base_b[::2]
+    assert not a.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(check(a, b), (a + b) * (a - b))
+
+    # Broadcast mismatch still raises with NumPy's exact trailing-space message.
+    bal = _require_native(project, "fuse_balanced")
+    left = np.zeros(3, dtype=np.float64)
+    right = np.zeros(4, dtype=np.float64)
+    c = np.zeros(3, dtype=np.float64)
+    d = np.zeros(3, dtype=np.float64)
+    try:
+        (left + right) * (c - d)
+    except ValueError as exc:
+        expected_msg = str(exc)
+    else:  # pragma: no cover
+        pytest.fail("numpy did not raise on fusion broadcast mismatch")
+    with pytest.raises(ValueError) as excinfo:
+        bal(left, right, c, d)
+    assert str(excinfo.value) == expected_msg
