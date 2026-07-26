@@ -2484,126 +2484,82 @@ def test_i64_scalar_outside_core_boundary_is_a_contract_violation(
 
 
 # ---------------------------------------------------------------------------
-# 0.1.3 candidate: return ownership + fusion layout regressions
+# 0.1.3 candidate: ordinary NumPy return ownership + fusion layout regressions
 # ---------------------------------------------------------------------------
 
 
-def test_returned_array_valid_after_rust_locals_drop(project: CertifiedProject) -> None:
-    """Python owns the returned buffer after the native frame returns.
-
-    IntoPyArray transfers the owned Rust Array buffer into NumPy; the result
-    must remain readable and writable after inputs are dropped and GC runs.
-    This is ownership transfer of an already-owned buffer — not input zero-copy.
-    """
-    import gc
-
-    add = _require_native(project, "add")
-    a = np.array([1.0, -2.5, 3.25, 0.5], dtype=np.float64)
-    b = np.array([4.0, 0.125, -6.5, 2.0], dtype=np.float64)
-    expected = a + b
-    result = add(a, b)
-    del a, b
-    gc.collect()
-    # Allocate noise that would clobber freed buffers if ownership were wrong.
-    noise = [np.full(1024, float(i), dtype=np.float64) for i in range(32)]
-    del noise
-    gc.collect()
-    np.testing.assert_array_equal(result, expected)
-    assert result.dtype == np.float64
-    result[0] = -99.0
-    assert result[0] == -99.0
+def _ndarray_owns_data(arr: np.ndarray) -> bool:
+    """True when the array owns its buffer (flags.owndata or flags['OWNDATA'])."""
+    flags = arr.flags
+    if hasattr(flags, "owndata"):
+        return bool(flags.owndata)
+    return bool(flags["OWNDATA"])
 
 
-def test_returned_array_does_not_alias_caller_input(
+def _ordinary_numpy_supports_inplace_resize(shape: tuple[int, ...], dtype: object) -> bool:
+    """Probe whether this NumPy build allows in-place resize on a fresh owned array."""
+    probe = np.empty(shape, dtype=dtype)
+    try:
+        probe.resize(int(np.prod(shape, dtype=int)) + 1, refcheck=True)
+    except (ValueError, SystemError, TypeError, AttributeError):
+        return False
+    return True
+
+
+def test_native_add_return_matches_ordinary_numpy_ownership(
     project: CertifiedProject,
 ) -> None:
-    """Input conversion copies; mutating the returned array cannot mutate inputs.
+    """Native ``add`` results keep ordinary NumPy ownership (ToPyArray parity).
 
-    ``return a`` identity remains Core-fallback (not natively served). Elementwise
-    results still prove the input-copy + return-transfer boundary: out and the
-    caller's operands are independent storage.
+    Both native and fallback legs must report OWNDATA true and ``base is None``.
+    When ordinary NumPy on the installed version supports in-place ``resize`` on
+    a fresh owned array of the same shape/dtype, both legs must also succeed.
+    Extra references are not retained across the resize call.
     """
-    add = _require_native(project, "add")
+    check = checker(project, "add", equals=array_equals, args_equals=array_equals)
     a = np.array([1.0, 2.0, 3.0], dtype=np.float64)
     b = np.array([4.0, 5.0, 6.0], dtype=np.float64)
-    out = add(a, b)
-    np.testing.assert_array_equal(out, a + b)
-    out[0] = 42.0
-    assert a[0] == 1.0
-    assert b[0] == 4.0
-    a[1] = -7.0
-    assert out[1] == 7.0  # 2+5; independent of a mutation
-
-
-@pytest.mark.parametrize(
-    "name,a,b",
-    [
-        (
-            "add",
-            np.array([1.0, 2.0, 3.0], dtype=np.float64),
-            np.array([4.0, 5.0, 6.0], dtype=np.float64),
-        ),
-        (
-            "add_f32_1d",
-            np.array([1.0, 2.0], dtype=np.float32),
-            np.array([3.0, 4.0], dtype=np.float32),
-        ),
-        (
-            "add_i64_1d",
-            np.array([1, -2, 3], dtype=np.int64),
-            np.array([4, 5, -6], dtype=np.int64),
-        ),
-        (
-            "add_f64_2d",
-            np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64),
-            np.array([[0.5, 1.5], [-1.0, 2.0]], dtype=np.float64),
-        ),
-        (
-            "add_f32_2d",
-            np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
-            np.array([[0.5, 1.5], [-1.0, 2.0]], dtype=np.float32),
-        ),
-        (
-            "add_i64_2d",
-            np.array([[1, 2], [3, 4]], dtype=np.int64),
-            np.array([[5, -6], [7, 8]], dtype=np.int64),
-        ),
-    ],
-)
-def test_array_return_ownership_all_supported_dtypes_ranks(
-    project: CertifiedProject,
-    name: str,
-    a: np.ndarray,
-    b: np.ndarray,
-) -> None:
-    """f64/f32/i64 × rank-1/2 return paths keep valid Python-owned storage."""
-    import gc
-
-    check = _require_native(project, name)
     expected = a + b
-    result = check(a, b)
-    del a, b
-    gc.collect()
-    np.testing.assert_array_equal(result, expected)
 
+    native_outcome, _ = check._run("native", (a, b))
+    fallback_outcome, _ = check._run("fallback", (a, b))
+    assert native_outcome[0] == "returned"
+    assert fallback_outcome[0] == "returned"
+    native = native_outcome[1]
+    fallback = fallback_outcome[1]
+    assert isinstance(native, np.ndarray)
+    assert isinstance(fallback, np.ndarray)
 
-def test_fusion_return_ownership_and_equal_shape_contiguous(
-    project: CertifiedProject,
-) -> None:
-    """Fused equal-shape C-contiguous path: values + post-return ownership."""
-    import gc
+    # Value parity first (also certified by the dual-leg checker path).
+    np.testing.assert_array_equal(native, expected)
+    np.testing.assert_array_equal(fallback, expected)
+    np.testing.assert_array_equal(native, fallback)
 
-    check = _require_native(project, "fuse_multi_op")
-    a = np.array([1.0, -2.5, 3.25, 0.5], dtype=np.float64)
-    b = np.array([4.0, 0.125, -6.5, 2.0], dtype=np.float64)
-    assert a.flags["C_CONTIGUOUS"] and b.flags["C_CONTIGUOUS"]
-    expected = (a + b) * (a - b)
-    result = check(a, b)
-    del a, b
-    gc.collect()
-    np.testing.assert_array_equal(result, expected)
-    result[1] = 0.0
-    assert result[1] == 0.0
+    for label, arr in (("native", native), ("fallback", fallback)):
+        assert _ndarray_owns_data(arr), f"{label} must own its data buffer"
+        assert arr.base is None, f"{label} base must be None (ordinary NumPy result)"
+
+    if not _ordinary_numpy_supports_inplace_resize(expected.shape, expected.dtype):
+        return
+
+    # Fresh legs; keep only one Python name per array so refcheck resize can succeed.
+    n_outcome, _n_args = check._run("native", (a, b))
+    assert n_outcome[0] == "returned"
+    n_only = n_outcome[1]
+    del n_outcome, _n_args
+    assert isinstance(n_only, np.ndarray)
+
+    f_outcome, _f_args = check._run("fallback", (a, b))
+    assert f_outcome[0] == "returned"
+    f_only = f_outcome[1]
+    del f_outcome, _f_args
+    assert isinstance(f_only, np.ndarray)
+
+    new_size = int(n_only.size) + 1
+    n_only.resize(new_size, refcheck=True)
+    f_only.resize(new_size, refcheck=True)
+    assert n_only.shape == (new_size,)
+    assert f_only.shape == (new_size,)
 
 
 def test_fusion_rank2_equal_shape_and_broadcast_regressions(
@@ -2617,14 +2573,13 @@ def test_fusion_rank2_equal_shape_and_broadcast_regressions(
     assert a2.flags["C_CONTIGUOUS"] and b2.flags["C_CONTIGUOUS"]
     np.testing.assert_array_equal(r2(a2, b2), (a2 + b2) * (a2 - b2))
 
-    # Length-1 broadcast (generic path): must still match and raise correctly.
+    # Length-1 broadcast (generic path): must still match.
     a1 = np.array([1.0, 2.0, 3.0], dtype=np.float64)
     b_row = np.array([[10.0, 20.0, 30.0]], dtype=np.float64)
     np.testing.assert_array_equal(mixed(a1, b_row), (a1 + b_row) * (a1 - b_row))
 
-    # F-contiguous equal-shape inputs: not standard-layout for the fast path;
-    # generic path must still match (boundary copies, but layout after to_owned
-    # is C; still exercise rank-2 equal-shape).
+    # F-order equal-shape inputs: may or may not be standard-layout after
+    # boundary to_owned(); value parity must hold either way.
     f_a = np.asfortranarray(a2)
     f_b = np.asfortranarray(b2)
     assert f_a.flags["F_CONTIGUOUS"] and not f_a.flags["C_CONTIGUOUS"]
@@ -2635,7 +2590,6 @@ def test_fusion_strided_and_broadcast_mismatch_still_exact(
     project: CertifiedProject,
 ) -> None:
     """Strided fusion inputs and broadcast errors remain NumPy-equivalent."""
-    # Strided equal-length leaves (value correctness after boundary copy).
     check = checker(
         project,
         "fuse_multi_op",
@@ -2650,7 +2604,6 @@ def test_fusion_strided_and_broadcast_mismatch_still_exact(
     assert not a.flags["C_CONTIGUOUS"]
     np.testing.assert_array_equal(check(a, b), (a + b) * (a - b))
 
-    # Broadcast mismatch still raises with NumPy's exact trailing-space message.
     bal = _require_native(project, "fuse_balanced")
     left = np.zeros(3, dtype=np.float64)
     right = np.zeros(4, dtype=np.float64)
@@ -2665,3 +2618,10 @@ def test_fusion_strided_and_broadcast_mismatch_still_exact(
     with pytest.raises(ValueError) as excinfo:
         bal(left, right, c, d)
     assert str(excinfo.value) == expected_msg
+
+    # Equal-shape C-contiguous fusion happy path (fast path candidate).
+    fuse = _require_native(project, "fuse_multi_op")
+    ca = np.array([1.0, -2.5, 3.25, 0.5], dtype=np.float64)
+    cb = np.array([4.0, 0.125, -6.5, 2.0], dtype=np.float64)
+    assert ca.flags["C_CONTIGUOUS"] and cb.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(fuse(ca, cb), (ca + cb) * (ca - cb))

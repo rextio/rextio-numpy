@@ -124,7 +124,8 @@ def test_native_records_broadened_but_ids_stable() -> None:
     assert "operand_mode" in fusion.scope.pattern or "leaves" in fusion.scope.pattern
     assert "wrapping" in fusion.constraint.lower()
     assert "standard (C)" in fusion.constraint or "standard-layout" in fusion.constraint
-    assert "zero-copy" in fusion.constraint  # documents the non-claim
+    assert "non-standard-layout" in fusion.constraint
+    assert "speed claim" in fusion.constraint
     assert fusion.verified is True
     unary = by_id["rextio-numpy/unary-module"]
     assert unary.diagnostic_code == "RXTP-NUMPY-006"

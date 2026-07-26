@@ -39,12 +39,12 @@ def _boundary(rank: int, elem: str) -> BoundaryConversion:
     array predicate before materializing. This is a deterministic native
     boundary rejection, not a static claim-time fallback.
 
-    Parameters still materialize an owned contiguous Rust copy
-    (``as_array().to_owned()``). Array results transfer ownership of that
-    owned ``ndarray`` buffer into a NumPy array via ``IntoPyArray`` (no
-    second elementwise copy on the return path). This is not a general
-    zero-copy or residency claim: Python inputs are still copied, and
-    returns only avoid re-copying an already-owned Rust buffer.
+    Parameters materialize an owned Rust copy via ``as_array().to_owned()``.
+    That is an owned buffer for the native frame; it does **not** guarantee
+    every input becomes C-contiguous (contiguous input layout may be
+    preserved; non-contiguous copy layout is unspecified). Array results use
+    ``ToPyArray::to_pyarray`` so returned NumPy arrays keep ordinary NumPy
+    ownership observables (``OWNDATA``, ``base is None``, resize behavior).
     """
     rust_elem = _RUST_ELEM[elem]
     exact_type = f"numpy::PyArray{rank}<{rust_elem}>"
@@ -61,9 +61,8 @@ def _boundary(rank: int, elem: str) -> BoundaryConversion:
         param_rust=f"numpy::PyReadonlyArray{rank}<'py, {rust_elem}>",
         param_expr=param_expr,
         return_rust=f"pyo3::Bound<'py, numpy::PyArray{rank}<{rust_elem}>>",
-        # IntoPyArray consumes the owned ArrayN and hands its buffer to NumPy
-        # (rust-numpy 0.29). Prefer UFCS so generated code needs no prelude use.
-        return_expr="numpy::IntoPyArray::into_pyarray({value}, py)",
+        # Ordinary NumPy-owned result: copy into a Python-heap buffer (UFCS).
+        return_expr="numpy::ToPyArray::to_pyarray(&{value}, py)",
     )
 
 

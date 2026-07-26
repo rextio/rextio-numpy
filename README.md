@@ -25,13 +25,15 @@ results, three-argument `numpy.where`, receiver metadata for certified ndarray
 methods, and pinned crate injection (rust-numpy `numpy =0.29.0`; ndarray via
 its re-export).
 
-**Candidate focus (0.1.3):** array **returns** transfer ownership of the owned
-Rust `ndarray` buffer into NumPy via `numpy::IntoPyArray` (no second
-elementwise copy on the return path). **Inputs still copy** at the native
-boundary (`as_array().to_owned()`). Fused elementwise chains may use a
-rank-1/rank-2 **equal-shape standard-layout contiguous** load path; broadcast
-and strided cases keep the existing generic path and exact errors. This is
-**not** a general zero-copy, residency, or speed claim. Rank-2
+**Candidate focus (0.1.3):** fused elementwise chains may use a rank-1/rank-2
+**equal-shape standard-layout** load path when every leaf already matches the
+final shape in standard (C) layout at helper entry. The generic path handles
+leaves that remain non-standard-layout at helper entry and broadcast cases,
+with the same errors and evaluation order. Boundary inputs still use
+`as_array().to_owned()` (an owned Rust copy; not a guarantee that every input
+becomes C-contiguous). Array returns continue to use
+`numpy::ToPyArray::to_pyarray` so results keep ordinary NumPy ownership
+semantics. This is **not** a published speed claim. Rank-2
 dot/matmul/`@` remain **fallback-retained** and are not performance claims.
 
 **Dependency:** requires **`rextio>=0.1.6,<0.2`**. NumPy is deliberately **not**
@@ -67,8 +69,8 @@ consumed inside generated native code.
 The annotations are nominal, so static analysis cannot tell an exact
 `numpy.ndarray` from `numpy.matrix`, `numpy.memmap`, or a custom ndarray
 subclass. Every plugin-typed native parameter therefore applies NumPy's exact
-C-level ndarray check before **copying** input data into an owned Rust
-`ndarray` (`to_owned()`). If the native route is executed with a subclass, it
+C-level ndarray check before materializing an owned Rust copy
+(`as_array().to_owned()`). If the native route is executed with a subclass, it
 deterministically raises:
 
 ```text
@@ -77,17 +79,18 @@ TypeError: rextio-numpy native boundary requires exact numpy.ndarray; ndarray su
 
 This is a runtime native-boundary rejection, not an automatic static fallback.
 Exact base-ndarray views and strided arrays remain supported as **inputs**
-(still copied at the boundary). Convert with `numpy.asarray` before the typed
-hot path when subclass behavior is irrelevant; when `matrix`,
-`__array_ufunc__`, `__array_priority__`, or other subclass/subok semantics
-matter, keep the enclosing function on Python fallback.
+(still converted via `to_owned()` at the boundary). That owned copy is for
+the native frame; it does **not** guarantee every input becomes C-contiguous
+(contiguous input layout may be preserved; non-contiguous copy layout is
+unspecified). Convert with `numpy.asarray` before the typed hot path when
+subclass behavior is irrelevant; when `matrix`, `__array_ufunc__`,
+`__array_priority__`, or other subclass/subok semantics matter, keep the
+enclosing function on Python fallback.
 
-**Returns (array results):** when a plugin-typed array is returned to Python,
-generated code uses rust-numpy `IntoPyArray` so the owned Rust buffer is
-transferred into the NumPy object without a second elementwise copy. Python
-still owns valid storage after the Rust frame returns. This is **ownership
-transfer of an already-owned buffer**, not input zero-copy and not a claim
-that arrays remain resident across the Python boundary in general.
+**Returns (array results):** plugin-typed array returns use rust-numpy
+`ToPyArray::to_pyarray` so the result is a normal NumPy-owned array
+(ordinary `OWNDATA` / `base is None` / resize observables), matching the
+fallback leg's ownership model.
 
 ### Native surface (verified)
 
@@ -166,11 +169,12 @@ that arrays remain resident across the Python boundary in general.
   claimed with `operand_mode="leaves"` under
   `rextio-numpy/elementwise-chain-fusion` so core subsumes descendant
   per-op claims. One fused helper: LTR postorder broadcast validation,
-  then either a rank-1/rank-2 **equal-shape standard-layout contiguous**
-  load path or the generic leaf-broadcast path; either path uses one
-  output allocation/data pass with AST evaluation order preserved (i64
-  wrapping at every intermediate). Broadcast/strided semantics and exact
-  errors are unchanged. Out-of-scope trees keep ordinary per-op
+  then either a rank-1/rank-2 **equal-shape standard-layout** load path
+  (when every leaf already matches the final shape in standard layout at
+  helper entry) or the generic path for non-standard-layout leaves and
+  broadcast cases; either path uses one output allocation/data pass with
+  AST evaluation order preserved (i64 wrapping at every intermediate).
+  Exact errors are unchanged. Out-of-scope trees keep ordinary per-op
   elementwise (`RXTP-NUMPY-005`).
 - **Exact unary module calls** `numpy.negative(a)`, `numpy.absolute(a)`,
   `numpy.abs(a)`, and `numpy.square(a)` on f64/f32/i64 rank-1/rank-2 arrays
@@ -320,12 +324,12 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 On this tree:
 
-- `.venv/bin/python -m pytest --collect-only -q` reports **979** collected tests total.
+- `.venv/bin/python -m pytest --collect-only -q` reports **971** collected tests total.
 - The focused collection command
   `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **162** real-Cargo certification cases.
+  reports **154** real-Cargo certification cases.
 
-Those 162 cases are **cargo-gated** and may also skip via dependency
+Those 154 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material
 test changes; do not treat these numbers as a product API.
 

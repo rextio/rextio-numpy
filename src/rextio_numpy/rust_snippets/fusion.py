@@ -7,11 +7,15 @@ Generates one helper per (tree, dtype, rank) signature:
    ValueError on the first mismatch.
 2. Prefer a contiguous equal-shape fast path when every leaf already matches
    the final shape in standard (C) layout: load via ``as_slice`` and fill one
-   output with ``from_shape_fn``. This is a safe, layout-gated shortcut only.
-3. Otherwise broadcast each leaf view directly to the final static ``Ix1`` /
-   ``Ix2`` shape (no intermediate owned ndarrays) and use the same single
-   output allocation + data pass. Broadcast/strided semantics and error
-   messages are unchanged.
+   output with ``from_shape_fn``. This is a safe, layout-gated shortcut only
+   (not a speed claim). Boundary ``to_owned()`` does not guarantee every
+   Python input becomes C-contiguous, so non-standard-layout leaves at helper
+   entry still take the generic path.
+3. Otherwise the generic path broadcasts each leaf view to the final static
+   ``Ix1`` / ``Ix2`` shape (no intermediate owned ndarrays) and uses the same
+   single output allocation + data pass. That covers leaves that remain
+   non-standard-layout at helper entry and all broadcast cases. Errors and
+   evaluation order are unchanged.
 4. Scalar temps inside the element closure preserve AST evaluation order. No
    reassociation, constant folding, or FMA. i64 uses wrapping arithmetic at
    every intermediate node. No ``Zip`` arity dependency (ndarray's

@@ -1,7 +1,8 @@
-"""Boundary return ownership: IntoPyArray transfer, input still copies.
+"""Boundary return conversion: ordinary NumPy ToPyArray materialization.
 
-Static checks that generated conversion templates and lowered/generated Rust
-use ownership transfer for array results without claiming input zero-copy.
+Static checks that every supported array BoundaryConversion and generated
+Rust use ``ToPyArray::to_pyarray`` (not ``IntoPyArray``), preserving ordinary
+NumPy result ownership semantics.
 """
 
 from __future__ import annotations
@@ -32,22 +33,22 @@ class FakeEntryPoint:
         return plugin
 
 
-_RETURN_EXPR = "numpy::IntoPyArray::into_pyarray({value}, py)"
-_LEGACY_COPY_RETURN = "numpy::ToPyArray::to_pyarray(&{value}, py)"
+_RETURN_EXPR = "numpy::ToPyArray::to_pyarray(&{value}, py)"
+_BLOCKED_OWNERSHIP_TRANSFER = "numpy::IntoPyArray::into_pyarray({value}, py)"
 
 
-def test_all_array_boundaries_use_into_pyarray_not_to_pyarray() -> None:
-    """Every supported array materialization transfers owned storage on return."""
+def test_all_array_boundaries_use_to_pyarray_not_into_pyarray() -> None:
+    """Every supported array materialization uses ordinary ToPyArray returns."""
     keys = (F64_1D, F64_2D, F32_1D, F32_2D, I64_1D, I64_2D)
     for key in keys:
         conv = plugin_type(key).conversion
         assert conv is not None
         assert conv.return_expr == _RETURN_EXPR
-        assert conv.return_expr != _LEGACY_COPY_RETURN
-        # Ownership transfer: consume value by move, not &borrow copy.
-        assert "{value}" in conv.return_expr
-        assert "&{value}" not in conv.return_expr
-        # Inputs remain an explicit owned copy after the exact-ndarray check.
+        assert conv.return_expr != _BLOCKED_OWNERSHIP_TRANSFER
+        assert "ToPyArray" in conv.return_expr
+        assert "IntoPyArray" not in conv.return_expr
+        assert "&{value}" in conv.return_expr
+        # Inputs still materialize an owned Rust copy (layout not guaranteed C).
         assert "to_owned()" in conv.param_expr
         assert "is_exact_instance_of" in conv.param_expr
 
@@ -55,8 +56,7 @@ def test_all_array_boundaries_use_into_pyarray_not_to_pyarray() -> None:
 def test_return_expr_is_str_format_safe() -> None:
     """return_expr must be a str.format template with only {value}."""
     rendered = _RETURN_EXPR.format(value="out")
-    assert rendered == "numpy::IntoPyArray::into_pyarray(out, py)"
-    # Doubled braces are not required here; ensure no accidental format holes.
+    assert rendered == "numpy::ToPyArray::to_pyarray(&out, py)"
     assert "{" not in rendered and "}" not in rendered
 
 
@@ -99,8 +99,8 @@ def _write_module(tmp_path: Path, body: str) -> Path:
     return root
 
 
-def test_generated_rust_uses_into_pyarray_for_array_return(tmp_path: Path) -> None:
-    """Codegen embeds IntoPyArray on array-returning functions."""
+def test_generated_rust_uses_to_pyarray_for_array_return(tmp_path: Path) -> None:
+    """Codegen embeds ToPyArray on array-returning functions."""
     pytest.importorskip("numpy")
     root = _write_module(
         tmp_path,
@@ -129,9 +129,8 @@ def add(a: F64Arr1, b: F64Arr1) -> F64Arr1:
         plugin_providers={"rextio-numpy": RextioNumpyPlugin()},
         plugin_types_by_key=_type_maps().by_key,
     )
-    assert "IntoPyArray::into_pyarray" in source
-    assert "ToPyArray::to_pyarray" not in source
-    # Input path still materializes owned copies.
+    assert "ToPyArray::to_pyarray" in source
+    assert "IntoPyArray::into_pyarray" not in source
     assert "to_owned()" in source
     assert "is_exact_instance_of" in source
 
