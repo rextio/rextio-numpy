@@ -1,0 +1,8 @@
+# macOS: allow unresolved Python symbols at link time; they resolve when
+# CPython loads the cdylib. Standard for PyO3 extension modules built
+# outside maturin/setuptools-rust.
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]

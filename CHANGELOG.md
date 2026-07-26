@@ -36,12 +36,31 @@ broadening.
   layout-gated correctness-preserving shortcut only — not a published speed
   claim and not an unsafe reinterpretation of F-order storage.
 
+### Experimental boundary-allocation PoC harness (research-only)
+
+- Adds an isolated harness under ``benchmarks/boundary_allocation_poc/`` that
+  compares three F64 rank-1 elementwise-add boundary strategies (owned input
+  copies + ``ToPyArray``; borrowed ``PyReadonlyArray`` views + ``ToPyArray``;
+  borrowed views + direct fill of a NumPy-owned output buffer) plus a Python
+  NumPy reference lane. The candidate deliberately never uses
+  ``IntoPyArray``.
+- Documents logical N-sized allocation counts/bytes with explicit formulas
+  and may record calibrated local wall times. Allocator internals, SIMD, and
+  zero-initialization may differ from logical accounting. **No measured
+  results are committed and no speedup claim is made.**
+- Does **not** change production ``BoundaryConversion``, claim, lower, rules,
+  or certified surface. Direct-sink ownership must keep ordinary NumPy
+  observables (exact ``ndarray``, ``OWNDATA``, ``base is None``, in-place
+  resize when supported).
+
 ### Explicit non-claims (unchanged product posture)
 
 - Rank-2 ``dot`` / matmul / ``@`` remain **NO-GO / fallback-retained** and are
   not support or performance claims for this candidate.
 - Certified surface, fail-closed lower-time ``ValueError`` guards, and the
   accepted missing-``RuntimeWarning`` divergence are unchanged from 0.1.2.
+- The boundary-allocation PoC harness is research-only and is not a product
+  performance or support claim.
 
 ## 0.1.2 — 2026-07-26
 
