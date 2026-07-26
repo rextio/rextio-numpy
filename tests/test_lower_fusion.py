@@ -71,8 +71,12 @@ def test_try_lower_emits_one_fused_helper_call() -> None:
     assert match is not None
     lowered = try_lower(fusion_site(expr), leaves_ctx("a", "b", "a", "b"))
     assert lowered is not None
-    name = rust_snippets.fusion_call_name(match.signature)
-    assert lowered.rust == f"{name}(&a, &b, &a, &b)?"
+    # Repeated names a,b,a,b → unique params + alias-specialized helper name.
+    from rextio_numpy.rust_snippets.fusion import leaf_alias_map
+
+    alias = leaf_alias_map(("a", "b", "a", "b"), n_leaves=4)
+    name = rust_snippets.fusion_call_name(match.signature, alias)
+    assert lowered.rust == f"{name}(&a, &b)?"
     text = "\n".join(lowered.helpers)
     assert f"fn {name}" in text
     # Fast path + generic path each allocate once via from_shape_fn (runtime
@@ -126,7 +130,10 @@ def test_nine_leaf_helper_uses_from_shape_fn_not_zip() -> None:
     helper = lowered.helpers[-1]
     assert "from_shape_fn" in helper
     assert "Zip::" not in helper
+    # Generic path broadcasts once per unique parameter (9 distinct names).
     assert helper.count("let v") == 9 or helper.count("broadcast(dim)") == 9
+    # Fast path still precedes broadcast-shape Vec work.
+    assert helper.index("is_standard_layout()") < helper.index("__rxtnp_broadcast_shape")
 
 
 def test_i64_wrapping_at_every_intermediate() -> None:
@@ -161,14 +168,28 @@ def test_mixed_rank_result() -> None:
     assert "Array2::from_shape_fn" in lowered.helpers[-1]
 
 
-def test_broadcast_validation_before_allocation() -> None:
+def test_equal_shape_fast_path_before_broadcast_shape_vec() -> None:
+    """Equal-shape gate + fast from_shape_fn appear before broadcast-shape Vec work."""
     expr = multi_op_expr()
     helper = try_lower(fusion_site(expr), leaves_ctx("a", "b", "a", "b")).helpers[-1]  # type: ignore[union-attr]
-    # Shape lets appear before any from_shape_fn allocation (fast or generic).
-    assert helper.index("__rxtnp_broadcast_shape") < helper.index("from_shape_fn")
-    # Generic broadcast path remains after the equal-shape layout gate.
-    assert helper.index("is_standard_layout()") < helper.index(".broadcast(dim)")
+    # Fast path is decided and can return before any __rxtnp_broadcast_shape call.
+    assert helper.index("is_standard_layout()") < helper.index("__rxtnp_broadcast_shape")
+    assert helper.index("from_shape_fn") < helper.index("__rxtnp_broadcast_shape")
+    # Generic path retains LTR broadcast validation then a second from_shape_fn.
+    assert helper.index("__rxtnp_broadcast_shape") < helper.index(".broadcast(dim)")
     assert helper.index(".broadcast(dim)") < helper.rindex("from_shape_fn")
+    assert helper.count("from_shape_fn") == 2
+
+
+def test_generic_path_retains_ltr_broadcast_validation() -> None:
+    """Non-fast fallthrough keeps postorder broadcast_shape before generic alloc."""
+    expr = multi_op_expr()
+    helper = try_lower(fusion_site(expr), leaves_ctx("a", "b", "c", "d")).helpers[-1]  # type: ignore[union-attr]
+    # After the fast gate, LTR shape lets still precede the generic from_shape_fn.
+    generic_region = helper.split("__rxtnp_broadcast_shape", 1)[1]
+    assert "from_shape_fn" in generic_region
+    assert helper.count("__rxtnp_broadcast_shape") == 3  # three binops
+    assert "operands could not be broadcast together with shapes" in helper
 
 
 def test_contiguous_equal_shape_fast_path_emitted_for_rank1_and_rank2() -> None:
@@ -179,6 +200,8 @@ def test_contiguous_equal_shape_fast_path_emitted_for_rank1_and_rank2() -> None:
     assert "is_standard_layout()" in h1
     assert "as_slice()" in h1
     assert "unsafe" not in h1
+    # Gate uses leaf shape equality (not postorder out_shape Vec).
+    assert "a0.shape() == a1.shape()" in h1
 
     expr2 = binop(
         "*",
@@ -198,6 +221,58 @@ def test_contiguous_equal_shape_fast_path_emitted_for_rank1_and_rank2() -> None:
     assert "unsafe" not in h2
     # Generic path still present for strided/broadcast fallthrough.
     assert ".broadcast(dim)" in h2
+    # Fast path precedes broadcast-shape Vec work on rank-2 too.
+    assert h2.index("from_shape_fn") < h2.index("__rxtnp_broadcast_shape")
+
+
+def test_mixed_rank_skips_equal_shape_fast_path() -> None:
+    """Mixed-rank trees keep only the generic LTR broadcast path."""
+    expr = binop(
+        "*",
+        binop("+", leaf(0, F64_1D), leaf(1, F64_2D), F64_2D),
+        leaf(2, F64_1D),
+        F64_2D,
+    )
+    lowered = try_lower(fusion_site(expr), leaves_ctx("a", "b", "c"))
+    assert lowered is not None
+    helper = lowered.helpers[-1]
+    assert "is_standard_layout()" not in helper
+    # No contiguous leaf slice loads (Vec shape locals may still call as_slice).
+    assert "a0.as_slice()" not in helper
+    assert "Some(sl" not in helper
+    assert helper.count("from_shape_fn") == 1
+    assert helper.index("__rxtnp_broadcast_shape") < helper.index("from_shape_fn")
+    assert ".broadcast(dim)" in helper
+
+
+def test_repeated_leaf_names_dedup_params_and_loads() -> None:
+    """Statically proven same names share one param and reuse element loads."""
+    expr = multi_op_expr()  # (a+b)*(a-b) with leaf indexes 0..3
+    lowered = try_lower(fusion_site(expr), leaves_ctx("left", "right", "left", "right"))
+    assert lowered is not None
+    helper = lowered.helpers[-1]
+    # Two unique parameters only.
+    assert "a0:" in helper and "a1:" in helper
+    assert "a2:" not in helper
+    assert "&left, &right)?" in lowered.rust
+    assert "&left, &right, &left, &right)" not in lowered.rust
+    # Loads for occurrences 2/3 reuse x0/x1 (both paths).
+    assert "let x0 =" in helper
+    assert "let x1 =" in helper
+    assert "let x2 = x0;" in helper
+    assert "let x3 = x1;" in helper
+    # Alias pattern is encoded in the helper name (no collision with identity).
+    assert "_al_0_1_0_1" in helper
+    # Distinct names keep four parameters and four independent loads.
+    distinct = try_lower(fusion_site(expr), leaves_ctx("a", "b", "c", "d"))
+    assert distinct is not None
+    h2 = distinct.helpers[-1]
+    assert "a3:" in h2
+    assert "_al_" not in rust_snippets.fusion_call_name(
+        try_match(expr).signature  # type: ignore[union-attr]
+    )
+    assert "let x2 = x0;" not in h2
+    assert "let x2 =" in h2
 
 
 def test_fail_closed_missing_expression() -> None:

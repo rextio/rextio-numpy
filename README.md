@@ -26,15 +26,18 @@ methods, and pinned crate injection (rust-numpy `numpy =0.29.0`; ndarray via
 its re-export).
 
 **Candidate focus (0.1.3):** fused elementwise chains may use a rank-1/rank-2
-**equal-shape standard-layout** load path when every leaf already matches the
-final shape in standard (C) layout at helper entry. The generic path handles
-leaves that remain non-standard-layout at helper entry and broadcast cases,
-with the same errors and evaluation order. Boundary inputs still use
-`as_array().to_owned()` (an owned Rust copy; not a guarantee that every input
-becomes C-contiguous). Array returns continue to use
-`numpy::ToPyArray::to_pyarray` so results keep ordinary NumPy ownership
-semantics. This is **not** a published speed claim. Rank-2
-dot/matmul/`@` remain **fallback-retained** and are not performance claims.
+**equal-shape standard-layout** load path that is decided and entered **before**
+LTR postorder broadcast-shape `Vec` work when every leaf is the same rank as
+the result, shapes are equal, and every leaf is standard (C) layout at helper
+entry. The generic path retains LTR broadcast validation and handles
+non-standard-layout leaves and broadcast cases, with the same errors and
+evaluation order. Statically proven repeated leaf names may share one helper
+parameter and reuse loads. Boundary inputs still use `as_array().to_owned()`
+(an owned Rust copy; not a guarantee that every input becomes C-contiguous).
+Array returns continue to use `numpy::ToPyArray::to_pyarray` so results keep
+ordinary NumPy ownership semantics. This is **not** a published speed claim.
+Rank-2 dot/matmul/`@` remain **fallback-retained** and are not performance
+claims.
 
 **Dependency:** requires **`rextio>=0.1.6,<0.2`**. NumPy is deliberately **not**
 a runtime dependency of this package — only the user-facing
@@ -168,14 +171,14 @@ fallback leg's ownership model.
   binops, same dtype, ranks 1–2; f64/f32 `+ - * /`, i64 `+ - *` only):
   claimed with `operand_mode="leaves"` under
   `rextio-numpy/elementwise-chain-fusion` so core subsumes descendant
-  per-op claims. One fused helper: LTR postorder broadcast validation,
-  then either a rank-1/rank-2 **equal-shape standard-layout** load path
-  (when every leaf already matches the final shape in standard layout at
-  helper entry) or the generic path for non-standard-layout leaves and
-  broadcast cases; either path uses one output allocation/data pass with
-  AST evaluation order preserved (i64 wrapping at every intermediate).
-  Exact errors are unchanged. Out-of-scope trees keep ordinary per-op
-  elementwise (`RXTP-NUMPY-005`).
+  per-op claims. One fused helper: optional rank-1/rank-2 **equal-shape
+  standard-layout** load path decided before broadcast-shape `Vec` work
+  (same-rank leaves only), else LTR postorder broadcast validation and
+  the generic path for non-standard-layout leaves and broadcast cases;
+  either path uses one output allocation/data pass with AST evaluation
+  order preserved (i64 wrapping at every intermediate). Exact errors are
+  unchanged. Out-of-scope trees keep ordinary per-op elementwise
+  (`RXTP-NUMPY-005`).
 - **Exact unary module calls** `numpy.negative(a)`, `numpy.absolute(a)`,
   `numpy.abs(a)`, and `numpy.square(a)` on f64/f32/i64 rank-1/rank-2 arrays
   (`RXTP-NUMPY-006`). No `out`, `where`, dtype override, or unary method form

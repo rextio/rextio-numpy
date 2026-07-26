@@ -2097,10 +2097,30 @@ def test_wave2_fusion_helper_allocation_evidence() -> None:
     assert "map_collect" not in helper
     assert "to_owned()" not in helper
     assert "Array::zeros" not in helper
-    # Broadcast views only on the generic path (one per leaf).
+    # Fast path is decided before any LTR broadcast-shape Vec work.
+    assert helper.index("is_standard_layout()") < helper.index("__rxtnp_broadcast_shape")
+    assert helper.index("from_shape_fn") < helper.index("__rxtnp_broadcast_shape")
+    # Broadcast views only on the generic path (one per unique parameter).
     assert helper.count(".broadcast(") == match.leaf_count
     # Scalar temps for internal non-root nodes (emitted on both paths).
     assert "let t0" in helper and "let t1" in helper
+
+    # Statically proven repeated names: fewer params/broadcasts, reused loads.
+    aliased = fusion_helper(
+        signature=match.signature,
+        dtype=match.dtype,
+        result_rank=match.result_rank,
+        leaf_ranks=match.leaf_ranks,
+        expression_ops_postorder=match.postorder_ops,
+        tree_plan=build_tree_plan(expr),
+        leaf_operands=("a", "b", "a", "b"),
+    )
+    assert "a2:" not in aliased
+    assert aliased.count(".broadcast(") == 2
+    assert "let x2 = x0;" in aliased
+    assert "let x3 = x1;" in aliased
+    assert "_al_0_1_0_1" in aliased
+    assert aliased.index("from_shape_fn") < aliased.index("__rxtnp_broadcast_shape")
 
 
 def test_wave2_fusion_max_bound_f64_compiles_and_matches(project: CertifiedProject) -> None:

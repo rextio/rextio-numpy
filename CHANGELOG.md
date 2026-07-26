@@ -11,12 +11,20 @@ broadening.
 ### Fusion contiguous equal-shape fast path
 
 - Fused elementwise chain helpers (``__rxtnp_echain_*``) may take a **rank-1
-  or rank-2 equal-shape standard-layout (C-order) fast path** that loads via
-  ``as_slice`` after shape validation when every leaf already matches the
-  final shape in standard layout at helper entry. The **generic** path
-  handles leaves that remain non-standard-layout at helper entry and all
-  broadcast cases (including length-1, zero-size, and mixed rank), with the
-  same trailing-space ``ValueError`` messages and evaluation order.
+  or rank-2 equal-shape standard-layout (C-order) fast path** that is
+  **decided and entered before** any LTR postorder ``__rxtnp_broadcast_shape``
+  ``Vec`` work when every leaf is the same rank as the result, all leaf
+  shapes are equal, and every leaf is standard layout at helper entry (loads
+  via ``as_slice``). The **generic** path retains LTR postorder broadcast
+  validation and handles leaves that remain non-standard-layout at helper
+  entry and all broadcast cases (including length-1, zero-size, and mixed
+  rank), with the same trailing-space ``ValueError`` messages, exception
+  type, error ordering, and evaluation order. Mixed-rank trees emit only the
+  generic path.
+- When lower-time leaf operand names prove repeated bindings (for example
+  ``(a + b) * (a - b)``), the helper may take one parameter per unique name
+  and reuse element loads; alias patterns are encoded in the helper name so
+  structural signatures cannot collide across different alias maps.
 - Boundary input conversion still uses ``as_array().to_owned()``: an owned
   Rust copy for the native frame. That does **not** guarantee every input
   becomes C-contiguous (contiguous input layout may be preserved;

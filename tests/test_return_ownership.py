@@ -178,3 +178,6 @@ def test_fusion_helper_retains_generic_broadcast_after_fast_gate() -> None:
     assert ".broadcast(dim)" in helper
     assert "operands could not be broadcast together with shapes" in helper
     assert "unsafe" not in helper
+    # Fast path precedes generic LTR broadcast-shape Vec work.
+    assert helper.index("is_standard_layout()") < helper.index("__rxtnp_broadcast_shape")
+    assert helper.index("from_shape_fn") < helper.index("__rxtnp_broadcast_shape")
