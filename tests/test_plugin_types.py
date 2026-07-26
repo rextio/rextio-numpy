@@ -87,3 +87,5 @@ def test_all_rank_dtype_conversions() -> None:
         )
         assert "ndarray subclasses are unsupported" in pt.conversion.param_expr
         assert pt.conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+        assert "to_owned()" in pt.conversion.param_expr
+        assert "IntoPyArray" not in pt.conversion.return_expr

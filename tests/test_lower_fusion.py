@@ -75,8 +75,11 @@ def test_try_lower_emits_one_fused_helper_call() -> None:
     assert lowered.rust == f"{name}(&a, &b, &a, &b)?"
     text = "\n".join(lowered.helpers)
     assert f"fn {name}" in text
-    # One data-pass allocation marker (no Zip / map_collect).
-    assert text.count("from_shape_fn") == 1
+    # Fast path + generic path each allocate once via from_shape_fn (runtime
+    # takes exactly one branch; no Zip / map_collect).
+    assert text.count("from_shape_fn") == 2
+    assert "is_standard_layout()" in text
+    assert "as_slice()" in text
     assert "Zip::" not in text
     assert "map_collect" not in text
     # No ordinary per-op elementwise helper names.
@@ -100,11 +103,12 @@ def test_helper_has_zero_intermediate_ndarray_allocations() -> None:
     # Owned intermediate arrays would look like these patterns.
     assert "to_owned()" not in helper
     assert "Array::zeros" not in helper
-    assert helper.count("from_shape_fn") == 1
+    assert helper.count("from_shape_fn") == 2
     assert "Zip::" not in helper
     # Scalar temps for internal nodes (2 of 3 binops bind temps; root returns).
-    assert "let t0" in helper
-    assert "let t1" in helper
+    # Both paths emit the same AST-order temps.
+    assert helper.count("let t0") >= 1
+    assert helper.count("let t1") >= 1
 
 
 def test_nine_leaf_helper_uses_from_shape_fn_not_zip() -> None:
@@ -160,9 +164,40 @@ def test_mixed_rank_result() -> None:
 def test_broadcast_validation_before_allocation() -> None:
     expr = multi_op_expr()
     helper = try_lower(fusion_site(expr), leaves_ctx("a", "b", "a", "b")).helpers[-1]  # type: ignore[union-attr]
-    # Shape lets appear before the single from_shape_fn allocation.
+    # Shape lets appear before any from_shape_fn allocation (fast or generic).
     assert helper.index("__rxtnp_broadcast_shape") < helper.index("from_shape_fn")
-    assert helper.index("broadcast(dim)") < helper.index("from_shape_fn")
+    # Generic broadcast path remains after the equal-shape layout gate.
+    assert helper.index("is_standard_layout()") < helper.index(".broadcast(dim)")
+    assert helper.index(".broadcast(dim)") < helper.rindex("from_shape_fn")
+
+
+def test_contiguous_equal_shape_fast_path_emitted_for_rank1_and_rank2() -> None:
+    """Both ranks emit a standard-layout equal-shape gate without unsafe."""
+    r1 = try_lower(fusion_site(multi_op_expr()), leaves_ctx("a", "b", "a", "b"))
+    assert r1 is not None
+    h1 = r1.helpers[-1]
+    assert "is_standard_layout()" in h1
+    assert "as_slice()" in h1
+    assert "unsafe" not in h1
+
+    expr2 = binop(
+        "*",
+        binop("+", leaf(0, F64_2D), leaf(1, F64_2D), F64_2D),
+        binop("-", leaf(2, F64_2D), leaf(3, F64_2D), F64_2D),
+        F64_2D,
+    )
+    r2 = try_lower(fusion_site(expr2), leaves_ctx("a", "b", "a", "b"))
+    assert r2 is not None
+    h2 = r2.helpers[-1]
+    assert "is_standard_layout()" in h2
+    assert "ncols" in h2
+    assert "sl0[i * ncols + j]" in h2
+    # Slice bindings must not shadow LTR shape locals (s0, s1, ...).
+    assert "Some(sl0)" in h2
+    assert "Some(s0)" not in h2.split("is_standard_layout()")[-1]
+    assert "unsafe" not in h2
+    # Generic path still present for strided/broadcast fallthrough.
+    assert ".broadcast(dim)" in h2
 
 
 def test_fail_closed_missing_expression() -> None:

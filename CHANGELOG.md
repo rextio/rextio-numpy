@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased — 0.1.3 candidate
+
+Unreleased candidate work toward package version **0.1.3**. Not tagged, not
+uploaded to PyPI, and not a publication claim. Latest published cut remains
+**0.1.2** (2026-07-26). Requires the same **`rextio>=0.1.6,<0.2`** / plugin
+API **1.5** surface as 0.1.2; no Core change and no certified-surface
+broadening.
+
+### Fusion contiguous equal-shape fast path
+
+- Fused elementwise chain helpers (``__rxtnp_echain_*``) may take a **rank-1
+  or rank-2 equal-shape standard-layout (C-order) fast path** that loads via
+  ``as_slice`` after shape validation when every leaf already matches the
+  final shape in standard layout at helper entry. The **generic** path
+  handles leaves that remain non-standard-layout at helper entry and all
+  broadcast cases (including length-1, zero-size, and mixed rank), with the
+  same trailing-space ``ValueError`` messages and evaluation order.
+- Boundary input conversion still uses ``as_array().to_owned()``: an owned
+  Rust copy for the native frame. That does **not** guarantee every input
+  becomes C-contiguous (contiguous input layout may be preserved;
+  non-contiguous copy layout is unspecified). Do not claim that every strided
+  Python input stays on the generic path, or that every ``to_owned`` copy is
+  C-contiguous.
+- Array results continue to use ``numpy::ToPyArray::to_pyarray`` so returned
+  NumPy arrays keep ordinary NumPy ownership observables. The fast path is a
+  layout-gated correctness-preserving shortcut only — not a published speed
+  claim and not an unsafe reinterpretation of F-order storage.
+
+### Explicit non-claims (unchanged product posture)
+
+- Rank-2 ``dot`` / matmul / ``@`` remain **NO-GO / fallback-retained** and are
+  not support or performance claims for this candidate.
+- Certified surface, fail-closed lower-time ``ValueError`` guards, and the
+  accepted missing-``RuntimeWarning`` divergence are unchanged from 0.1.2.
+
 ## 0.1.2 — 2026-07-26
 
 Public Alpha release on PyPI. The package requires
