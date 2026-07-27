@@ -1,5 +1,90 @@
 # Changelog
 
+## 0.1.3 — 2026-07-27
+
+Released cut for package version **0.1.3**, tagged and uploaded to PyPI on
+2026-07-27. Published PyPI **`rextio-numpy` 0.1.2** (2026-07-26) was the prior
+uploaded release. Requires the same **`rextio>=0.1.6,<0.2`** / plugin API
+**1.5** surface as 0.1.2; no Core change and no certified-surface broadening.
+
+### F64 rank-1 borrowed/direct-output boundary
+
+- Changes only ``rextio-numpy/f64-1d`` to retain exact base-ndarray inputs as
+  read-only ``PyReadonlyArray1<f64>`` wrappers through the generated native
+  frame. Arbitrary positive/negative strides, read-only inputs, same-object
+  aliases, and overlapping views remain supported without an
+  ``as_array().to_owned()`` boundary materialization.
+- F64 rank-1 producers allocate one fresh zero-initialized NumPy-owned
+  ``PyArray1<f64>`` sink, obtain a scoped write borrow, completely fill its
+  contiguous slice, freeze it to a read-only native wrapper, then drop that
+  borrow before returning the Python owner. A fill error returns no array.
+- Keeps exact-base-``numpy.ndarray`` rejection for subclasses in every
+  argument position. Returned arrays retain ordinary NumPy ownership
+  observables (``OWNDATA``, ``base is None``, supported in-place resize).
+- Other dtype/rank combinations retain the historical owned
+  ``ndarray::ArrayN`` input plus ``ToPyArray`` return path. Resident boolean
+  intermediates remain plugin-owned Rust arrays. No lane uses
+  ``IntoPyArray``.
+- Adds generated-source, real-Cargo, alias/stride/subclass, failure-path, and
+  ownership regressions. This is an allocation-structure change only; no
+  speedup or general zero-copy claim is made.
+
+### Fusion contiguous equal-shape fast path
+
+- Fused elementwise chain helpers (``__rxtnp_echain_*``) may take a **rank-1
+  or rank-2 equal-shape standard-layout (C-order) fast path** that is
+  **decided and entered before** any LTR postorder ``__rxtnp_broadcast_shape``
+  ``Vec`` work when every leaf is the same rank as the result, all leaf
+  shapes are equal, and every leaf is standard layout at helper entry (loads
+  via ``as_slice``). The **generic** path retains LTR postorder broadcast
+  validation and handles leaves that remain non-standard-layout at helper
+  entry and all broadcast cases (including length-1, zero-size, and mixed
+  rank), with the same trailing-space ``ValueError`` messages, exception
+  type, error ordering, and evaluation order. Mixed-rank trees emit only the
+  generic path.
+- When lower-time leaf operand names prove repeated bindings (for example
+  ``(a + b) * (a - b)``), the helper may take one parameter per unique name
+  and reuse element loads; alias patterns are encoded in the helper name so
+  structural signatures cannot collide across different alias maps.
+- The F64 rank-1 representation follows the borrowed/direct-output boundary
+  above; every other fusion dtype/rank keeps the historical owned-copy /
+  ``ToPyArray`` path. The fast path is a layout-gated
+  correctness-preserving shortcut only — not a published speed claim and not
+  an unsafe reinterpretation of F-order storage.
+
+### Experimental boundary-allocation PoC harness (research-only)
+
+- Adds an isolated harness under ``benchmarks/boundary_allocation_poc/`` that
+  compares three F64 rank-1 elementwise-add boundary strategies (owned input
+  copies + ``ToPyArray``; borrowed ``PyReadonlyArray`` views + ``ToPyArray``;
+  borrowed views + direct fill of a NumPy-owned output buffer) plus a Python
+  NumPy reference lane. The candidate deliberately never uses
+  ``IntoPyArray``.
+- All three Rust strategies execute one shared ``fill_add_views`` arithmetic
+  kernel with identical element order after only their required boundary and
+  output allocation steps; output buffers are zero-initialized before fill on
+  every Rust path. This isolates allocation policy from kernel implementation.
+  Timings remain fixed-order unpaired local diagnostics only.
+- Documents logical N-sized allocation counts/bytes with explicit formulas
+  and may record calibrated local wall times. Allocator internals and
+  zero-initialization may differ from logical accounting. **No measured
+  results are committed and no speedup claim is made.**
+- The harness itself remains isolated from product claim/lower/rule code.
+  ``owned_topy`` now serves as the historical owned-boundary baseline; the
+  product's F64 rank-1 lane separately adopts the borrowed/direct-output
+  representation above. Direct-sink ownership must keep ordinary NumPy
+  observables (exact ``ndarray``, ``OWNDATA``, ``base is None``, in-place
+  resize when supported).
+
+### Explicit non-claims (unchanged product posture)
+
+- Rank-2 ``dot`` / matmul / ``@`` remain **NO-GO / fallback-retained** and are
+  not support or performance claims for this release.
+- Certified surface, fail-closed lower-time ``ValueError`` guards, and the
+  accepted missing-``RuntimeWarning`` divergence are unchanged from 0.1.2.
+- The boundary-allocation PoC harness is research-only and is not a product
+  performance or support claim.
+
 ## 0.1.2 — 2026-07-26
 
 Public Alpha release on PyPI. The package requires

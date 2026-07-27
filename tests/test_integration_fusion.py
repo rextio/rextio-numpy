@@ -145,8 +145,14 @@ def multi_op_chain(a: F64Arr1, b: F64Arr1) -> F64Arr1:
         "__rxtnp_mul11_aa_f64(",
     ):
         assert banned not in source, banned
-    # Leaf order LTR: a, b, a, b
-    assert "&a, &b, &a, &b" in source.replace(" ", "") or ("&a,&b,&a,&b" in source.replace(" ", ""))
+    # Repeated names a,b,a,b: unique params + alias-specialized helper.
+    compact = source.replace(" ", "")
+    assert "&a,&b)" in compact or "(&a,&b)" in compact
+    assert "&a,&b,&a,&b" not in compact
+    assert "_al_0_1_0_1" in source
+    # Fast path gate precedes LTR broadcast-shape Vec work.
+    echain = source[source.index("fn __rxtnp_echain_") :]
+    assert echain.index("is_standard_layout()") < echain.index("__rxtnp_broadcast_shape")
 
 
 def test_single_binop_not_fused(tmp_path: Path) -> None:

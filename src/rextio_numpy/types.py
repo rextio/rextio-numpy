@@ -19,9 +19,12 @@ no validation. Its value is static: the Rextio analyzer resolves a parameter
 or return annotated ``F64Arr1`` to the plugin type ``rextio-numpy/f64-1d``,
 which makes the function a native candidate whose array arguments cross the
 boundary as read-only float64 1-D arrays. Non-contiguous (strided) views are
-accepted — the conversion materializes an owned contiguous copy at the
-boundary (certified; spec section 4). A wrong dtype or rank raises the PyO3
-conversion error in native mode.
+accepted and remain borrowed read-only views through the native frame; no
+``to_owned()`` input materialization is performed for this lane. F64 rank-1
+array producers completely fill a fresh NumPy-owned output sink and release
+the native borrow before return, preserving ordinary NumPy ownership
+semantics without ``ToPyArray`` or ``IntoPyArray``. A wrong dtype or rank
+raises the PyO3 conversion error in native mode.
 """
 
 F64Arr2 = numpy.ndarray

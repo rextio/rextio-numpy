@@ -61,21 +61,21 @@ def test_type_vocabulary_surface_via_plugin_still_wave0() -> None:
         (),
     ]
 
-    # Wave-0 F64 rank-1 compatibility surface remains first and unchanged.
+    # F64 rank-1 remains first but now keeps Python-owned read-only backing.
     f64_r1 = types[0]
     assert f64_r1.key == F64_1D
     assert f64_r1.annotations == ("rextio_numpy.types.F64Arr1",)
-    assert f64_r1.rust_type == "numpy::ndarray::Array1<f64>"
+    assert f64_r1.rust_type == "numpy::PyReadonlyArray1<'py, f64>"
     conv = f64_r1.conversion
     assert conv.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
     assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conv.param_expr
     assert "requires exact numpy.ndarray" in conv.param_expr
-    assert conv.param_expr.endswith("{param}.as_array().to_owned() }}")
+    assert conv.param_expr.endswith("{param} }}")
     rendered = conv.param_expr.format(param="values")
     assert rendered.startswith("{ if !values.is_exact_instance_of")
-    assert rendered.endswith("values.as_array().to_owned() }")
+    assert rendered.endswith("values }")
     assert conv.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
-    assert conv.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+    assert conv.return_expr == "__rxtnp_release_f64_1d({value})?"
 
 
 def test_feature_owned_registry_is_complete() -> None:

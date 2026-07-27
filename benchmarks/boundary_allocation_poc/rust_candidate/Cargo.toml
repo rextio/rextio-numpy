@@ -1,0 +1,19 @@
+[package]
+name = "boundary_allocation_poc"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Research-only F64 rank-1 NumPy boundary-allocation PoC (not a product rule)."
+
+[lib]
+name = "boundary_allocation_poc"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Exact pins matching the product plugin's rust-numpy / pyo3 line.
+numpy = "=0.29.0"
+pyo3 = { version = "=0.29.0", features = ["extension-module"] }
+
+[profile.release]
+codegen-units = 16
+lto = false

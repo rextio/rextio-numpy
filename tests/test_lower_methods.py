@@ -79,7 +79,7 @@ def test_lower_method_whole_i64_extrema(
 def test_lower_method_axis_uses_receiver_not_positional_operand() -> None:
     keywords = (KeywordArg(name="axis", arg_type="int", literal=ClaimLiteral(is_literal=True, value=-1)),)
     lowered = lower(method_site("mean", F64_2D, keywords=keywords), ctx("__rextio_recv_0"))
-    assert lowered.rust == "__rxtnp_mean2_f64_axis1(&__rextio_recv_0)?"
+    assert lowered.rust == "__rxtnp_mean2_f64_axis1(py, &__rextio_recv_0)?"
 
 
 def test_lower_forged_method_dot_rhs_mismatch_fails_closed() -> None:

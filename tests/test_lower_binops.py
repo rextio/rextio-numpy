@@ -54,9 +54,10 @@ def ctx(*operands: str) -> LoweringContext:
 def test_try_lower_array_array_f64_rank1(op: str, name: str, symbol: str) -> None:
     lowered = try_lower(site(op, (K, K)), ctx("a", "b"))
     assert lowered is not None
-    assert lowered.rust == f"__rxtnp_{name}1_aa(&a, &b)?"
-    assert f"Ok(a {symbol} b)" in lowered.helpers[0]
-    assert len(lowered.helpers) == 1
+    assert lowered.rust == f"__rxtnp_{name}1_aa(py, &a, &b)?"
+    assert f"out[i] = x {symbol} y;" in lowered.helpers[-1]
+    assert len(lowered.helpers) == 2
+    assert "PyArray1::<f64>::zeros" in lowered.helpers[0]
 
 
 @pytest.mark.parametrize(
@@ -68,8 +69,8 @@ def test_try_lower_array_scalar_and_scalar_array_f64(op: str, name: str) -> None
     sa_lowered = try_lower(site(op, ("float", K)), ctx("s", "a"))
     assert as_lowered is not None
     assert sa_lowered is not None
-    assert as_lowered.rust == f"__rxtnp_{name}1_as(&a, s)?"
-    assert sa_lowered.rust == f"__rxtnp_{name}1_sa(s, &a)?"
+    assert as_lowered.rust == f"__rxtnp_{name}1_as(py, &a, s)?"
+    assert sa_lowered.rust == f"__rxtnp_{name}1_sa(py, s, &a)?"
 
 
 def test_try_lower_broadcast_mixed_rank_includes_shape_helpers() -> None:
@@ -88,7 +89,8 @@ def test_try_lower_i64_wrapping_and_true_div() -> None:
     div = try_lower(site("/", (I64_1D, I64_1D)), ctx("a", "b"))
     assert div is not None
     assert "as f64" in div.helpers[-1]
-    assert "Array1<f64>" in div.helpers[-1]
+    assert "PyReadonlyArray1<'py, f64>" in div.helpers[-1]
+    assert div.rust == "__rxtnp_div11_aa_i64(py, &a, &b)?"
 
 
 def test_try_lower_i64_scalar_order() -> None:

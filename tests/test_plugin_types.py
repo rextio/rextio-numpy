@@ -52,18 +52,27 @@ def test_plugin_types_order_and_keys() -> None:
     assert len(keys) == len(set(keys))
 
 
-def test_f64_1d_matches_wave0_boundary() -> None:
+def test_f64_1d_uses_readonly_python_backing_and_direct_output() -> None:
     pt = plugin_type(F64_1D)
     assert isinstance(pt, PluginType)
     assert pt.annotations == ("rextio_numpy.types.F64Arr1",)
-    assert pt.rust_type == "numpy::ndarray::Array1<f64>"
+    assert pt.rust_type == "numpy::PyReadonlyArray1<'py, f64>"
     conv = pt.conversion
     assert isinstance(conv, BoundaryConversion)
     assert conv.param_rust == "numpy::PyReadonlyArray1<'py, f64>"
     assert "is_exact_instance_of::<numpy::PyArray1<f64>>" in conv.param_expr
     assert "requires exact numpy.ndarray" in conv.param_expr
     assert conv.return_rust == "pyo3::Bound<'py, numpy::PyArray1<f64>>"
-    assert conv.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+    assert conv.return_expr == "__rxtnp_release_f64_1d({value})?"
+    assert "to_owned()" not in conv.param_expr
+    assert conv.param_expr.format(param="values").endswith("values }")
+    support = "\n".join(pt.helpers)
+    assert "PyArray1::<f64>::zeros(py, len, false)" in support
+    assert "try_readwrite" in support
+    assert "try_into_readonly" in support
+    assert "drop(value);" in support
+    assert "IntoPyArray" not in support
+    assert "ToPyArray" not in support
 
 
 def test_all_rank_dtype_conversions() -> None:
@@ -77,7 +86,12 @@ def test_all_rank_dtype_conversions() -> None:
     }
     for key, (rank, elem, ann) in expected.items():
         pt = plugin_type(key)
-        assert pt.rust_type == f"numpy::ndarray::Array{rank}<{elem}>"
+        expected_rust = (
+            "numpy::PyReadonlyArray1<'py, f64>"
+            if key == F64_1D
+            else f"numpy::ndarray::Array{rank}<{elem}>"
+        )
+        assert pt.rust_type == expected_rust
         assert pt.annotations == (f"rextio_numpy.types.{ann}",)
         assert pt.conversion.param_rust == f"numpy::PyReadonlyArray{rank}<'py, {elem}>"
         assert pt.conversion.return_rust == (f"pyo3::Bound<'py, numpy::PyArray{rank}<{elem}>>")
@@ -86,4 +100,13 @@ def test_all_rank_dtype_conversions() -> None:
             in pt.conversion.param_expr
         )
         assert "ndarray subclasses are unsupported" in pt.conversion.param_expr
-        assert pt.conversion.return_expr == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+        if key == F64_1D:
+            assert pt.conversion.return_expr == "__rxtnp_release_f64_1d({value})?"
+            assert "to_owned()" not in pt.conversion.param_expr
+        else:
+            assert (
+                pt.conversion.return_expr
+                == "numpy::ToPyArray::to_pyarray(&{value}, py)"
+            )
+            assert "to_owned()" in pt.conversion.param_expr
+        assert "IntoPyArray" not in pt.conversion.return_expr

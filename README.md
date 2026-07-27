@@ -8,10 +8,11 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: 0.1.2 public Alpha
+## Status: 0.1.3 public Alpha
 
-`rextio-numpy` **0.1.2** was released on **2026-07-26**. The prior published
-cut was **`rextio-numpy` 0.1.1** (2026-07-14).
+`rextio-numpy` **0.1.3** was released on **2026-07-27**. The prior published
+cut was **`rextio-numpy` 0.1.2** (2026-07-26); earlier cuts include **0.1.1**
+(2026-07-14) and **0.1.0** (2026-07-12).
 
 Implements **plugin API 1.5** end to end: the annotation vocabulary, the
 deterministic `claim` pass (including keyword/literal axis metadata and
@@ -21,6 +22,39 @@ the `ndarray` crate, multi-op elementwise chain fusion via
 results, three-argument `numpy.where`, receiver metadata for certified ndarray
 methods, and pinned crate injection (rust-numpy `numpy =0.29.0`; ndarray via
 its re-export).
+
+**Focus (0.1.3):** fused elementwise chains may use a rank-1/rank-2
+**equal-shape standard-layout** load path that is decided and entered **before**
+LTR postorder broadcast-shape `Vec` work when every leaf is the same rank as
+the result, shapes are equal, and every leaf is standard (C) layout at helper
+entry. The generic path retains LTR broadcast validation and handles
+non-standard-layout leaves and broadcast cases, with the same errors and
+evaluation order. Statically proven repeated leaf names may share one helper
+parameter and reuse loads.
+
+The `F64Arr1` / `rextio-numpy/f64-1d` lane now keeps exact base-ndarray inputs
+as read-only `PyReadonlyArray1<f64>` borrows instead of materializing owned
+Rust copies. Rank-1 float64 array results are filled completely in a fresh,
+zero-initialized NumPy-owned `PyArray1<f64>` sink; the native write/read borrow
+is released before that owner is returned. Every other dtype/rank retains the
+historical `as_array().to_owned()` input and
+`numpy::ToPyArray::to_pyarray` output path. No lane uses `IntoPyArray`.
+This is an allocation-structure change, **not** a published speed claim.
+Rank-2 dot/matmul/`@` remain **fallback-retained** and are not performance
+claims.
+
+**Experimental research harness (non-product):**
+`benchmarks/boundary_allocation_poc/` is an isolated F64 rank-1
+boundary-allocation PoC that compares owned-copy+`ToPyArray`,
+borrowed-view+`ToPyArray`, and direct NumPy-owned sink fill strategies for
+elementwise add. The three Rust strategies share one deterministic arithmetic
+fill kernel and element order after their distinct boundary/output allocation
+steps; `owned_topy` is the historical owned-boundary baseline, while the
+current product's `F64_1D` representation follows the borrowed/direct-output
+shape. The harness remains isolated research tooling, forbids `IntoPyArray`,
+records logical allocation formulas plus local wall times only, and **must
+not** be cited as a published speedup or support claim. See that directory’s
+README for build/run instructions.
 
 **Dependency:** requires **`rextio>=0.1.6,<0.2`**. NumPy is deliberately **not**
 a runtime dependency of this package — only the user-facing
@@ -55,18 +89,30 @@ consumed inside generated native code.
 The annotations are nominal, so static analysis cannot tell an exact
 `numpy.ndarray` from `numpy.matrix`, `numpy.memmap`, or a custom ndarray
 subclass. Every plugin-typed native parameter therefore applies NumPy's exact
-C-level ndarray check before copying data. If the native route is executed
-with a subclass, it deterministically raises:
+C-level ndarray check before entering its native representation. If the native
+route is executed with a subclass, it deterministically raises:
 
 ```text
 TypeError: rextio-numpy native boundary requires exact numpy.ndarray; ndarray subclasses are unsupported
 ```
 
 This is a runtime native-boundary rejection, not an automatic static fallback.
-Exact base-ndarray views and strided arrays remain supported. Convert with
-`numpy.asarray` before the typed hot path when subclass behavior is irrelevant;
-when `matrix`, `__array_ufunc__`, `__array_priority__`, or other subclass/subok
-semantics matter, keep the enclosing function on Python fallback.
+Exact base-ndarray views and positive/negative-stride arrays remain supported
+as **inputs**. `F64Arr1` preserves a read-only borrow of that arbitrary-stride
+view for the native frame. Every other dtype/rank still materializes
+`as_array().to_owned()`; that copy does **not** guarantee C-contiguous layout
+(contiguous input layout may be preserved; non-contiguous copy layout is
+unspecified). Convert with `numpy.asarray` before the typed hot path when
+subclass behavior is irrelevant; when `matrix`, `__array_ufunc__`,
+`__array_priority__`, or other subclass/subok semantics matter, keep the
+enclosing function on Python fallback.
+
+**Returns (array results):** `F64Arr1` producers completely fill a fresh
+NumPy-owned sink and release all native borrows before returning it. Other
+plugin-typed arrays use rust-numpy `ToPyArray::to_pyarray`. Both paths return a
+normal NumPy-owned array with ordinary `OWNDATA` / `base is None` / resize
+observables, matching the fallback leg's ownership model. `IntoPyArray` is
+never used.
 
 ### Native surface (verified)
 
@@ -109,7 +155,7 @@ semantics matter, keep the enclosing function on Python fallback.
   summation; the plugin API has no enforceable runtime length gate).
   **2-D** operands and **`@` / matmul** stay unclaimed (`RXTP-NUMPY-002`).
   Rank-2 matmul research retained product decision **NO-GO /
-  fallback-retained** for this cut.
+  fallback-retained** for this cut — **not** a support or speed claim.
 - **Whole-array reductions** (module-call form, **no** keywords):
   - `numpy.sum` on **float64 and int64**, ranks **1–2**
   - `numpy.mean` on **float64**, ranks **1–2**
@@ -144,10 +190,14 @@ semantics matter, keep the enclosing function on Python fallback.
   binops, same dtype, ranks 1–2; f64/f32 `+ - * /`, i64 `+ - *` only):
   claimed with `operand_mode="leaves"` under
   `rextio-numpy/elementwise-chain-fusion` so core subsumes descendant
-  per-op claims. One fused helper: LTR postorder broadcast validation,
-  leaf views only, one output allocation/data pass, AST evaluation order
-  preserved (i64 wrapping at every intermediate). Out-of-scope trees keep
-  ordinary per-op elementwise (`RXTP-NUMPY-005`).
+  per-op claims. One fused helper: optional rank-1/rank-2 **equal-shape
+  standard-layout** load path decided before broadcast-shape `Vec` work
+  (same-rank leaves only), else LTR postorder broadcast validation and
+  the generic path for non-standard-layout leaves and broadcast cases;
+  either path uses one output allocation/data pass with AST evaluation
+  order preserved (i64 wrapping at every intermediate). Exact errors are
+  unchanged. Out-of-scope trees keep ordinary per-op elementwise
+  (`RXTP-NUMPY-005`).
 - **Exact unary module calls** `numpy.negative(a)`, `numpy.absolute(a)`,
   `numpy.abs(a)`, and `numpy.square(a)` on f64/f32/i64 rank-1/rank-2 arrays
   (`RXTP-NUMPY-006`). No `out`, `where`, dtype override, or unary method form
@@ -261,12 +311,12 @@ def dot(a: F64Arr1, b: F64Arr1) -> float:
 ```
 
 ```bash
-pip install rextio-numpy   # 0.1.2 requires rextio >= 0.1.6
+pip install rextio-numpy==0.1.3   # requires rextio >= 0.1.6
 rextio capabilities --format json   # numpy rules appear under "rules"
 rextio build .                      # lowered kernels compile via cargo
 ```
 
-> **Note:** The 0.1.2 surface requires a core that provides plugin API 1.5
+> **Note:** The 0.1.3 surface requires a core that provides plugin API 1.5
 > (`rextio>=0.1.6`). To work against the surface from a source checkout, see
 > Development below.
 
@@ -295,12 +345,13 @@ python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 
 On this tree:
 
-- `.venv/bin/python -m pytest --collect-only -q` reports **969** collected tests total.
+- `.venv/bin/python -m pytest --collect-only -q` reports **1004** collected tests total.
 - The focused collection command
-  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py --collect-only -q`
-  reports **151** real-Cargo certification cases.
+  `.venv/bin/python -m pytest tests/test_certification_real_cargo.py tests/test_f64_1d_output_helper_real_cargo.py --collect-only -q`
+  reports **158** required real-Cargo cases (157 certification cases plus the
+  output-helper failure/borrow-release case).
 
-Those 151 cases are **cargo-gated** and may also skip via dependency
+Those 158 cases are **cargo-gated** and may also skip via dependency
 `importorskip` conditions (e.g. NumPy, Hypothesis). Re-collect after material
 test changes; do not treat these numbers as a product API.
 

@@ -164,7 +164,7 @@ def method_whole_i64_min(a: I64Arr2) -> int:
         ),
     )
     lowered = plugin_obj.lower(lower_site, ctx)
-    assert lowered.rust == "__rxtnp_sum2_f64_axis1(&a)?"
+    assert lowered.rust == "__rxtnp_sum2_f64_axis1(py, &a)?"
     assert "Axis(1)" in "\n".join(lowered.helpers)
     assert "__rxtnp_numpy_pairwise_sum_f64" in "\n".join(lowered.helpers)
 

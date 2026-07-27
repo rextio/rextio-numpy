@@ -39,8 +39,9 @@ def ctx() -> LoweringContext:
 )
 def test_lower_float_unary(target: str, helper: str, fragment: str) -> None:
     lowered = lower(site(target, F64_1D), ctx())
-    assert lowered.rust == f"{helper}(&values)?"
-    assert fragment in lowered.helpers[0]
+    assert lowered.rust == f"{helper}(py, &values)?"
+    assert fragment in lowered.helpers[-1]
+    assert "PyArray1::<f64>::zeros" in lowered.helpers[0]
 
 
 @pytest.mark.parametrize("target", ["numpy.negative", "numpy.absolute", "numpy.square"])

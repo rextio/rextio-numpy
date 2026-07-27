@@ -10,3 +10,9 @@ matmul_wave2/results/
 matmul_wave2/**/target/
 matmul-wave2-report-*.json
 matmul-wave2-report-*.md
+
+# Boundary-allocation PoC research harness (results never committed).
+boundary_allocation_poc/results/
+boundary_allocation_poc/**/target/
+boundary-allocation-poc-*.json
+boundary-allocation-poc-*.md

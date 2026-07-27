@@ -941,9 +941,8 @@ def test_signature_only_plugin_function_round_trips(project: CertifiedProject) -
 
 
 def test_alias_returning_function_is_not_natively_served(project: CertifiedProject) -> None:
-    # Council T1 (round 3): `return a` returns the caller's own object on the
-    # fallback but a fresh copy natively — core rejects it to the fallback,
-    # and the kit must refuse to certify it (both legs would run Python).
+    # `return a` could otherwise let a borrowed input escape the F64_1D return
+    # converter. Core rejects it to fallback before codegen.
     with pytest.raises(CertificationError, match="not natively served"):
         checker(project, "identity", equals=array_equals)
 
@@ -1050,6 +1049,78 @@ def test_non_contiguous_arguments(project: CertifiedProject) -> None:
     other = np.array([10.0, 20.0, 30.0])
     result = add(strided, other)
     np.testing.assert_array_equal(result, strided + other)
+
+
+def test_f64_1d_borrowed_alias_overlap_and_stride_matrix(
+    project: CertifiedProject,
+) -> None:
+    """Borrowed reads accept readonly, aliased, overlapping, and signed strides."""
+    add = checker(
+        project,
+        "add",
+        equals=array_equals,
+        args_equals=array_equals,
+        copy_args=lambda args: args,
+    )
+    base = np.arange(12, dtype=np.float64)
+
+    readonly = base[1:7]
+    readonly.flags.writeable = False
+    other = np.linspace(0.5, 3.0, readonly.size, dtype=np.float64)
+    np.testing.assert_array_equal(add(readonly, other), readonly + other)
+    assert not readonly.flags.writeable
+
+    same = np.array([1.0, -2.0, 4.0], dtype=np.float64)
+    np.testing.assert_array_equal(add(same, same), same + same)
+
+    left = base[1:8]
+    right = base[2:9]
+    assert np.shares_memory(left, right)
+    np.testing.assert_array_equal(add(left, right), left + right)
+
+    positive = base[::2]
+    negative = base[::-2]
+    assert not positive.flags["C_CONTIGUOUS"]
+    assert negative.strides[0] < 0
+    np.testing.assert_array_equal(add(positive, negative), positive + negative)
+
+
+def test_f64_1d_boundary_rejects_subclass_dtype_and_rank_in_both_positions(
+    project: CertifiedProject,
+) -> None:
+    """Boundary violations fail before a borrowed helper can observe the value."""
+
+    class SubArray(np.ndarray):
+        pass
+
+    check = checker(
+        project,
+        "add",
+        equals=array_equals,
+        args_equals=array_equals,
+        copy_args=lambda args: args,
+    )
+    base = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    subclass = base.view(SubArray)
+    exact_message = (
+        "rextio-numpy native boundary requires exact numpy.ndarray; "
+        "ndarray subclasses are unsupported"
+    )
+    for args in ((subclass, base), (base, subclass)):
+        outcome, _ = check._run("native", args)
+        assert outcome[0] == "raised"
+        assert isinstance(outcome[1], TypeError)
+        assert str(outcome[1]) == exact_message
+
+    wrong_values = (
+        np.array([1, 2, 3], dtype=np.int64),
+        np.array([[1.0, 2.0, 3.0]], dtype=np.float64),
+    )
+    for wrong in wrong_values:
+        for args in ((wrong, base), (base, wrong)):
+            outcome, _ = check._run("native", args)
+            assert outcome[0] == "raised"
+            assert isinstance(outcome[1], TypeError)
 
 
 # ---------------------------------------------------------------------------
@@ -2047,7 +2118,7 @@ def test_wave2_fusion_hypothesis_i64(project: CertifiedProject, a, b) -> None:
 
 
 def test_wave2_fusion_helper_allocation_evidence() -> None:
-    """Generated helper text: one from_shape_fn pass, zero intermediate ndarrays, no Zip."""
+    """F64_1D fusion writes fast/generic paths into the shared direct sink."""
     from rextio.plugins.api import ClaimExpr
     from rextio_numpy.claim.fusion import try_match
     from rextio_numpy.rust_snippets.fusion import build_tree_plan, fusion_helper
@@ -2089,15 +2160,43 @@ def test_wave2_fusion_helper_allocation_evidence() -> None:
         expression_ops_postorder=match.postorder_ops,
         tree_plan=build_tree_plan(expr),
     )
-    assert helper.count("from_shape_fn") == 1
+    # Fast and generic paths each call the direct sink; runtime takes one.
+    assert helper.count("__rxtnp_f64_1d_output") == 2
+    assert "from_shape_fn" not in helper
+    assert "is_standard_layout()" in helper
+    assert "as_slice()" in helper
     assert "Zip::" not in helper
     assert "map_collect" not in helper
     assert "to_owned()" not in helper
     assert "Array::zeros" not in helper
-    # Broadcast views only for leaves (one per leaf).
+    # Fast path is decided before any LTR broadcast-shape Vec work.
+    assert helper.index("is_standard_layout()") < helper.index("__rxtnp_broadcast_shape")
+    assert helper.index("__rxtnp_f64_1d_output") < helper.index(
+        "__rxtnp_broadcast_shape"
+    )
+    # Broadcast views only on the generic path (one per unique parameter).
     assert helper.count(".broadcast(") == match.leaf_count
-    # Scalar temps for internal non-root nodes.
+    # Scalar temps for internal non-root nodes (emitted on both paths).
     assert "let t0" in helper and "let t1" in helper
+
+    # Statically proven repeated names: fewer params/broadcasts, reused loads.
+    aliased = fusion_helper(
+        signature=match.signature,
+        dtype=match.dtype,
+        result_rank=match.result_rank,
+        leaf_ranks=match.leaf_ranks,
+        expression_ops_postorder=match.postorder_ops,
+        tree_plan=build_tree_plan(expr),
+        leaf_operands=("a", "b", "a", "b"),
+    )
+    assert "a2:" not in aliased
+    assert aliased.count(".broadcast(") == 2
+    assert "let x2 = x0;" in aliased
+    assert "let x3 = x1;" in aliased
+    assert "_al_0_1_0_1" in aliased
+    assert aliased.index("__rxtnp_f64_1d_output") < aliased.index(
+        "__rxtnp_broadcast_shape"
+    )
 
 
 def test_wave2_fusion_max_bound_f64_compiles_and_matches(project: CertifiedProject) -> None:
@@ -2138,7 +2237,7 @@ def test_wave2_fusion_max_bound_i64_overflow(project: CertifiedProject) -> None:
 
 
 def test_wave2_fusion_max_bound_routes_and_generated_source(project: CertifiedProject) -> None:
-    """Max-bound kernels route through fusion and emit from_shape_fn (not Zip)."""
+    """Max-bound kernels route through fusion and use one bounded output lane."""
     import json
 
     root = project.project_root
@@ -2169,7 +2268,7 @@ def test_wave2_fusion_max_bound_routes_and_generated_source(project: CertifiedPr
             continue
         # Extract only fused helper fn bodies (module also holds ordinary Zip helpers).
         for match in re.finditer(
-            r"fn (__rxtnp_echain_\w+)\([^)]*\)[^{]*\{",
+            r"fn (__rxtnp_echain_\w+)(?:<'py>)?\([^)]*\)[^{]*\{",
             text,
         ):
             start = match.start()
@@ -2187,7 +2286,11 @@ def test_wave2_fusion_max_bound_routes_and_generated_source(project: CertifiedPr
                         break
             body = text[start:end]
             echain_bodies.append(body)
-            assert "from_shape_fn" in body, match.group(1)
+            if "PyResult<numpy::PyReadonlyArray1<'py, f64>>" in body:
+                assert "__rxtnp_f64_1d_output" in body, match.group(1)
+                assert "from_shape_fn" not in body, match.group(1)
+            else:
+                assert "from_shape_fn" in body, match.group(1)
             assert "Zip::" not in body, match.group(1)
             assert "map_collect" not in body, match.group(1)
     assert echain_bodies, "no __rxtnp_echain_ helpers found in generated Rust"
@@ -2478,3 +2581,191 @@ def test_i64_scalar_outside_core_boundary_is_a_contract_violation(
         fallback[1],
         np.where(values == target, yes, no),
     )
+
+
+# ---------------------------------------------------------------------------
+# 0.1.3 candidate: ordinary NumPy return ownership + fusion layout regressions
+# ---------------------------------------------------------------------------
+
+
+def _ndarray_owns_data(arr: np.ndarray) -> bool:
+    """True when the array owns its buffer (flags.owndata or flags['OWNDATA'])."""
+    flags = arr.flags
+    if hasattr(flags, "owndata"):
+        return bool(flags.owndata)
+    return bool(flags["OWNDATA"])
+
+
+def _ordinary_numpy_supports_inplace_resize(shape: tuple[int, ...], dtype: object) -> bool:
+    """Probe whether this NumPy build allows in-place resize on a fresh owned array."""
+    probe = np.empty(shape, dtype=dtype)
+    try:
+        probe.resize(int(np.prod(shape, dtype=int)) + 1, refcheck=True)
+    except (ValueError, SystemError, TypeError, AttributeError):
+        return False
+    return True
+
+
+def test_native_add_return_matches_ordinary_numpy_ownership(
+    project: CertifiedProject,
+) -> None:
+    """Direct-sink ``add`` results keep ordinary NumPy ownership.
+
+    Both native and fallback legs must report OWNDATA true and ``base is None``.
+    When ordinary NumPy on the installed version supports in-place ``resize`` on
+    a fresh owned array of the same shape/dtype, both legs must also succeed.
+    Extra references are not retained across the resize call.
+    """
+    check = checker(project, "add", equals=array_equals, args_equals=array_equals)
+    a = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    b = np.array([4.0, 5.0, 6.0], dtype=np.float64)
+    expected = a + b
+
+    native_outcome, _ = check._run("native", (a, b))
+    fallback_outcome, _ = check._run("fallback", (a, b))
+    assert native_outcome[0] == "returned"
+    assert fallback_outcome[0] == "returned"
+    native = native_outcome[1]
+    fallback = fallback_outcome[1]
+    assert isinstance(native, np.ndarray)
+    assert isinstance(fallback, np.ndarray)
+
+    # Value parity first (also certified by the dual-leg checker path).
+    np.testing.assert_array_equal(native, expected)
+    np.testing.assert_array_equal(fallback, expected)
+    np.testing.assert_array_equal(native, fallback)
+
+    for label, arr in (("native", native), ("fallback", fallback)):
+        assert _ndarray_owns_data(arr), f"{label} must own its data buffer"
+        assert arr.base is None, f"{label} base must be None (ordinary NumPy result)"
+        assert arr.flags["C_CONTIGUOUS"], f"{label} must be C-contiguous"
+
+    if not _ordinary_numpy_supports_inplace_resize(expected.shape, expected.dtype):
+        return
+
+    # Fresh legs; keep only one Python name per array so refcheck resize can succeed.
+    n_outcome, _n_args = check._run("native", (a, b))
+    assert n_outcome[0] == "returned"
+    n_only = n_outcome[1]
+    del n_outcome, _n_args
+    assert isinstance(n_only, np.ndarray)
+
+    f_outcome, _f_args = check._run("fallback", (a, b))
+    assert f_outcome[0] == "returned"
+    f_only = f_outcome[1]
+    del f_outcome, _f_args
+    assert isinstance(f_only, np.ndarray)
+
+    new_size = int(n_only.size) + 1
+    n_only.resize(new_size, refcheck=True)
+    f_only.resize(new_size, refcheck=True)
+    assert n_only.shape == (new_size,)
+    assert f_only.shape == (new_size,)
+
+
+def test_every_f64_1d_producer_returns_fresh_python_owned_storage(
+    project: CertifiedProject,
+) -> None:
+    """Each producer family reaches the same direct-output ownership contract."""
+    f64_a = np.array([1.0, -2.0, 4.0], dtype=np.float64)
+    f64_b = np.array([0.5, 3.0, -1.0], dtype=np.float64)
+    matrix = np.array([[1.0, 2.0, 3.0], [4.0, -5.0, 6.0]], dtype=np.float64)
+    i64_a = np.array([2, -6, 9], dtype=np.int64)
+    i64_b = np.array([1, 3, -2], dtype=np.int64)
+    mask_left = np.array([1.0, -1.0, 3.0], dtype=np.float64)
+    mask_right = np.array([1.0, 2.0, 0.0], dtype=np.float64)
+
+    cases: tuple[tuple[str, tuple[object, ...]], ...] = (
+        ("add", (f64_a, f64_b)),
+        ("scale", (f64_a, 2.5)),
+        ("unary_negative_f64", (f64_a,)),
+        ("sum_f64_2d_axis0", (matrix,)),
+        ("mean_f64_2d_axis1", (matrix,)),
+        ("ufunc_div_i64_1d", (i64_a, i64_b)),
+        (
+            "where_eq_f64_11",
+            (mask_left, mask_right, f64_a, f64_b),
+        ),
+        ("fuse_multi_op", (f64_a, f64_b)),
+        ("accumulate", (f64_a, f64_b, 2)),
+    )
+
+    for name, args in cases:
+        check = _require_native(project, name)
+        outcome, _ = check._run("native", args)
+        assert outcome[0] == "returned", name
+        result = outcome[1]
+        assert type(result) is np.ndarray, name
+        assert result.dtype == np.dtype(np.float64), name
+        assert result.ndim == 1, name
+        assert _ndarray_owns_data(result), name
+        assert result.base is None, name
+        assert result.flags["C_CONTIGUOUS"], name
+        for arg in args:
+            if isinstance(arg, np.ndarray):
+                assert not np.shares_memory(result, arg), name
+
+
+def test_fusion_rank2_equal_shape_and_broadcast_regressions(
+    project: CertifiedProject,
+) -> None:
+    """Rank-2 equal-shape fast path and mixed-rank broadcast still match NumPy."""
+    r2 = _require_native(project, "fuse_rank2")
+    mixed = _require_native(project, "fuse_mixed_rank")
+    a2 = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+    b2 = np.array([[0.5, 1.5], [-1.0, 2.0]], dtype=np.float64)
+    assert a2.flags["C_CONTIGUOUS"] and b2.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(r2(a2, b2), (a2 + b2) * (a2 - b2))
+
+    # Length-1 broadcast (generic path): must still match.
+    a1 = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    b_row = np.array([[10.0, 20.0, 30.0]], dtype=np.float64)
+    np.testing.assert_array_equal(mixed(a1, b_row), (a1 + b_row) * (a1 - b_row))
+
+    # F-order equal-shape inputs: may or may not be standard-layout after
+    # boundary to_owned(); value parity must hold either way.
+    f_a = np.asfortranarray(a2)
+    f_b = np.asfortranarray(b2)
+    assert f_a.flags["F_CONTIGUOUS"] and not f_a.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(r2(f_a, f_b), (f_a + f_b) * (f_a - f_b))
+
+
+def test_fusion_strided_and_broadcast_mismatch_still_exact(
+    project: CertifiedProject,
+) -> None:
+    """Strided fusion inputs and broadcast errors remain NumPy-equivalent."""
+    check = checker(
+        project,
+        "fuse_multi_op",
+        equals=array_equals,
+        args_equals=array_equals,
+        copy_args=_stride_preserving_copy,
+    )
+    base_a = np.array([1.0, 99.0, 2.0, 99.0, 3.0, 99.0], dtype=np.float64)
+    base_b = np.array([4.0, 99.0, 5.0, 99.0, 6.0, 99.0], dtype=np.float64)
+    a = base_a[::2]
+    b = base_b[::2]
+    assert not a.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(check(a, b), (a + b) * (a - b))
+
+    bal = _require_native(project, "fuse_balanced")
+    left = np.zeros(3, dtype=np.float64)
+    right = np.zeros(4, dtype=np.float64)
+    c = np.zeros(3, dtype=np.float64)
+    d = np.zeros(3, dtype=np.float64)
+    try:
+        (left + right) * (c - d)
+    except ValueError as exc:
+        expected_msg = str(exc)
+    else:  # pragma: no cover
+        pytest.fail("numpy did not raise on fusion broadcast mismatch")
+    with pytest.raises(ValueError) as excinfo:
+        bal(left, right, c, d)
+    assert str(excinfo.value) == expected_msg
+
+    # Equal-shape C-contiguous fusion happy path (fast path candidate).
+    fuse = _require_native(project, "fuse_multi_op")
+    ca = np.array([1.0, -2.5, 3.25, 0.5], dtype=np.float64)
+    cb = np.array([4.0, 0.125, -6.5, 2.0], dtype=np.float64)
+    assert ca.flags["C_CONTIGUOUS"] and cb.flags["C_CONTIGUOUS"]
+    np.testing.assert_array_equal(fuse(ca, cb), (ca + cb) * (ca - cb))

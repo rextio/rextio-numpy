@@ -357,7 +357,7 @@ def test_where_rejects_keywords_and_other_numpy_apis() -> None:
         (
             (BOOL_1D, F64_1D, F64_1D),
             "__rxtnp_where111_aa_f64",
-            "__rxtnp_where111_aa_f64(&mask, &yes, &no)?",
+            "__rxtnp_where111_aa_f64(py, &mask, &yes, &no)?",
         ),
         (
             (BOOL_2D, F32_2D, "float"),
@@ -384,8 +384,13 @@ def test_lowers_where_with_three_way_broadcast_contract(
     helpers = "\n".join(lowered.helpers)
     assert f"fn {helper_name}" in helpers
     assert "__rxtnp_broadcast_shape3" in helpers
-    assert "numpy::ndarray::Zip::from" in helpers
-    assert "if *mask" in helpers
+    if helper_name == "__rxtnp_where111_aa_f64":
+        assert "__rxtnp_f64_1d_output" in helpers
+        assert "numpy::ndarray::Zip::from" not in helpers
+        assert "if condition_b[i]" in helpers
+    else:
+        assert "numpy::ndarray::Zip::from" in helpers
+        assert "if *mask" in helpers
     assert "operands could not be broadcast together with shapes {} {} {} " in helpers
 
 
