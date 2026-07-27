@@ -8,13 +8,11 @@ self-describes, as machine-readable rule records, which NumPy usage lowers to
 Rust (via the `ndarray` crate) and which stays on the Python fallback —
 following Rextio's core contract (CPython-equivalent semantics or fall back).
 
-## Status: 0.1.3 unreleased candidate
+## Status: 0.1.3 public Alpha
 
-`rextio-numpy` **0.1.3** is **unreleased candidate work** on the **0.1.3**
-development/integration line. The latest published cut is
-**`rextio-numpy` 0.1.2** (2026-07-26); prior published cuts include **0.1.1**
-(2026-07-14) and **0.1.0** (2026-07-12). This section documents the in-tree
-candidate, not a PyPI publication claim.
+`rextio-numpy` **0.1.3** was released on **2026-07-27**. The prior published
+cut was **`rextio-numpy` 0.1.2** (2026-07-26); earlier cuts include **0.1.1**
+(2026-07-14) and **0.1.0** (2026-07-12).
 
 Implements **plugin API 1.5** end to end: the annotation vocabulary, the
 deterministic `claim` pass (including keyword/literal axis metadata and
@@ -25,7 +23,7 @@ results, three-argument `numpy.where`, receiver metadata for certified ndarray
 methods, and pinned crate injection (rust-numpy `numpy =0.29.0`; ndarray via
 its re-export).
 
-**Candidate focus (0.1.3):** fused elementwise chains may use a rank-1/rank-2
+**Focus (0.1.3):** fused elementwise chains may use a rank-1/rank-2
 **equal-shape standard-layout** load path that is decided and entered **before**
 LTR postorder broadcast-shape `Vec` work when every leaf is the same rank as
 the result, shapes are equal, and every leaf is standard (C) layout at helper
@@ -313,15 +311,14 @@ def dot(a: F64Arr1, b: F64Arr1) -> float:
 ```
 
 ```bash
-pip install rextio-numpy   # published 0.1.2 requires rextio >= 0.1.6
-# candidate 0.1.3 is source-checkout work until tagged/uploaded
+pip install rextio-numpy==0.1.3   # requires rextio >= 0.1.6
 rextio capabilities --format json   # numpy rules appear under "rules"
 rextio build .                      # lowered kernels compile via cargo
 ```
 
-> **Note:** The 0.1.3 candidate (and published 0.1.2) surface requires a core
-> that provides plugin API 1.5 (`rextio>=0.1.6`). To work against the surface
-> from a source checkout, see Development below.
+> **Note:** The 0.1.3 surface requires a core that provides plugin API 1.5
+> (`rextio>=0.1.6`). To work against the surface from a source checkout, see
+> Development below.
 
 ## Development
 
@@ -344,7 +341,7 @@ python -m benchmarks --list
 python -m benchmarks --output-dir /tmp/rextio-numpy-bench
 ```
 
-### Verified suite totals (this candidate)
+### Verified suite totals (this release)
 
 On this tree:
 

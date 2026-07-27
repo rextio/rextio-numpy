@@ -1,12 +1,11 @@
 # Changelog
 
-## Unreleased — 0.1.3 candidate
+## 0.1.3 — 2026-07-27
 
-Unreleased candidate work toward package version **0.1.3**. Not tagged, not
-uploaded to PyPI, and not a publication claim. Latest published cut remains
-**0.1.2** (2026-07-26). Requires the same **`rextio>=0.1.6,<0.2`** / plugin
-API **1.5** surface as 0.1.2; no Core change and no certified-surface
-broadening.
+Released cut for package version **0.1.3**, tagged and uploaded to PyPI on
+2026-07-27. Published PyPI **`rextio-numpy` 0.1.2** (2026-07-26) was the prior
+uploaded release. Requires the same **`rextio>=0.1.6,<0.2`** / plugin API
+**1.5** surface as 0.1.2; no Core change and no certified-surface broadening.
 
 ### F64 rank-1 borrowed/direct-output boundary
 
@@ -80,7 +79,7 @@ broadening.
 ### Explicit non-claims (unchanged product posture)
 
 - Rank-2 ``dot`` / matmul / ``@`` remain **NO-GO / fallback-retained** and are
-  not support or performance claims for this candidate.
+  not support or performance claims for this release.
 - Certified surface, fail-closed lower-time ``ValueError`` guards, and the
   accepted missing-``RuntimeWarning`` divergence are unchanged from 0.1.2.
 - The boundary-allocation PoC harness is research-only and is not a product
