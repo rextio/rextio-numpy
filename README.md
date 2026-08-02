@@ -1,7 +1,7 @@
 # rextio-numpy
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/rextio/rextio-numpy/main/assets/readme/rextio-icon.png" width="96" alt="Rextio icon">
+  <img src="./assets/readme/rextio-icon.png" width="96" alt="Rextio icon">
 </p>
 
 <p align="center"><strong>Bounded NumPy-to-Rust lowering for code that Rextio can prove safe.</strong></p>
